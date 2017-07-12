@@ -113,6 +113,14 @@ TARGET_LINK_LIBRARIES(gencode cJSON platform)
 ADD_EXECUTABLE(genconfig tools/genconfig.cc)
 TARGET_LINK_LIBRARIES(genconfig cJSON platform)
 
+ADD_EXECUTABLE(couchfile_upgrade tools/couchfile_upgrade/couchfile.cc
+                                 tools/couchfile_upgrade/couchfile_upgrade.cc
+                                 tools/couchfile_upgrade/couchstore_helpers.cc
+                                 tools/couchfile_upgrade/input_couchfile.cc
+                                 tools/couchfile_upgrade/output_couchfile.cc
+                                 tools/couchfile_upgrade/xattr_couchfile.cc )
+TARGET_LINK_LIBRARIES(couchfile_upgrade couchstore platform xattr)
+
 ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/src/stats-info.c
                           ${CMAKE_CURRENT_BINARY_DIR}/src/stats-info.h
                   COMMAND

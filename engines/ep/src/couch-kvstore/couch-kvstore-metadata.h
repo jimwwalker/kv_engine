@@ -20,9 +20,10 @@
 #include <memory>
 #include <type_traits>
 
-#include <libcouchstore/couch_common.h>
-#include <memcached/protocol_binary.h>
 #include "item.h"
+#include <libcouchstore/couch_common.h>
+#include <libcouchstore/couch_db.h>
+#include <memcached/protocol_binary.h>
 
 class MetaData {
 protected:
