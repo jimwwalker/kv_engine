@@ -77,15 +77,11 @@ public:
      * @returns if the filter allows key based on the filter contents
      */
     bool allow(const Item& item) const;
+    bool checkAndUpdate(const Item& item);
 
-    /**
-     * Attempt to remove the collection from the filter, no-op if the filter
-     * does include the collection.
-     *
-     * @param collection a collection name to remove.
-     * @returns true if the filter is empty
-     */
-    bool remove(cb::const_char_buffer collection);
+    bool empty() const;
+    void remove(const Item& item);
+    bool remove(cb::const_char_buffer coll);
 
     /**
      * Add statistics for this filter, currently just depicts the object's state

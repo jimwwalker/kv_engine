@@ -141,8 +141,10 @@ public:
         producer->getCheckpointSnapshotTask().run();
     }
 
-    void notifyAndStepToCheckpoint(bool expectSnapshot = true,
-                                   bool fromMemory = true) {
+    void notifyAndStepToCheckpoint(
+            cb::mcbp::ClientOpcode expectedOp =
+                    cb::mcbp::ClientOpcode::DcpSnapshotMarker,
+            bool fromMemory = true) {
         auto vb = store->getVBucket(vbid);
         ASSERT_NE(nullptr, vb.get());
 
@@ -164,9 +166,9 @@ public:
 
         // Next step which will process a snapshot marker and then the caller
         // should now be able to step through the checkpoint
-        if (expectSnapshot) {
+        if (expectedOp != cb::mcbp::ClientOpcode::Invalid) {
             EXPECT_EQ(ENGINE_WANT_MORE, producer->step(producers.get()));
-            EXPECT_EQ(PROTOCOL_BINARY_CMD_DCP_SNAPSHOT_MARKER, dcp_last_op);
+            EXPECT_EQ(uint8_t(expectedOp), dcp_last_op);
         } else {
             EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
         }
@@ -340,7 +342,8 @@ void CollectionsDcpTest::testDcpCreateDelete(int expectedCreates,
                                              int expectedDeletes,
                                              int expectedMutations,
                                              bool fromMemory) {
-    notifyAndStepToCheckpoint(true /* expect a snapshot*/, fromMemory);
+    notifyAndStepToCheckpoint(cb::mcbp::ClientOpcode::DcpSnapshotMarker,
+                              fromMemory);
 
     int creates = 0, deletes = 0, mutations = 0;
     // step until done
@@ -795,7 +798,7 @@ TEST_F(CollectionsFilteredDcpTest, MB_24572) {
     store_item(vbid, {"meat::one1", DocNamespace::Collections}, "value");
     store_item(vbid, {"meat::two2", DocNamespace::Collections}, "value");
     store_item(vbid, {"meat::three3", DocNamespace::Collections}, "value");
-    notifyAndStepToCheckpoint(false /* no checkpoint should be generated*/);
+    notifyAndStepToCheckpoint(cb::mcbp::ClientOpcode::Invalid);
 }
 
 TEST_F(CollectionsFilteredDcpTest, default_only) {
@@ -856,8 +859,7 @@ TEST_F(CollectionsFilteredDcpTest, stream_closes) {
     // Not dead yet...
     EXPECT_TRUE(vb0Stream->isActive());
 
-    // Perform a delete of meat via the bucket level (filters are worked out
-    // from the bucket manifest)
+    // Perform a delete of meat
     store->setCollections({R"({"separator": "::",
               "collections":[{"name":"$default", "uid":"0"}]})"});
 
@@ -871,6 +873,41 @@ TEST_F(CollectionsFilteredDcpTest, stream_closes) {
 
     // Now step the producer to transfer the close stream
     EXPECT_EQ(ENGINE_WANT_MORE, producer->step(producers.get()));
+
+    // And no more
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+}
+
+TEST_F(CollectionsFilteredDcpTest, legacy_stream_closes) {
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Perform a create of meat via the bucket level (filters are worked out
+    // from the bucket manifest)
+    store->setCollections({R"({"separator": "::",
+              "collections":[{"name":"$default", "uid":"0"},
+                             {"name":"meat", "uid":"1"}]})"});
+    // Setup legacy DCP, it only receives default collection mutation/deletion
+    // and should self-close if the default collection were to be deleted
+    createDcpObjects({}, false);
+
+    auto vb0Stream = producer->findStream(0);
+    ASSERT_NE(nullptr, vb0Stream.get());
+
+    // No keys have been written and no event can be sent, so expect nothing
+    // after kicking the stream into life
+    notifyAndStepToCheckpoint(cb::mcbp::ClientOpcode::Invalid);
+
+    EXPECT_TRUE(vb0Stream->isActive());
+
+    // Perform a delete of $default
+    store->setCollections({R"({"separator": "::",
+              "collections":[{"name":"meat", "uid":"1"}]})"});
+
+    // Expect a stream end marker
+    notifyAndStepToCheckpoint(cb::mcbp::ClientOpcode::DcpStreamEnd);
+
+    // Done... collection deletion of default has closed the stream
+    EXPECT_FALSE(vb0Stream->isActive());
 
     // And no more
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
