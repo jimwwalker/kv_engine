@@ -20,10 +20,11 @@
 
 #include "config.h"
 
-#include "ep_engine.h"
-#include "ext_meta_parser.h"
+#include "collections/vbucket_filter.h"
 #include "dcp/dcp-types.h"
 #include "dcp/producer.h"
+#include "ep_engine.h"
+#include "ext_meta_parser.h"
 #include "response.h"
 #include "vbucket.h"
 
@@ -36,12 +37,6 @@ class MutationResponse;
 class SetVBucketState;
 class SnapshotMarker;
 class DcpResponse;
-
-namespace Collections {
-namespace VB {
-class Filter;
-}
-}
 
 enum backfill_source_t {
     BACKFILL_FROM_MEMORY,
@@ -166,10 +161,6 @@ protected:
 
     uint64_t getReadyQueueMemory(void);
 
-    virtual bool queueResponse(DcpResponse* resp) const {
-        return true;
-    }
-
     /**
      * Returns the logger associated with the connection if the connection is
      * still alive, else a default logger
@@ -237,7 +228,8 @@ public:
                  uint64_t snap_end_seqno,
                  IncludeValue includeVal,
                  IncludeXattrs includeXattrs,
-                 std::unique_ptr<Collections::VB::Filter> filter);
+                 const Collections::Filter& filter,
+                 const Collections::VB::Manifest& manifest);
 
     virtual ~ActiveStream();
 
@@ -341,8 +333,6 @@ protected:
      * @param response A DcpResponse that is about to be sent to a client
      */
     void processSystemEvent(DcpResponse* response);
-
-    bool queueResponse(DcpResponse* resp) const override;
 
     /**
      * Registers a cursor with a given CheckpointManager.
@@ -514,7 +504,7 @@ private:
     /**
      * The filter the stream will use to decide which keys should be transmitted
      */
-    std::unique_ptr<Collections::VB::Filter> filter;
+    Collections::VB::Filter filter;
 };
 
 
@@ -599,8 +589,7 @@ public:
                    uint64_t end_seqno,
                    uint64_t vb_uuid,
                    uint64_t snap_start_seqno,
-                   uint64_t snap_end_seqno,
-                   std::unique_ptr<Collections::VB::Filter> filter);
+                   uint64_t snap_end_seqno);
 
     std::unique_ptr<DcpResponse> next() override;
 
@@ -611,7 +600,6 @@ public:
     void addStats(ADD_STAT add_stat, const void* c) override;
 
 private:
-    bool queueResponse(DcpResponse* resp) const override;
 
     void transitionState(StreamState newState);
 
@@ -624,8 +612,6 @@ private:
     void notifyStreamReady();
 
     std::weak_ptr<DcpProducer> producerPtr;
-
-    std::unique_ptr<Collections::VB::Filter> filter;
 };
 
 class PassiveStream : public Stream {
