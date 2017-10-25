@@ -31,6 +31,7 @@ const char* const DefaultSeparator = "::";
 
 // SystemEvent keys
 const char* const SystemEventPrefix = "$collections";
+const char* const SystemEventSeparatorChangePrefix = "$collections_separator";
 const char* const DeleteEventKey = "delete";
 const char* const SeparatorChangedKey = "separator";
 

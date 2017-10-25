@@ -15,26 +15,35 @@
  *   limitations under the License.
  */
 
-#include "collections/collections_callbacks.h"
-#include "kv_bucket.h"
-#include "vbucket.h"
+#include "collections/collections_types.h"
+
+#include <string>
+
+#pragma once
+
+struct DocKey;
 
 namespace Collections {
 namespace VB {
-
-void LogicallyDeletedCallback::callback(CacheLookup& lookup) {
-    VBucketPtr vb = store.getVBucket(lookup.getVBucketId());
-    if (!vb) {
-        return;
+class ScanContext {
+public:
+    ScanContext() : separator(DefaultSeparator) {
     }
-    // Check with collections if this key should be loaded, status EEXISTS is
-    // the only way to inform the scan to not continue with this key.
-    if (vb->lockCollections().isLogicallyDeleted(
-                lookup.getKey(), lookup.getBySeqno(), lookup.getSeparator())) {
-        setStatus(ENGINE_KEY_EEXISTS);
-        return;
-    }
-}
 
-} // end namespace VB
-} // end namespace Collections
+    /**
+     * Manage the context's separator. If the DocKey is a system event for a
+     * changed separator, then we will update the context and return true.
+     *
+     * @return true if the separator was updated
+     */
+    bool manageSeparator(const ::DocKey& key);
+
+    const std::string& getSeparator() const {
+        return separator;
+    }
+
+private:
+    std::string separator;
+};
+} // end VB
+} // end Collections

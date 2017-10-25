@@ -669,7 +669,9 @@ void EPBucket::compactInternal(compaction_ctx* ctx) {
                                        this,
                                        uint16_t(ctx->db_file_id),
                                        std::placeholders::_1,
-                                       std::placeholders::_2);
+                                       std::placeholders::_2,
+                                       std::placeholders::_3,
+                                       std::placeholders::_4);
 
     KVShard* shard = vbMap.getShardByVbId(ctx->db_file_id);
     KVStore* store = shard->getRWUnderlying();
@@ -695,6 +697,13 @@ void EPBucket::compactInternal(compaction_ctx* ctx) {
             vb->clearFilter();
         }
         vb->setPurgeSeqno(it.second);
+    }
+
+    // The collections eraser may have gathered some garbage keys which can now
+    // be released.
+    auto vb = getVBucket(uint16_t(ctx->db_file_id));
+    if (vb) {
+        ctx->eraserContext.processKeys(*vb);
     }
 }
 
