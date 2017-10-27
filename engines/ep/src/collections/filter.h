@@ -32,8 +32,16 @@ namespace Collections {
  * Collections::Filter stores the JSON filter which DCP_OPEN_PRODUCER can
  * specify.
  *
- * A Collections::Filter is optional in that the client can omit a filter
- * in which case the filter is a pass-through (isPassthrough():true).
+ * Two flavours of JSON input are valid:
+ * Stream from zero (you don't know the UID)
+ * {"collections" : ["name1", "name2", ...]}
+ *
+ * Stream from non-zero seqno (you need the correct uid)
+ * {"collections" : [{"name":"name1", "uid":"xxx"},
+ *                   {"name":"name2", "uid":"yyy"}, ...]}
+ *
+ * Note Collections::Filter input is optional in that the client can omit a
+ * filter in which case the filter is a pass-through.
  *
  * This object is used to create Collections::VB::Filter objects when VB streams
  * are requested. The Collections::VB::Filter object is used to make the final
@@ -41,6 +49,10 @@ namespace Collections {
  */
 class Filter {
 public:
+
+    /// a name with an optional UID
+    using container =
+            std::vector<std::pair<std::string, boost::optional<uid_t>>>;
     /**
      * Construct a Collections::Filter using an optional JSON document
      * and the bucket's current Manifest.
@@ -64,7 +76,7 @@ public:
      * Get the list of collections the filter knows about. Can be empty
      * @returns std::vector of std::string, maybe empty for a passthrough filter
      */
-    const std::vector<std::string>& getFilter() const {
+    const container& getFilter() const {
         return filter;
     }
 
@@ -90,6 +102,20 @@ public:
     }
 
     /**
+     * @return true if the Filter uses name/uid pairs
+     */
+    bool isUidFilter() const {
+        return uidFound;
+    }
+
+    /**
+     * @return true if the Filter uses name only identification
+     */
+    bool isNameFilter() const {
+        return nameFound;
+    }
+
+    /**
      * Dump this to std::cerr
      */
     void dump() const;
@@ -101,10 +127,21 @@ private:
      */
     void addCollection(const char* collection, const Manifest& manifest);
 
-    std::vector<std::string> filter;
+    /**
+     * Private helper to examine the given collection object against the
+     * manifest and add to internal container or throw an exception
+     */
+    void addCollection(cJSON* object, const Manifest& manifest);
+
+    container filter;
     bool defaultAllowed;
     bool passthrough;
     bool systemEventsAllowed;
+
+    /// Set to true if the json uses a name/uid pair for a collection
+    bool uidFound = false;
+    /// Set to true if the json uses a name only for a collection
+    bool nameFound = false;
 
     friend std::ostream& operator<<(std::ostream& os, const Filter& filter);
 };
