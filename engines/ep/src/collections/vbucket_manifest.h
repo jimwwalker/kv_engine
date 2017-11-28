@@ -109,20 +109,6 @@ public:
         }
 
         /**
-         * Function intended for use by the KVBucketr collection's eraser code.
-         *
-         * @return if the key indicates that we've now hit the end of
-         *         a deleted collection and should call completeDeletion, then
-         *         the return value is initialised with the collection which is
-         *         to be deleted. If the key does not indicate the end, the
-         *         return value is an empty char buffer.
-         */
-        boost::optional<cb::const_char_buffer> shouldCompleteDeletion(
-                ::DocKey key) const {
-            return manifest.shouldCompleteDeletion(key);
-        }
-
-        /**
          * @returns a copy of the current separator
          */
         std::string getSeparator() const {
@@ -208,15 +194,17 @@ public:
      */
     class CachingReadHandle : private ReadHandle {
     public:
-        CachingReadHandle(const Manifest& m, cb::RWLock& lock, ::DocKey key)
-            : ReadHandle(m, lock), itr(m.getManifestEntry(key)), key(key) {
-        }
-
         CachingReadHandle(const Manifest& m,
                           cb::RWLock& lock,
                           ::DocKey key,
                           const std::string& separator)
-            : ReadHandle(m, lock), itr(m.getManifestEntry(key, separator)), key(key) {
+            : ReadHandle(m, lock),
+              key(DocKey::make(key, separator)),
+              itr(m.getManifestEntry(this->key, separator)) {
+        }
+
+        CachingReadHandle(const Manifest& m, cb::RWLock& lock, ::DocKey key)
+            : CachingReadHandle(m, lock, key, m.getSeparator()) {
         }
 
         /**
@@ -247,6 +235,21 @@ public:
         }
 
         /**
+         * Function intended for use by the KVBucket collection's eraser code.
+         *
+         * @return if the key (used in construction) indicates that we've now
+         *         hit the end of a deleted collection (because the key is a
+         *         system event) and the manifest entry determines we should
+         *         call completeDeletion, then the return value is initialised
+         *         with the collection which is to be deleted. If the key does
+         *         not indicate the end, the return value is an empty buffer.
+         */
+        boost::optional<cb::const_char_buffer> shouldCompleteDeletion(
+                int64_t bySeqno) const {
+            return manifest.shouldCompleteDeletion(key, bySeqno, itr);
+        }
+
+        /**
          * Dump the manifest to std::cerr
          */
         void dump() {
@@ -263,15 +266,17 @@ public:
                 const Manifest::CachingReadHandle& readHandle);
 
         /**
+         * Collections::DocKey built from the key used in creation of this
+         * handle.
+         */
+        DocKey key;
+
+        /**
          * An iterator for the key's collection, or end if the key has no valid
          * collection.
          */
         container::const_iterator itr;
 
-        /**
-         * The key used in construction of this handle.
-         */
-        ::DocKey key;
     };
 
     /**
@@ -579,15 +584,20 @@ private:
      * Function intended for use by the collection eraser code, checking
      * keys/seqno in seqno order.
      *
-     * @return if the key@seqno indicates that we've now hit the end of
-     *         a deleted collection and should call completeDeletion, then
-     *         the return value is initialised with the collection of the
-     *         key (the value to which we pass to completeDeletion). If the
-     *         key@seqno does not indicate the end, the return value is an
-     *         empty char buffer.
+     * @param key Collections::DocKey
+     * @param bySeqno Seqno assigned to the key
+     * @param entry the manifest entry associated with key
+     * @return if the key@seqno indicates that we've now hit the real end of a
+     *         deleted collection (because the key is a system event) and the
+     *         manifest entry determines we should call completeDeletion, then
+     *         the return value is initialised with the collection which is to
+     *         be deleted. If the key does not indicate the end, the return
+     *         value is an empty buffer.
      */
     boost::optional<cb::const_char_buffer> shouldCompleteDeletion(
-            const ::DocKey& key) const;
+            const DocKey& key,
+            int64_t bySeqno,
+            const container::const_iterator entry) const;
 
     /**
      * @returns the current separator
@@ -642,14 +652,8 @@ private:
      * Get a manifest entry for the collection associated with the key. Can
      * return map.end() for unknown collections.
      */
-    container::const_iterator getManifestEntry(const ::DocKey& key) const;
-
-    /**
-     * Get a manifest entry for the collection associated with the key. Can
-     * return map.end() for unknown collections.
-     */
     container::const_iterator getManifestEntry(
-            const ::DocKey& key, const std::string& separator) const;
+            const DocKey& key, const std::string& separator) const;
 
 protected:
     /**

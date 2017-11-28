@@ -335,25 +335,15 @@ bool Manifest::doesKeyContainValidCollection(const ::DocKey& key) const {
 }
 
 Manifest::container::const_iterator Manifest::getManifestEntry(
-        const ::DocKey& key) const {
-    return getManifestEntry(key, separator);
-}
-
-Manifest::container::const_iterator Manifest::getManifestEntry(
-        const ::DocKey& key, const std::string& separator) const {
+        const DocKey& key, const std::string& separator) const {
     cb::const_char_buffer identifier;
-    if (defaultCollectionExists &&
-        key.getDocNamespace() == DocNamespace::DefaultCollection) {
+    if (key.getDocNamespace() == DocNamespace::DefaultCollection) {
         identifier = DefaultCollectionIdentifier;
     } else if (key.getDocNamespace() == DocNamespace::Collections) {
-        const auto cKey = Collections::DocKey::make(key, separator);
-        identifier = {reinterpret_cast<const char*>(cKey.data()),
-                      cKey.getCollectionLen()};
+        identifier = key.getCollection();
     } else if (key.getDocNamespace() == DocNamespace::System) {
-        const auto cKey = Collections::DocKey::make(key, separator);
-
-        if (cKey.getCollection() == SystemEventPrefix) {
-            identifier = cKey.getKey();
+        if (key.getCollection() == SystemEventPrefix) {
+            identifier = key.getKey();
         } else {
             std::string sysKey(reinterpret_cast<const char*>(key.data()),
                                key.size());
@@ -414,28 +404,16 @@ bool Manifest::isLogicallyDeleted(const container::const_iterator entry,
 }
 
 boost::optional<cb::const_char_buffer> Manifest::shouldCompleteDeletion(
-        const ::DocKey& key) const {
-    // If this is a SystemEvent key then...
-    if (key.getDocNamespace() == DocNamespace::System) {
-        const auto cKey = Collections::DocKey::make(key, separator);
-        // 1. Check it's a collection's event
-        if (cKey.getCollection() == SystemEventPrefix) {
-            // 2. Lookup the collection entry
-            auto itr = map.find(cKey.getKey());
-            if (itr == map.end()) {
-                throwException<std::logic_error>(
-                        __FUNCTION__,
-                        "SystemEvent found which didn't match a collection " +
-                                cb::to_string(cKey.getKey()));
-            }
-
-            // 3. If this collection is deleting, return the collection name.
-            if (itr->second->isDeleting()) {
-                return {cKey.getKey()};
-            }
-        }
+        const DocKey& key,
+        int64_t bySeqno,
+        const container::const_iterator entry) const {
+    // If this is a SystemEvent key and the associated entry isDeleting
+    if (key.getDocNamespace() == DocNamespace::System &&
+        entry->second->shouldCompleteDeletion(bySeqno)) {
+        // Return an initialised optional (with the collection name from key)
+        return {key.getKey()};
     }
-    return {};
+    return {/*empty*/};
 }
 
 std::unique_ptr<Item> Manifest::createSystemEvent(SystemEvent se,

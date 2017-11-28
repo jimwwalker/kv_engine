@@ -2401,9 +2401,10 @@ bool KVBucket::collectionsEraseKey(
     boost::optional<cb::const_char_buffer> completedCollection;
 
     { // collections read lock scope
-        auto collectionsRHandle = vb->lockCollections();
-        if (collectionsRHandle.isLogicallyDeleted(
-                    key, bySeqno, eraserContext.getSeparator())) {
+        auto collectionsRHandle =
+                vb->lockCollections(key, eraserContext.getSeparator());
+
+        if (collectionsRHandle.isLogicallyDeleted(bySeqno)) {
             vb->removeKey(key, bySeqno);
 
             // Update item count for non-system collections.
@@ -2419,12 +2420,13 @@ bool KVBucket::collectionsEraseKey(
             dropKey = true;
         }
 
-        // Now determine if the key should trigger completeDeletion
+        // Now determine if the key@bySeqno should trigger completeDeletion
         // 1) If key is a collection delete marker for a deleted collection
         // 2) If key is a collection create marker for a deleted collection
         // Case 2 means the collection was deleted and is now open, and we've
         // processed all keys up to the start of the new open collection.
-        completedCollection = collectionsRHandle.shouldCompleteDeletion(key);
+        completedCollection =
+                collectionsRHandle.shouldCompleteDeletion(bySeqno);
     } // read lock dropped as we may need the write lock in next block
 
     // If a collection was returned, notify that all keys have been removed
