@@ -193,6 +193,51 @@ public:
     }
 
     /**
+     * To determine if the eraser process should trigger completeDeletion we
+     * need to compare the seqno of SystemEvents read from disk with the
+     * end-seqno/start-seqno of the collection.
+     * For example if the eraser finds a fruit collection event system key
+     * (delete or create) and it is a match for start or end, then that means
+     * the eraser has finished processing the seqno span in which logically
+     * deleted keys lived and it's time to call completeDeletion
+     *
+     * @return if the bySeqno is the start-seqno of a recreated collection or
+     *         is the endSeqno of a deleting collection.
+     */
+    bool shouldCompleteDeletion(int64_t bySeqno) const {
+        // This logic is important to understand and may not be obvious to all
+        // so time for some verbosity.
+        //
+        // The first case when we can trigger complete-deletion:
+        //
+        // isOpenAndDeleting() == true means that the collection was deleted and
+        // recreated so data from the old generation and new may co-exist.
+        // On disk we could have the following [seqno,key]
+        //
+        //    [5,beer:x], [6,beer:y], [8,create_beer], [9,beer:z]
+        //
+        // So the manifest entry has start=8, end=7, an end of 7 assumes the
+        // delete of 'create_beer' landed at seqno 7 and the recreate landed at
+        // seqno 8.
+        //
+        // So as the eraser scans the seqno-index it will drop 5, it will drop 6
+        // and then it sees the system-event @ 8 and calls in here. We can
+        // trigger completeDelete because isOpenAndDeleting() and startSeqno ==
+        // bySeqno (8). I.e. we know the eraser has visited the seqno-span of
+        // the deleted beer collection.
+        //
+        // The second case is simpler to understand, no recreate occurred so on
+        // disk we may have (the create_beer marker is a deleted document)
+        //
+        //    [5,beer:x], [6,beer:y], [8,deleted,create_beer]
+        //
+        // So the manifest entry has start=-6, end = 8, thus when the eraser
+        // hits seqno 8 we get a match, isDeleting() is true and endSeqno == 8
+        return (isOpenAndDeleting() && startSeqno == bySeqno) ||
+               (isDeleting() && endSeqno == bySeqno);
+    }
+
+    /**
      * Inform the collection that all items of the collection up to endSeqno
      * have been deleted.
      *
