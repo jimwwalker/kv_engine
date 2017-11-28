@@ -193,6 +193,21 @@ public:
     }
 
     /**
+     * To determine if the eraser process should trigger completeDeletion we
+     * need to compare the seqno of SystemEvents read from disk with the
+     * end-seqno/start-seqno of the collection.
+     * For example if the eraser finds a fruit collection event system key
+     * (delete or create) and it is a match for start or end, then that means
+     * the eraser has finished processing the seqno span in which logically
+     * deleted keys lived and it's time to call completeDeletion
+     *
+     * @return  endSeqno == bySeqno || startSeqno == bySeqno
+     */
+    bool shouldCompleteDeletion(int64_t bySeqno) const {
+        return isDeleting() && (endSeqno == bySeqno || startSeqno == bySeqno);
+    }
+
+    /**
      * Inform the collection that all items of the collection up to endSeqno
      * have been deleted.
      *

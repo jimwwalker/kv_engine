@@ -111,7 +111,8 @@ private:
      */
     static const cb::const_byte_buffer::iterator findCollection(
             const ::DocKey& key, const std::string& separator) {
-        if (key.size() == 0 || separator.size() == 0 ||
+        if (key.getDocNamespace() == DocNamespace::DefaultCollection ||
+            key.size() == 0 || separator.size() == 0 ||
             separator.size() > key.size()) {
             return nullptr;
         }
@@ -121,6 +122,7 @@ private:
         // ensure we skip character 0 to correctly split the key.
         const int start = key.getDocNamespace() == DocNamespace::System ? 1 : 0;
 
+        // Lookup the collection within the key
         auto rv = std::search(key.data() + start,
                               key.data() + key.size(),
                               separator.begin(),
