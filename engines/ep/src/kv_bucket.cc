@@ -2500,7 +2500,6 @@ bool KVBucket::collectionsEraseKey(
         bool deleted,
         Collections::VB::EraserContext& eraserContext) {
     auto vb = getVBucket(vbid);
-    boost::optional<cb::const_char_buffer> completedCollection;
     if (!vb) {
         return false;
     }
@@ -2510,6 +2509,9 @@ bool KVBucket::collectionsEraseKey(
     if (!deleted && eraserContext.manageSeparator(key)) {
         return false;
     }
+
+    bool dropKey = false;
+    boost::optional<cb::const_char_buffer> completedCollection;
 
     { // collections read lock scope
         auto collectionsRHandle = vb->lockCollections();
@@ -2526,11 +2528,15 @@ bool KVBucket::collectionsEraseKey(
             case DocNamespace::System:
                 break;
             }
-        } else {
-            return false;
+            // Logically deleted, so drop the key
+            dropKey = true;
         }
 
-        // Now determine if the key represents the end of a collection
+        // Now determine if the key should trigger completeDeletion
+        // 1) If key is a collection delete marker for a deleted collection
+        // 2) If key is a collection create marker for a deleted collection
+        // Case 2 means the collection was deleted and is now open, and we've
+        // processed all keys up to the start of the new open collection.
         completedCollection = collectionsRHandle.shouldCompleteDeletion(key);
     } // read lock dropped as we may need the write lock in next block
 
@@ -2539,7 +2545,7 @@ bool KVBucket::collectionsEraseKey(
         // completeDeletion obtains write access to the manifest
         vb->completeDeletion(completedCollection.get());
     }
-    return true;
+    return dropKey;
 }
 
 std::chrono::seconds KVBucket::getMaxTtl() const {
