@@ -2016,6 +2016,7 @@ void VBucket::deletedOnDiskCbk(const Item& queuedItem, bool deleted) {
     }
 
     if (deleted) {
+        decrementCollectionItemCount(queuedItem.getKey());
         ++stats.totalPersisted;
         ++opsDelete;
     }

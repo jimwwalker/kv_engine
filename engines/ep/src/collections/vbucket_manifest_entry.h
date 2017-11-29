@@ -22,6 +22,7 @@
 #include "systemevent.h"
 
 #include <platform/make_unique.h>
+#include <platform/non_negative_counter.h>
 #include <platform/sized_buffer.h>
 
 #include <memory>
@@ -48,7 +49,8 @@ public:
                   identifier.getName().data(), identifier.getName().size())),
           uid(identifier.getUid()),
           startSeqno(-1),
-          endSeqno(-1) {
+          endSeqno(-1),
+          count(0) {
         // Setters validate the start/end range is valid
         setStartSeqno(_startSeqno);
         setEndSeqno(_endSeqno);
@@ -216,6 +218,18 @@ public:
      */
     SystemEvent completeDeletion();
 
+    void incrementItemCount() const {
+        count++;
+    }
+
+    void decrementItemCount() const {
+        count--;
+    }
+
+    uint64_t getItemCount() const {
+        return count;
+    }
+
 private:
     /**
      * Return a string for use in throwException, returns:
@@ -262,6 +276,10 @@ private:
      */
     int64_t startSeqno;
     int64_t endSeqno;
+
+    /// mutable as we can update this with Read (const) or Write access
+    mutable cb::NonNegativeCounter<uint64_t, cb::ThrowExceptionUnderflowPolicy>
+            count;
 };
 
 std::ostream& operator<<(std::ostream& os, const ManifestEntry& manifestEntry);

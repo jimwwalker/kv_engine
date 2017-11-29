@@ -234,6 +234,22 @@ public:
             return manifest.isLogicallyDeleted(itr, seqno);
         }
 
+        void incrementItemCount() const {
+            // Don't include system events when counting
+            if (key.getDocNamespace() == DocNamespace::System) {
+                return;
+            }
+            return manifest.incrementItemCount(itr);
+        }
+
+        void decrementItemCount() const {
+            // Don't include system events when counting
+            if (key.getDocNamespace() == DocNamespace::System) {
+                return;
+            }
+            return manifest.decrementItemCount(itr);
+        }
+
         /**
          * Function intended for use by the KVBucket collection's eraser code.
          *
@@ -570,6 +586,9 @@ private:
      */
     bool isLogicallyDeleted(const container::const_iterator entry,
                             int64_t seqno) const;
+
+    void incrementItemCount(const container::const_iterator entry) const;
+    void decrementItemCount(const container::const_iterator entry) const;
 
     /**
      * Variant of isLogicallyDeleted where the caller specifies the separator.

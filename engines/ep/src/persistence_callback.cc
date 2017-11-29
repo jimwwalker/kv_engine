@@ -53,6 +53,7 @@ void PersistenceCallback::callback(mutation_result& value) {
                     ++vbucket->opsCreate;
                     vbucket->incrNumTotalItems();
                     vbucket->incrMetaDataDisk(*queuedItem);
+                    vbucket->incrementCollectionItemCount(queuedItem->getKey());
                 } else { // Update in full eviction mode.
                     ++vbucket->opsUpdate;
                 }

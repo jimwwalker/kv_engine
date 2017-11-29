@@ -77,6 +77,7 @@ Manifest::Manifest(const std::string& manifest)
         uid_t uid = makeUid(getJsonEntry(collection, "uid"));
         int64_t startSeqno = std::stoll(getJsonEntry(collection, "startSeqno"));
         int64_t endSeqno = std::stoll(getJsonEntry(collection, "endSeqno"));
+        // uint64_t count = std::stoull(getJsonEntry(collection, "count"));
         std::string collectionName(getJsonEntry(collection, "name"));
         auto& entry = addNewCollectionEntry(
                 {collectionName, uid}, startSeqno, endSeqno);
@@ -401,6 +402,24 @@ bool Manifest::isLogicallyDeleted(const container::const_iterator entry,
         return seqno <= entry->second->getEndSeqno();
     }
     return false;
+}
+
+void Manifest::incrementItemCount(const container::const_iterator entry) const {
+    if (entry == map.end()) {
+        throwException<std::invalid_argument>(__FUNCTION__,
+                                              "iterator is invalid");
+    }
+
+    entry->second->incrementItemCount();
+}
+
+void Manifest::decrementItemCount(const container::const_iterator entry) const {
+    if (entry == map.end()) {
+        throwException<std::invalid_argument>(__FUNCTION__,
+                                              "iterator is invalid");
+    }
+
+    entry->second->decrementItemCount();
 }
 
 boost::optional<cb::const_char_buffer> Manifest::shouldCompleteDeletion(

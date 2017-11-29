@@ -2420,6 +2420,8 @@ bool KVBucket::collectionsEraseKey(
             dropKey = true;
         }
 
+        collectionsRHandle.decrementItemCount();
+
         // Now determine if the key@bySeqno should trigger completeDeletion
         // 1) If key is a collection delete marker for a deleted collection
         // 2) If key is a collection create marker for a deleted collection

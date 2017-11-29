@@ -665,6 +665,16 @@ public:
         return manifest;
     }
 
+    void incrementCollectionItemCount(const DocKey& key) {
+        // Obtain caching read handle
+        lockCollections(key).incrementItemCount();
+    }
+
+    void decrementCollectionItemCount(const DocKey& key) {
+        // Obtain caching read handle
+        lockCollections(key).decrementItemCount();
+    }
+
     static const vbucket_state_t ACTIVE;
     static const vbucket_state_t REPLICA;
     static const vbucket_state_t PENDING;
