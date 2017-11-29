@@ -340,7 +340,10 @@ private:
     std::string completeDeletionAndFlush(const std::string& collection,
                                          int items);
 
-    void storeItems(const std::string& collection, DocNamespace ns, int items);
+    void storeItems(const std::string& collection,
+                    DocNamespace ns,
+                    int items,
+                    cb::engine_errc = cb::engine_errc::success);
 
     /**
      * Create manifest object from jsonManifest and validate if we can write to
@@ -367,17 +370,24 @@ private:
 
 void CollectionsFlushTest::storeItems(const std::string& collection,
                                       DocNamespace ns,
-                                      int items) {
+                                      int items,
+                                      cb::engine_errc expected) {
     for (int ii = 0; ii < items; ii++) {
         std::string key = collection + ":" + std::to_string(ii);
-        store_item(vbid, {key, ns}, "value");
+        store_item(vbid, {key, ns}, "value", 0, {expected});
     }
 }
 
 std::string CollectionsFlushTest::createCollectionAndFlush(
         const std::string& json, const std::string& collection, int items) {
     VBucketPtr vb = store->getVBucket(vbid);
+    // cannot write to collection
+    storeItems(collection,
+               DocNamespace::Collections,
+               items,
+               cb::engine_errc::unknown_collection);
     vb->updateFromManifest(json);
+    // can write to collection
     storeItems(collection, DocNamespace::Collections, items);
     flush_vbucket_to_disk(vbid, 1 + items); // create event + items
     return getManifest(vbid);
@@ -386,16 +396,35 @@ std::string CollectionsFlushTest::createCollectionAndFlush(
 std::string CollectionsFlushTest::deleteCollectionAndFlush(
         const std::string& json, const std::string& collection, int items) {
     VBucketPtr vb = store->getVBucket(vbid);
+    // can still write to collection
     storeItems(collection, DocNamespace::Collections, items);
     vb->updateFromManifest(json);
-    flush_vbucket_to_disk(vbid, 1 + items); // del(create event) + items
+    // cannot write to collection
+    storeItems(collection,
+               DocNamespace::Collections,
+               items,
+               cb::engine_errc::unknown_collection);
+    flush_vbucket_to_disk(vbid, 1 + items); // 1x del(create event) + items
     return getManifest(vbid);
 }
 
 std::string CollectionsFlushTest::completeDeletionAndFlush(
         const std::string& collection, int items) {
     VBucketPtr vb = store->getVBucket(vbid);
-    vb->completeDeletion(collection);
+
+    // complete deletion by triggering the erase of collection (Which calls
+    // completed once it's purged all items of the deleted collection)
+    compaction_ctx compactreq;
+    compactreq.purge_before_ts = 0;
+    compactreq.purge_before_seq = 0;
+    compactreq.drop_deletes = false;
+    compactreq.db_file_id = vbid;
+    store->scheduleCompaction(vbid, compactreq, nullptr);
+    // run the eraser task
+    runNextTask(*task_executor->getLpTaskQ()[WRITER_TASK_IDX],
+                "Compact DB file 0");
+
+    // validate can still write to default
     storeItems("defaultcollection", DocNamespace::DefaultCollection, items);
     flush_vbucket_to_disk(vbid, items); // just the items
     return getManifest(vbid);
@@ -495,9 +524,10 @@ void CollectionsFlushTest::collectionsFlusher(int items) {
     for (auto& f : test) {
         auto m2 = f.function();
         // The manifest should change for each step
-        EXPECT_NE(m1, m2);
+        EXPECT_NE(m1, m2) << "Failed step:" + std::to_string(step) << ", " << m1
+                          << " should not match " << m2;
         EXPECT_TRUE(f.validator(m2))
-                << "Failed step " + std::to_string(step) + " validating " + m2;
+                << "Failed step:" + std::to_string(step) + " validating " + m2;
         m1 = m2;
         step++;
     }
