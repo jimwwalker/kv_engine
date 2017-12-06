@@ -37,16 +37,19 @@
  * @param jsonFilter a buffer containing an optional JSON object to initialise
  *        from
  * @param manifest the Manifest (bucket manifest) to check the filter is valid
+ *        which can be null
  * @throws invalid_argument for input errors (with detailed message)
  */
 Collections::Filter::Filter(boost::optional<const std::string&> jsonFilter,
-                            const Manifest& manifest)
+                            const Manifest* manifest)
     : defaultAllowed(false), passthrough(false), systemEventsAllowed(true) {
-    // If no filter is specified at all, then create a default collection only
-    // filter. This filter means the default collection is streamed
+    // If the jsonFilter is not initialised we are building a filter for a
+    // legacy DCP stream, one which could only ever support $default
     if (!jsonFilter.is_initialized()) {
-        // If $default is a collection, then let's filter it
-        if (manifest.doesDefaultCollectionExist()) {
+        // 1. If there's no manifest, we'll allow the construction, $default may
+        // or may not exist, streamRequest will re-check.
+        // 2. If manifest is specified then we can check for $default.
+        if (!manifest || manifest->doesDefaultCollectionExist()) {
             defaultAllowed = true;
 
             // This filter is for a 'legacy' default only user, so they should
@@ -102,7 +105,7 @@ Collections::Filter::Filter(boost::optional<const std::string&> jsonFilter,
                         ", jsonFilter:" + jsonFilter.get());
             } else {
                 // Can throw..
-                addCollection(collection->valuestring, manifest);
+                addCollection(collection->valuestring, *manifest);
             }
         }
     }

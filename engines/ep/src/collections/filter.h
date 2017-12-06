@@ -21,7 +21,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <memcached/dockey.h>
-#include <platform/sized_buffer.h>
 
 #include <string>
 #include <unordered_map>
@@ -54,11 +53,14 @@ public:
      *   understand collections) then only documents with
      *   DocNamespace::DefaultCollection are allowed.
      *
+     * @params jsonFilter an optional string as described above.
+     * @params manifest pointer to the current manifest, can be null if no
+     *         manifest has been set.
      * @throws invalid_argument if the JSON is invalid or contains unknown
      *         collections.
      */
     Filter(boost::optional<const std::string&> jsonFilter,
-           const Manifest& manifest);
+           const Manifest* manifest);
 
     /**
      * Get the list of collections the filter knows about. Can be empty
