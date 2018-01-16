@@ -41,20 +41,15 @@ BENCHMARK_DEFINE_F(MemoryAllocationStat, AllocNRead1)(benchmark::State& state) {
     if (state.thread_index == 0) {
         stats.reset();
         stats.memoryTrackerEnabled = true;
-        stats.mem_merge_count_threshold = ~1; // Disable counting
-        stats.mem_merge_bytes_threshold = 10240; // only work with bytes alloc
     }
 
-    stats.memAllocated(0); // this ensures TLS is allocated outside of timing
+    stats.memAllocated(0);
     while (state.KeepRunning()) {
         // range = allocations per read
         for (int i = 0; i < state.range(0); i++) {
             // Do this if/else to match the branching needed when we have the
             // corestore version
             if (i == 0) {
-                // Do a merge on the first iteration to ensure consistent merges
-                // on each re-run
-                stats.clearMemUsed();
                 stats.memAllocated(128);
             } else {
                 stats.memAllocated(128);
