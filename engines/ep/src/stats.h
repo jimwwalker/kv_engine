@@ -480,7 +480,7 @@ public:
     size_t mem_merge_count_threshold;
     size_t mem_merge_bytes_threshold;
 
-private:
+protected:
     struct TLMemCounter {
         // accumulated mem
         long long used = 0;
