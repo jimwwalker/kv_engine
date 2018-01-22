@@ -405,6 +405,13 @@ static protocol_binary_response_status dcp_deletion_validator(const Cookie& cook
         return PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED;
     }
 
+    // V2 delete API available?
+    if (cookie.getConnection().isDcpDeleteV2() &&
+        cookie.getConnection().getBucketEngine()->dcp.deletion_v2 == nullptr) {
+        // The attached bucket does not support DCP deletion V"
+        return PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED;
+    }
+
     return verify_common_dcp_restrictions(cookie);
 }
 
