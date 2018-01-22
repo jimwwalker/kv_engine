@@ -88,21 +88,25 @@ void dcp_open_executor(Cookie& cookie) {
                                    connection.selectedBucketIsXattrEnabled();
         const bool dcpNoValue = (flags & DCP_OPEN_NO_VALUE) != 0;
         const bool dcpCollections = (flags & DCP_OPEN_COLLECTIONS) != 0;
+        const bool dcpDeleteTimes =
+                (flags & DCP_OPEN_INCLUDE_DELETE_TIMES) != 0;
         connection.setDcpXattrAware(dcpXattrAware);
         connection.setDcpNoValue(dcpNoValue);
         connection.setDcpCollectionAware(dcpCollections);
+        connection.setDcpDeleteTimeEnabled(dcpDeleteTimes);
 
         // @todo Keeping this as NOTICE while waiting for ns_server
         //       support for xattr over DCP (to make it easier to debug
         ///      see MB-22468
         LOG_NOTICE(
                 &connection,
-                "%u: DCP connection opened successfully. flags:{%s%s%s%s} %s",
+                "%u: DCP connection opened successfully. flags:{%s%s%s%s%s} %s",
                 connection.getId(),
                 dcpNotifier ? "NOTIFIER " : "",
                 dcpXattrAware ? "INCLUDE_XATTRS " : "",
                 dcpNoValue ? "NO_VALUE " : "",
-                dcpCollections ? "COLLECTIONS" : "",
+                dcpCollections ? "COLLECTIONS " : "",
+                dcpDeleteTimes ? "DELETE_TIMES " : "",
                 connection.getDescription().c_str());
 
         audit_dcp_open(&connection);
