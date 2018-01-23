@@ -1455,7 +1455,20 @@ static ENGINE_ERROR_CODE EvpDcpDeletionV2(gsl::not_null<ENGINE_HANDLE*> handle,
                                           uint64_t by_seqno,
                                           uint64_t rev_seqno,
                                           uint32_t delete_time) {
-    // @todo - link through to the consumer API
+    auto engine = acquireEngine(handle);
+    ConnHandler* conn = engine->getConnHandler(cookie);
+    if (conn) {
+        return conn->deletionV2(opaque,
+                                key,
+                                value,
+                                priv_bytes,
+                                datatype,
+                                cas,
+                                vbucket,
+                                by_seqno,
+                                rev_seqno,
+                                delete_time);
+    }
     return ENGINE_DISCONNECT;
 }
 

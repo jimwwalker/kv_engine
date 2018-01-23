@@ -241,7 +241,10 @@ CouchRequest::CouchRequest(const Item& it,
     }
     meta.setCas(it.getCas());
     meta.setFlags(it.getFlags());
-    if (del) {
+
+    // MB-27457: Only deletes with 0 expiry are given a timestamp, otherwise use
+    // what we're given,
+    if (del && it.getExptime() == 0) {
         meta.setExptime(ep_real_time());
     } else {
         meta.setExptime(it.getExptime());
