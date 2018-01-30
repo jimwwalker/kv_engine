@@ -77,6 +77,7 @@ EPStats::EPStats()
       storedValOverhead(0),
       memOverhead(0),
       numItem(0),
+      estimatedTotalMemory(0),
       memoryTrackerEnabled(false),
       forceShutdown(false),
       oom_errors(0),
@@ -125,11 +126,27 @@ EPStats::EPStats()
       dirtyAgeHisto(),
       diskCommitHisto(),
       timingLog(NULL),
-      maxDataSize(DEFAULT_MAX_DATA_SIZE) {
+      maxDataSize(DEFAULT_MAX_DATA_SIZE),
+      memUsedMergeThreshold(0),
+      memUsedMergeThresholdPercent(1) {
 }
 
 EPStats::~EPStats() {
     delete timingLog;
+}
+
+void EPStats::setMaxDataSize(size_t size) {
+    if (size > 0) {
+        maxDataSize.store(size);
+        // threshold is n% of total (but divided by the number of
+        // CoreStore elements, i.e. nCpu)
+        auto pctOfMaxData = (maxDataSize / 100) * memUsedMergeThresholdPercent;
+        memUsedMergeThreshold = pctOfMaxData / coreTotalMemory.size();
+    }
+}
+
+void EPStats::setMemUsedMergeThresholdPercent(int percent) {
+    memUsedMergeThresholdPercent = percent;
 }
 
 void EPStats::memAllocated(size_t sz) {
@@ -141,7 +158,11 @@ void EPStats::memAllocated(size_t sz) {
         return;
     }
 
-    totalMemory.get()->fetch_add(sz);
+    auto& coreMemory = coreTotalMemory.get();
+    auto value = coreMemory->fetch_add(sz);
+    if (checkAndUpdateTotalMemUsed(value + sz)) {
+        coreMemory->store(0);
+    }
 }
 
 void EPStats::memDeallocated(size_t sz) {
@@ -153,5 +174,29 @@ void EPStats::memDeallocated(size_t sz) {
         return;
     }
 
-    totalMemory.get()->fetch_sub(sz);
+    auto& coreMemory = coreTotalMemory.get();
+    auto value = coreMemory->fetch_sub(sz);
+    if (checkAndUpdateTotalMemUsed(value - sz)) {
+        coreMemory->store(0);
+    }
+}
+
+size_t EPStats::getPreciseTotalMemoryUsed() const {
+    if (memoryTrackerEnabled.load()) {
+        size_t total = 0;
+        for (const auto& core : coreTotalMemory) {
+            total += core->load();
+        }
+        return total + getEstimatedTotalMemoryUsed();
+    }
+    return currentSize.load() + memOverhead->load();
+}
+
+bool EPStats::checkAndUpdateTotalMemUsed(int64_t value) {
+    // Check the value to see if we need to update the total
+    if (std::abs(value) > memUsedMergeThreshold) {
+        estimatedTotalMemory->fetch_add(value);
+        return true;
+    }
+    return false;
 }
