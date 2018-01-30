@@ -25,37 +25,50 @@
 
 #include "stats.h"
 
-class TestEpStats : public EPStats {
+class TestEPStats : public EPStats {
 public:
-    void clearMemUsed() {
-        localMemCounter.get()->used = 0;
+    // Allow the forcing of the memUsedMergeThreshold so we can better compare
+    // behaviour with the previous TLS code
+    void setMemUsedMergeThreshold(int64_t value) {
+        memUsedMergeThreshold = value;
+    }
+
+    // Special version for the benchmark which ensures we count from zero again
+    // otherwise we get less consistent merges occuring
+    void memAllocatedClear(size_t sz) {
+        auto& coreMemory = coreTotalMemory.get();
+        coreMemory->store(0);
+        auto value = coreMemory->fetch_add(sz);
+        if (checkAndUpdateTotalMemUsed(value + sz)) {
+            coreMemory->store(0);
+        }
     }
 };
 
 class MemoryAllocationStat : public benchmark::Fixture {
 public:
-    TestEpStats stats;
+    TestEPStats stats;
 };
 
 BENCHMARK_DEFINE_F(MemoryAllocationStat, AllocNRead1)(benchmark::State& state) {
     if (state.thread_index == 0) {
         stats.reset();
         stats.memoryTrackerEnabled = true;
+        // memUsed merge must be 4 times higher so in theory we merge at the
+        // same rate as TLS (because 4 more threads than cores).
+        stats.setMemUsedMergeThreshold(10240*4);
     }
 
-    stats.memAllocated(0);
     while (state.KeepRunning()) {
         // range = allocations per read
         for (int i = 0; i < state.range(0); i++) {
-            // Do this if/else to match the branching needed when we have the
-            // corestore version
             if (i == 0) {
-                stats.memAllocated(128);
+                stats.memAllocatedClear(128);
             } else {
                 stats.memAllocated(128);
             }
         }
-        stats.getTotalMemoryUsed();
+        stats.getEstimatedTotalMemoryUsed();
     }
 }
 

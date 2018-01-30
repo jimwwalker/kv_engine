@@ -513,6 +513,18 @@
                 }
             }
         },
+        "mem_used_merge_threshold_percent" : {
+            "default": "1",
+            "descr": "How many percent of max_data size should we allow the estimated total memory to lag by (EPStats::getEstimatedTotalMemoryUsed)",
+            "dynamic": false,
+            "type": "size_t",
+            "validator": {
+                "range": {
+                    "max": 100,
+                    "min": 0
+                }
+            }
+        },
         "num_reader_threads": {
             "default": "0",
             "descr": "Throttle max number of reader threads",
