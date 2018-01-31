@@ -51,22 +51,29 @@ public:
         return maxDataSize.load();
     }
 
-    void setMaxDataSize(size_t size) {
-        if (size > 0) {
-            maxDataSize.store(size);
-        }
-    }
+    void setMaxDataSize(size_t size);
 
-    size_t getTotalMemoryUsed() {
+    /**
+     * @return a estimated memory used. This is an estimate because memory is
+     * tracked in a CoreStore container and the estimate value is only updated
+     * when certain core thresholds are exceeded. Thus this function returns a
+     * value which may lag behind what getPreciseTotalMemoryUsed function
+     * returns.
+     */
+    size_t getTotalMemoryUsed() const {
         if (memoryTrackerEnabled.load()) {
-            size_t total = 0;
-            for (const auto& core : totalMemory) {
-                total += core->load();
-            }
-            return total;
+            return estimatedTotalMemory->load();
         }
         return currentSize.load() + memOverhead->load();
     }
+
+    /**
+     * @return a "precise" memory used value, this is precise because it will
+     * return the total from each core, which means iterating the CoreStore
+     * container to gather the current core total and summing that with
+     * the current estimate.
+     */
+    size_t getPreciseTotalMemoryUsed() const;
 
     // account for allocated mem
     void memAllocated(size_t sz);
@@ -193,7 +200,12 @@ public:
     //! Total number of Item objects
     cb::CachelinePadded<Counter> numItem;
     //! The total amount of memory used by this bucket (From memory tracking)
-    CoreStore<cb::CachelinePadded<Couchbase::RelaxedAtomic<size_t>>> totalMemory;
+    // This is a signed variable as depending on how/when the thread-local
+    // counters merge their info, this could be negative
+    cb::CachelinePadded<Couchbase::RelaxedAtomic<int64_t>> estimatedTotalMemory;
+    //! The memory tracking by core
+    CoreStore<cb::CachelinePadded<Couchbase::RelaxedAtomic<int64_t>>>
+            coreTotalMemory;
     //! True if the memory usage tracker is enabled.
     std::atomic<bool> memoryTrackerEnabled;
     //! Whether or not to force engine shutdown.
@@ -470,9 +482,20 @@ public:
     // Used by stats logging infrastructure.
     std::ostream *timingLog;
 
-private:
+protected:
+    /**
+     * @return true if the 'global' estimatedTotalMemory was updated with value
+     */
+    bool maybeUpdateEstimatedTotalMemUsed(int64_t value);
+
     //! Max allowable memory size.
     std::atomic<size_t> maxDataSize;
+
+    /**
+     * The threshold at which memAllocated/Deallocated will write their core
+     * local value into the 'global' memory counter (estimatedTotalMemory)
+     */
+    Couchbase::RelaxedAtomic<int64_t> memUsedMergeThreshold;
 };
 
 /**
