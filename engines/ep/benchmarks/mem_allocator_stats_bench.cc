@@ -38,10 +38,9 @@ public:
     void memAllocatedClear(size_t sz) {
         auto& coreMemory = coreTotalMemory.get();
         coreMemory->store(0);
-        auto value = coreMemory->fetch_add(sz);
-        if (maybeUpdateEstimatedTotalMemUsed(value + sz)) {
-            coreMemory->store(0);
-        }
+        auto value = coreMemory->fetch_add(sz) + sz;
+
+        maybeUpdateEstimatedTotalMemUsed(*coreMemory, value);
     }
 };
 

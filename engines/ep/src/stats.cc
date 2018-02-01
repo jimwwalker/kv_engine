@@ -152,11 +152,12 @@ void EPStats::memAllocated(size_t sz) {
     }
 
     auto& coreMemory = coreTotalMemory.get();
-    auto value = coreMemory->fetch_add(sz);
-    if (maybeUpdateEstimatedTotalMemUsed(value + sz)) {
-        // The core local memory value was consumed, so zero it out
-        coreMemory->store(0);
-    }
+
+    // Update the coreMemory and also create a local copy of the old value + sz
+    // This value will be used to check the threshold
+    auto value = coreMemory->fetch_add(sz) + sz;
+
+    maybeUpdateEstimatedTotalMemUsed(*coreMemory, value);
 }
 
 void EPStats::memDeallocated(size_t sz) {
@@ -169,10 +170,20 @@ void EPStats::memDeallocated(size_t sz) {
     }
 
     auto& coreMemory = coreTotalMemory.get();
-    auto value = coreMemory->fetch_sub(sz);
-    if (maybeUpdateEstimatedTotalMemUsed(value - sz)) {
-        // The core local memory value was consumed, so zero it out
-        coreMemory->store(0);
+
+    // Update the coreMemory and also create a local copy of the old value - sz
+    // This value will be used to check the threshold
+    auto value = coreMemory->fetch_sub(sz) - sz;
+
+    maybeUpdateEstimatedTotalMemUsed(*coreMemory, value);
+}
+
+void EPStats::maybeUpdateEstimatedTotalMemUsed(
+        Couchbase::RelaxedAtomic<int64_t>& coreMemory, int64_t value) {
+    // If this thread succeeds in swapping, this thread updates total
+    if (std::abs(value) > memUsedMergeThreshold) {
+        // Swap the core's value to 0 and update total with whatever we got
+        estimatedTotalMemory->fetch_add(coreMemory.exchange(0));
     }
 }
 
@@ -185,15 +196,4 @@ size_t EPStats::getPreciseTotalMemoryUsed() const {
         return total + getTotalMemoryUsed();
     }
     return currentSize.load() + memOverhead->load();
-}
-
-bool EPStats::maybeUpdateEstimatedTotalMemUsed(int64_t value) {
-    // value should be one of the CoreLocal memUsed trackers, if that CoreLocal
-    // is now tracking more than our threshold, consume it into the 'global'
-    // total.
-    if (std::abs(value) > memUsedMergeThreshold) {
-        estimatedTotalMemory->fetch_add(value);
-        return true;
-    }
-    return false;
 }

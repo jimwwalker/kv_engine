@@ -484,9 +484,17 @@ public:
 
 protected:
     /**
-     * @return true if the 'global' estimatedTotalMemory was updated with value
+     * Check abs(value) against memUsedMergeThreshold, if it is greater then
+     * The thread will attempt to reset coreMemory to zero. If the thread
+     * succesfully resets coreMemory to zero than value is accumulated into
+     * estimatedTotalMemory
+     * @param coreMemory reference to the atomic int64 that the thread is
+     *        associated with.
+     * @param value The expected value of coreMemory for cmpxchg purposes and
+     *        also the value which may be added into estimatedTotalMemory.
      */
-    bool maybeUpdateEstimatedTotalMemUsed(int64_t value);
+    void maybeUpdateEstimatedTotalMemUsed(
+            Couchbase::RelaxedAtomic<int64_t>& coreMemory, int64_t value);
 
     //! Max allowable memory size.
     std::atomic<size_t> maxDataSize;
