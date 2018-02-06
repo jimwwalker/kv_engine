@@ -115,7 +115,8 @@ Collections::Filter::Filter(boost::optional<const std::string&> jsonFilter,
     } else {
         for (int ii = 0; ii < cJSON_GetArraySize(jsonCollections); ii++) {
             auto collection = cJSON_GetArrayItem(jsonCollections, ii);
-            if (!collection || collection->type != cJSON_String) {
+            if (!(collection && (collection->type == cJSON_String ||
+                                 collection->type == cJSON_Object))) {
                 throw cb::engine_error(
                         cb::engine_errc::invalid_arguments,
                         "Filter::Filter cannot find "
@@ -126,10 +127,23 @@ Collections::Filter::Filter(boost::optional<const std::string&> jsonFilter,
                                          : std::to_string(collection->type)) +
                                 ", jsonFilter:" + jsonFilter.get());
             } else {
-                // Can throw..
-                addCollection(collection->valuestring, *manifest);
+                if (collection->type == cJSON_String) {
+                    // Can throw..
+                    addCollection(collection->valuestring, *manifest);
+                } else {
+                    addCollection(collection, *manifest);
+                }
             }
         }
+    }
+
+    // Validate that the input hasn't mixed and matched name/uid vs name
+    // require one or the other.
+    if (isUidFilter() && isNameFilter()) {
+        throw cb::engine_error(
+                cb::engine_errc::invalid_arguments,
+                "Filter::Filter mixed name/uid not allowed jsonFilter:" +
+                        jsonFilter.get());
     }
 }
 
@@ -144,13 +158,50 @@ void Collections::Filter::addCollection(const char* collection,
                                    "Filter::addCollection no $default");
         }
     } else {
-        if (manifest.find(collection) != manifest.end()) {
-            filter.push_back(collection);
+        auto itr = manifest.find(collection);
+        if (itr != manifest.end()) {
+            nameFound = true;
+            filter.push_back({collection, {}});
         } else {
             throw cb::engine_error(cb::engine_errc::unknown_collection,
                                    "Filter::addCollection unknown collection:" +
                                            std::string(collection));
         }
+    }
+}
+
+void Collections::Filter::addCollection(cJSON* object,
+                                        const Manifest& manifest) {
+    auto jsonName = cJSON_GetObjectItem(object, "name");
+    auto jsonUID = cJSON_GetObjectItem(object, "uid");
+
+    if (!jsonName || jsonName->type != cJSON_String) {
+        throw cb::engine_error(
+                cb::engine_errc::invalid_arguments,
+                "Filter::Filter invalid collection name:" +
+                        (!jsonName ? "nullptr"
+                                   : std::to_string(jsonName->type)));
+    }
+
+    if (!jsonUID || jsonUID->type != cJSON_String) {
+        throw cb::engine_error(
+                cb::engine_errc::invalid_arguments,
+                "Filter::Filter invalid collection uid:" +
+                        (!jsonUID ? "nullptr" : std::to_string(jsonUID->type)));
+    }
+
+    auto entry = manifest.find(
+            {{jsonName->valuestring}, makeUid(jsonUID->valuestring)});
+
+    if (entry == manifest.end()) {
+        throw cb::engine_error(
+                cb::engine_errc::unknown_collection,
+                "Filter::Filter: cannot add unknown collection:" +
+                        std::string(jsonName->valuestring) + ":" +
+                        std::string(jsonUID->valuestring));
+    } else {
+        uidFound = true;
+        filter.push_back({cb::to_string(entry->getName()), {entry->getUid()}});
     }
 }
 
@@ -166,7 +217,11 @@ std::ostream& Collections::operator<<(std::ostream& os,
        << ", systemEventsAllowed:" << filter.systemEventsAllowed
        << ", filter.size:" << filter.filter.size() << std::endl;
     for (const auto& entry : filter.filter) {
-        os << entry << std::endl;
+        os << entry.first;
+        if (entry.second.is_initialized()) {
+            os << ":" << entry.second.get();
+        }
+        os << std::endl;
     }
     return os;
 }
