@@ -27,6 +27,7 @@
 #include <platform/non_negative_counter.h>
 #include <relaxed_atomic.h>
 
+#include <algorithm>
 #include <atomic>
 
 /**
@@ -77,18 +78,18 @@ public:
      */
     size_t getEstimatedTotalMemoryUsed() const {
         if (memoryTrackerEnabled.load()) {
-            return estimatedTotalMemory->load();
+            // Don't allow a negative result to be exposed
+            return size_t(std::max(int64_t(0), estimatedTotalMemory->load()));
         }
         return currentSize.load() + memOverhead->load();
     }
 
     /**
-     * @return a "precise" memory used value, this is precise because it will
-     * return the total from each core, which means iterating the CoreStore
-     * container to gather the current core total and summing that with
-     * the current estimate.
+     * @return a "precise" memory used value. Calling this method triggers a
+     * merge of all core local counters into the estimate, which means setting
+     * each core local counter to zero (hence non const).
      */
-    size_t getPreciseTotalMemoryUsed() const;
+    size_t getPreciseTotalMemoryUsed();
 
     // account for allocated mem
     void memAllocated(size_t sz);

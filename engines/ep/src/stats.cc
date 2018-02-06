@@ -201,13 +201,12 @@ void EPStats::maybeUpdateEstimatedTotalMemUsed(
     }
 }
 
-size_t EPStats::getPreciseTotalMemoryUsed() const {
+size_t EPStats::getPreciseTotalMemoryUsed() {
     if (memoryTrackerEnabled.load()) {
-        size_t total = 0;
-        for (const auto& core : coreTotalMemory) {
-            total += core->load();
+        for (auto& core : coreTotalMemory) {
+            estimatedTotalMemory->fetch_add(core->exchange(0));
         }
-        return total + getEstimatedTotalMemoryUsed();
+        return estimatedTotalMemory->load();
     }
     return currentSize.load() + memOverhead->load();
 }
