@@ -2525,6 +2525,7 @@ bool KVBucket::collectionsEraseKey(
             case DocNamespace::DefaultCollection:
             case DocNamespace::Collections:
                 vb->decrNumTotalItems();
+                collectionsRHandle.decrementDiskCount();
                 break;
             case DocNamespace::System:
                 break;

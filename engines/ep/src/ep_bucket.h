@@ -55,7 +55,7 @@ public:
      */
     void setFlusherBatchSplitTrigger(size_t limit);
 
-    void commit(KVStore& kvstore, const Item* collectionsManifest);
+    void commit(KVStore& kvstore, const CollectionsFlushContext& cfc);
 
     /// Start the Flusher for all shards in this bucket.
     void startFlusher();

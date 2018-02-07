@@ -217,7 +217,7 @@ public:
      *        Can be nullptr if the commit has no manifest to write.
      * @return true if the commit is completed successfully.
      */
-    bool commit(const Item* collectionsManifest) override;
+    bool commit(const CollectionsFlushContext& cfc) override;
 
     /**
      * Rollback a transaction (unless not currently in one).
@@ -520,7 +520,7 @@ protected:
     void operator=(const CouchKVStore &from);
 
     void close();
-    bool commit2couchstore(const Item* collectionsManifest);
+    bool commit2couchstore(const CollectionsFlushContext& cfc);
 
     uint64_t checkNewRevNum(std::string &dbname, bool newFile = false);
     void populateFileNameMap(std::vector<std::string> &filenames,
@@ -554,7 +554,7 @@ protected:
                                 const std::vector<Doc*>& docs,
                                 std::vector<DocInfo*>& docinfos,
                                 kvstats_ctx& kvctx,
-                                const Item* collectionsManifest);
+                                const CollectionsFlushContext& cfc);
 
     void commitCallback(std::vector<CouchRequest *> &committedReqs,
                         kvstats_ctx &kvctx,
@@ -582,6 +582,13 @@ protected:
      *         manifest is present.
      */
     std::string readCollectionsManifest(Db& db);
+
+    void countCollections(kvstats_ctx& kvctx,
+                          const CollectionsFlushContext& cfc);
+    void saveCollectionCounts(
+            Db* db, std::function<std::pair<std::string, uint64_t>()> getCStat);
+
+    void deleteCollectionCount(Db& db, cb::const_char_buffer name);
 
     void setDocsCommitted(uint16_t docs);
     void closeDatabaseHandle(Db *db);

@@ -43,6 +43,8 @@ std::ostream& Collections::VB::operator<<(
     os << "ManifestEntry: collection:" << manifestEntry.getCollectionName()
        << ", uid:" << manifestEntry.getUid()
        << ", startSeqno:" << manifestEntry.getStartSeqno()
-       << ", endSeqno:" << manifestEntry.getEndSeqno();
+       << ", endSeqno:" << manifestEntry.getEndSeqno()
+       << ", diskCount:" << manifestEntry.getDiskCount();
+
     return os;
 }

@@ -22,6 +22,7 @@
 #include "callbacks.h"
 #include "collections/eraser_context.h"
 #include "collections/scan_context.h"
+#include "collections/vbucket_manifest.h"
 #include "storeddockey.h"
 
 #include <memcached/engine_common.h>
@@ -120,6 +121,7 @@ struct compaction_ctx {
     std::function<bool(
             const DocKey, int64_t, bool, Collections::VB::EraserContext&)>
             collectionsEraser;
+    std::function<std::pair<std::string, uint64_t>()> collectionsCountCb;
 };
 
 /**
@@ -498,6 +500,16 @@ private:
     ConcurrentWriteCompact concWriteCompact;
 };
 
+struct CollectionsFlushContext {
+    const Item* collectionsManifest; // can be null
+    //  Collections::VB::Manifest& manifest;// for stats update // need
+    //  shared_ptr?
+    std::function<std::pair<std::string, uint64_t>()> getCStat;
+    std::function<void(const DocKey, bool, bool)> collectionsCountCb;
+    // collectionsCountCb(request->getKey(), request->isDelete(),
+    // kvctx.keyStats[request->getKey()])
+};
+
 /**
  * Base class representing kvstore operations.
  */
@@ -572,7 +584,7 @@ public:
      *        Can be nullptr if the commit has no manifest to write.
      * @return false if the commit fails
      */
-    virtual bool commit(const Item* collectionsManifest) = 0;
+    virtual bool commit(const CollectionsFlushContext& cfc) = 0;
 
     /**
      * Rollback the current transaction.

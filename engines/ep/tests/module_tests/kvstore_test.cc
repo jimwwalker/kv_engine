@@ -244,7 +244,7 @@ TEST_F(CouchKVStoreTest, CompressedTest) {
         kvstore->set(item, wc);
     }
 
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     auto cb = std::make_shared<GetCallback>(true /*expectcompressed*/);
     auto cl = std::make_shared<KVStoreTestCacheCallback>(1, 5, 0);
@@ -272,7 +272,7 @@ TEST_F(CouchKVStoreTest, StatsTest) {
     WriteCallback wc;
     kvstore->set(item, wc);
 
-    EXPECT_TRUE(kvstore->commit(nullptr /*no collections manifest*/));
+    EXPECT_TRUE(kvstore->commit({nullptr /*no collections manifest*/, {}}));
     // Check statistics are correct.
     std::map<std::string, std::string> stats;
     kvstore->addStats(add_stat_callback, &stats);
@@ -303,7 +303,7 @@ TEST_F(CouchKVStoreTest, CompactStatsTest) {
     WriteCallback wc;
     kvstore->set(item, wc);
 
-    EXPECT_TRUE(kvstore->commit(nullptr /*no collections manifest*/));
+    EXPECT_TRUE(kvstore->commit({nullptr /*no collections manifest*/, {}}));
 
     CompactionConfig compactionConfig;
     compactionConfig.purge_before_seq = 0;
@@ -519,7 +519,7 @@ protected:
         for(const auto& item: items) {
             kvstore->set(item, set_callback);
         }
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     vb_bgfetch_queue_t make_bgfetch_queue() {
@@ -565,7 +565,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, openDB_retry_open_db_ex) {
         EXPECT_CALL(ops, open(_, _, _, _))
             .WillOnce(Return(COUCHSTORE_ERROR_OPEN_FILE)).RetiresOnSaturation();
 
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 }
 
@@ -589,7 +589,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, openDB_open_db_ex) {
         EXPECT_CALL(ops, open(_, _, _, _))
             .WillRepeatedly(Return(COUCHSTORE_ERROR_OPEN_FILE)).RetiresOnSaturation();
 
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 }
 
@@ -613,7 +613,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, commit_save_documents) {
         EXPECT_CALL(ops, pwrite(_, _, _, _, _))
             .WillOnce(Return(COUCHSTORE_ERROR_WRITE)).RetiresOnSaturation();
 
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
 }
@@ -639,7 +639,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, commit_save_local_document) {
             .WillOnce(Return(COUCHSTORE_ERROR_WRITE)).RetiresOnSaturation();
         EXPECT_CALL(ops, pwrite(_, _, _, _, _)).Times(6).RetiresOnSaturation();
 
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
 }
@@ -665,7 +665,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, commit_commit) {
             .WillOnce(Return(COUCHSTORE_ERROR_WRITE)).RetiresOnSaturation();
         EXPECT_CALL(ops, pwrite(_, _, _, _, _)).Times(8).RetiresOnSaturation();
 
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 }
 
@@ -900,7 +900,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_changes_count1) {
     for(const auto item: items) {
         kvstore->begin(std::make_unique<TransactionContext>());
         kvstore->set(item, set_callback);
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     auto rcb(std::make_shared<CustomRBCallback>());
@@ -930,7 +930,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_rewind_header) {
     for(const auto item: items) {
         kvstore->begin(std::make_unique<TransactionContext>());
         kvstore->set(item, set_callback);
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     auto rcb(std::make_shared<CustomRBCallback>());
@@ -962,7 +962,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_changes_count2) {
     for(const auto item: items) {
         kvstore->begin(std::make_unique<TransactionContext>());
         kvstore->set(item, set_callback);
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     auto rcb(std::make_shared<CustomRBCallback>());
@@ -992,7 +992,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, readVBState_open_local_document) {
     for(const auto item: items) {
         kvstore->begin(std::make_unique<TransactionContext>());
         kvstore->set(item, set_callback);
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     auto rcb(std::make_shared<CustomRBCallback>());
@@ -1281,7 +1281,7 @@ TEST_F(CouchstoreTest, noMeta) {
     MockCouchRequest::MetaData meta;
     request->writeMetaData(meta, 0); // no meta!
 
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     GetValue gv = kvstore->get(key, 0);
     checkGetValue(gv, ENGINE_TMPFAIL);
@@ -1297,7 +1297,7 @@ TEST_F(CouchstoreTest, shortMeta) {
     // Now directly mess with the metadata of the value which will be written
     MockCouchRequest::MetaData meta;
     request->writeMetaData(meta, 4); // not enough meta!
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     GetValue gv = kvstore->get(key, 0);
     checkGetValue(gv, ENGINE_TMPFAIL);
@@ -1319,7 +1319,7 @@ TEST_F(CouchstoreTest, testV0MetaThings) {
     WriteCallback wc;
     kvstore->begin(std::make_unique<TransactionContext>());
     kvstore->set(item, wc);
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     MockedGetCallback<GetValue> gc;
     EXPECT_CALL(gc, status(ENGINE_SUCCESS));
@@ -1348,7 +1348,7 @@ TEST_F(CouchstoreTest, testV1MetaThings) {
     WriteCallback wc;
     kvstore->begin(std::make_unique<TransactionContext>());
     kvstore->set(item, wc);
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     MockedGetCallback<GetValue> gc;
     EXPECT_CALL(gc, status(ENGINE_SUCCESS));
@@ -1374,7 +1374,7 @@ TEST_F(CouchstoreTest, fuzzV0) {
     meta.expiry = 0xaa00bb11;
     meta.flags = 0x01020304;
     request->writeMetaData(meta, MockCouchRequest::MetaData::sizeofV0);
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     // CAS is byteswapped when read back
     MockedGetCallback<GetValue> gc;
@@ -1402,7 +1402,7 @@ TEST_F(CouchstoreTest, fuzzV1) {
     meta.ext1 = 2;
     meta.ext2 = 33;
     request->writeMetaData(meta, MockCouchRequest::MetaData::sizeofV1);
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
     MockedGetCallback<GetValue> gc;
     uint8_t expectedDataType = 33;
     EXPECT_CALL(gc, status(ENGINE_SUCCESS));
@@ -1442,7 +1442,7 @@ TEST_F(CouchstoreTest, testV0WriteReadWriteRead) {
     request->writeMetaData(meta, MockCouchRequest::MetaData::sizeofV0);
 
     // Commit it
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     // Read back, are V1 fields sane?
     MockedGetCallback<GetValue> gc;
@@ -1457,7 +1457,7 @@ TEST_F(CouchstoreTest, testV0WriteReadWriteRead) {
     // Write back the item we read (this will write out V1 meta)
     kvstore->begin(std::make_unique<TransactionContext>());
     kvstore->set(*gc.getValue(), wc);
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     // Read back, is conf_res_mode sane?
     MockedGetCallback<GetValue> gc2;
@@ -1503,7 +1503,7 @@ TEST_F(CouchstoreTest, testV2WriteRead) {
     request->writeMetaData(meta, MockCouchRequest::MetaData::sizeofV2);
 
     // Commit it
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     // Read back successful, the extra byte will of been dropped.
     MockedGetCallback<GetValue> gc;
@@ -1553,7 +1553,7 @@ TEST_F(CouchstoreTest, testV0CompactionUpgrade) {
     request->writeMetaData(meta, MockCouchRequest::MetaData::sizeofV0);
 
     // Commit it
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     CompactionConfig config;
     compaction_ctx cctx(config, 0);
@@ -1606,7 +1606,7 @@ TEST_F(CouchstoreTest, testV2CompactionUpgrade) {
     request->writeMetaData(meta, MockCouchRequest::MetaData::sizeofV2);
 
     // Commit it
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     CompactionConfig config;
     compaction_ctx cctx(config, 0);
@@ -1876,7 +1876,7 @@ TEST_P(KVStoreParamTest, BasicTest) {
     WriteCallback wc;
     kvstore->set(item, wc);
 
-    EXPECT_TRUE(kvstore->commit(nullptr /*no collections manifest*/));
+    EXPECT_TRUE(kvstore->commit({nullptr /*no collections manifest*/, {}}));
 
     GetValue gv = kvstore->get(key, 0);
     checkGetValue(gv);
@@ -1897,7 +1897,7 @@ TEST_P(KVStoreParamTest, TestPersistenceCallbacksForSet) {
     // Expect that the SET callback will be called once after `commit`
     EXPECT_CALL(mpc, callback(_, result)).Times(1);
 
-    EXPECT_TRUE(kvstore->commit(nullptr /*no collections manifest*/));
+    EXPECT_TRUE(kvstore->commit({nullptr /*no collections manifest*/, {}}));
 }
 
 TEST_P(KVStoreParamTest, TestPersistenceCallbacksForDel) {
@@ -1910,7 +1910,7 @@ TEST_P(KVStoreParamTest, TestPersistenceCallbacksForDel) {
     NiceMock<MockPersistenceCallbacks> mpc;
     kvstore->begin(std::make_unique<TransactionContext>());
     kvstore->set(item, mpc);
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
     kvstore->begin(std::make_unique<TransactionContext>());
 
     // Expect that the DEL callback will not be called just after `del`
@@ -1923,7 +1923,7 @@ TEST_P(KVStoreParamTest, TestPersistenceCallbacksForDel) {
     // Expect that the DEL callback will be called once after `commit`
     EXPECT_CALL(mpc, callback(_, delCount)).Times(1);
 
-    EXPECT_TRUE(kvstore->commit(nullptr /*no collections manifest*/));
+    EXPECT_TRUE(kvstore->commit({nullptr /*no collections manifest*/, {}}));
 }
 
 TEST_P(KVStoreParamTest, TestDataStoredInTheRightVBucket) {
@@ -1951,7 +1951,7 @@ TEST_P(KVStoreParamTest, TestDataStoredInTheRightVBucket) {
                   -1 /*bySeqno*/,
                   vbid);
         kvstore->set(item, wc);
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     // Check that each item has been stored in the right VBucket
@@ -1985,7 +1985,7 @@ TEST_P(KVStoreParamTest, DelVBucketConcurrentOperationsTest) {
         for (int i = 0; i < 10; i++) {
             kvstore->begin(std::make_unique<TransactionContext>());
             kvstore->set(item, wc);
-            kvstore->commit(nullptr /*no collections manifest*/);
+            kvstore->commit({nullptr /*no collections manifest*/, {}});
         }
     };
     auto delVBucket = [&] {
@@ -2020,7 +2020,7 @@ TEST_P(KVStoreParamTest, CompactAndScan) {
         kvstore->set(
                 make_item(0, makeStoredDocKey(std::string(i, 'k')), "value"),
                 wc);
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
     }
 
     ThreadGate tg(3);
@@ -2089,7 +2089,7 @@ TEST_P(KVStoreParamTest, HighSeqnoCorrectlyStoredForCommitBatch) {
                   vbid);
         kvstore->set(item, wc);
     }
-    kvstore->commit(nullptr /*no collections manifest*/);
+    kvstore->commit({nullptr /*no collections manifest*/, {}});
 
     GetValue gv = kvstore->get(makeStoredDocKey(key), vbid);
     checkGetValue(gv);

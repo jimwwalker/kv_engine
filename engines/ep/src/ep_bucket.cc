@@ -246,6 +246,23 @@ void EPBucket::reset() {
     vbMap.getShard(EP_PRIMARY_SHARD)->getFlusher()->notifyFlushEvent();
 }
 
+static std::pair<std::string, uint64_t> cStats(
+        Collections::VB::Manifest& manifest) {
+    return manifest.getNextStat();
+}
+
+static void countStats(Collections::VB::Manifest& manifest,
+                       const DocKey key,
+                       bool isDelete,
+                       bool exists) {
+    auto rh = manifest.lock(key);
+    if (isDelete && exists) {
+        rh.decrementDiskCount();
+    } else if (!exists) {
+        rh.incrementDiskCount();
+    }
+}
+
 std::pair<bool, size_t> EPBucket::flushVBucket(uint16_t vbid) {
     KVShard *shard = vbMap.getShardByVbId(vbid);
     if (diskDeleteAll && !deleteAllTaskCtx.delay) {
@@ -414,12 +431,21 @@ std::pair<bool, size_t> EPBucket::flushVBucket(uint16_t vbid) {
              * Or if there is a manifest item
              */
             if (items_flushed > 0 || sef.getCollectionsManifestItem()) {
-                commit(*rwUnderlying, sef.getCollectionsManifestItem());
+                auto& m = vb->getManifest();
+                commit(*rwUnderlying,
+                       {sef.getCollectionsManifestItem(),
+                        {std::bind(&cStats, std::ref(m))},
+                        {std::bind(&countStats,
+                                   std::ref(m),
+                                   std::placeholders::_1 /*DocKey*/,
+                                   std::placeholders::_2 /*bool*/,
+                                   std::placeholders::_3 /*bool*/)}});
 
                 // Now the commit is complete, vBucket file must exist.
                 if (vb->setBucketCreation(false)) {
                     LOG(EXTENSION_LOG_INFO, "VBucket %" PRIu16 " created", vbid);
                 }
+                m.clearMutated();
             }
 
             if (vb->rejectQueue.empty()) {
@@ -474,12 +500,12 @@ void EPBucket::setFlusherBatchSplitTrigger(size_t limit) {
     flusherBatchSplitTrigger = limit;
 }
 
-void EPBucket::commit(KVStore& kvstore, const Item* collectionsManifest) {
+void EPBucket::commit(KVStore& kvstore, const CollectionsFlushContext& cfc) {
     auto& pcbs = kvstore.getPersistenceCbList();
     BlockTimer timer(&stats.diskCommitHisto, "disk_commit", stats.timingLog);
     auto commit_start = ProcessClock::now();
 
-    while (!kvstore.commit(collectionsManifest)) {
+    while (!kvstore.commit(cfc)) {
         ++stats.commitFailed;
         LOG(EXTENSION_LOG_WARNING,
             "KVBucket::commit: kvstore.commit failed!!! Retry in 1 sec...");
@@ -705,6 +731,9 @@ void EPBucket::compactInternal(const CompactionConfig& config,
                                       std::placeholders::_2,
                                       std::placeholders::_3,
                                       std::placeholders::_4);
+
+    ctx.collectionsCountCb = std::bind(
+            &cStats, std::ref(getVBucket(config.db_file_id)->getManifest()));
 
     KVShard* shard = vbMap.getShardByVbId(config.db_file_id);
     KVStore* store = shard->getRWUnderlying();

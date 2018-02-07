@@ -993,6 +993,10 @@ bool CouchKVStore::compactDBInternal(compaction_ctx* hook_ctx,
         return false;
     }
 
+    if (hook_ctx->collectionsCountCb) {
+        saveCollectionCounts(compactdb, hook_ctx->collectionsCountCb);
+    }
+
     // Close the source Database File once compaction is done
     compactdb.close();
 
@@ -1174,14 +1178,14 @@ StorageProperties CouchKVStore::getStorageProperties() {
     return rv;
 }
 
-bool CouchKVStore::commit(const Item* collectionsManifest) {
+bool CouchKVStore::commit(const CollectionsFlushContext& cfc) {
     if (isReadOnly()) {
         throw std::logic_error("CouchKVStore::commit: Not valid on a read-only "
                         "object.");
     }
 
     if (intransaction) {
-        if (commit2couchstore(collectionsManifest)) {
+        if (commit2couchstore(cfc)) {
             intransaction = false;
             transactionCtx.reset();
         }
@@ -1858,18 +1862,18 @@ int CouchKVStore::recordDbDump(Db *db, DocInfo *docinfo, void *ctx) {
     return COUCHSTORE_SUCCESS;
 }
 
-bool CouchKVStore::commit2couchstore(const Item* collectionsManifest) {
+bool CouchKVStore::commit2couchstore(const CollectionsFlushContext& cfc) {
     bool success = true;
 
     size_t pendingCommitCnt = pendingReqsQ.size();
-    if (pendingCommitCnt == 0 && !collectionsManifest) {
+    if (pendingCommitCnt == 0 && !cfc.collectionsManifest) {
         return success;
     }
 
     // Use the vbucket of the first item or the manifest item
     uint16_t vbucket2flush = pendingCommitCnt
                                      ? pendingReqsQ[0]->getVBucketId()
-                                     : collectionsManifest->getVBucketId();
+                                     : cfc.collectionsManifest->getVBucketId();
 
     TRACE_EVENT2("CouchKVStore",
                  "commit2couchstore",
@@ -1880,13 +1884,13 @@ bool CouchKVStore::commit2couchstore(const Item* collectionsManifest) {
 
     // When an item and a manifest are present, vbucket2flush is read from the
     // item. Check it matches the manifest
-    if (pendingCommitCnt && collectionsManifest &&
-        vbucket2flush != collectionsManifest->getVBucketId()) {
+    if (pendingCommitCnt && cfc.collectionsManifest &&
+        vbucket2flush != cfc.collectionsManifest->getVBucketId()) {
         throw std::logic_error(
                 "CouchKVStore::commit2couchstore: manifest/item vbucket "
                 "mismatch vbucket2flush:" +
                 std::to_string(vbucket2flush) + " manifest vb:" +
-                std::to_string(collectionsManifest->getVBucketId()));
+                std::to_string(cfc.collectionsManifest->getVBucketId()));
     }
 
     std::vector<Doc*> docs(pendingCommitCnt);
@@ -1910,7 +1914,7 @@ bool CouchKVStore::commit2couchstore(const Item* collectionsManifest) {
     kvstats_ctx kvctx(configuration.shouldPersistDocNamespace());
     // flush all
     couchstore_error_t errCode =
-            saveDocs(vbucket2flush, docs, docinfos, kvctx, collectionsManifest);
+            saveDocs(vbucket2flush, docs, docinfos, kvctx, cfc);
 
     if (errCode) {
         success = false;
@@ -1954,7 +1958,7 @@ couchstore_error_t CouchKVStore::saveDocs(uint16_t vbid,
                                           const std::vector<Doc*>& docs,
                                           std::vector<DocInfo*>& docinfos,
                                           kvstats_ctx& kvctx,
-                                          const Item* collectionsManifest) {
+                                          const CollectionsFlushContext& cfc) {
     couchstore_error_t errCode;
     DbInfo info;
     DbHolder db(*this);
@@ -2017,6 +2021,11 @@ couchstore_error_t CouchKVStore::saveDocs(uint16_t vbid,
             }
         }
 
+        if (cfc.collectionsCountCb && cfc.getCStat) {
+            countCollections(kvctx, cfc);
+            saveCollectionCounts(db, cfc.getCStat);
+        }
+
         errCode = saveVBState(db, *state);
         if (errCode != COUCHSTORE_SUCCESS) {
             logger.log(EXTENSION_LOG_WARNING,
@@ -2026,8 +2035,8 @@ couchstore_error_t CouchKVStore::saveDocs(uint16_t vbid,
             return errCode;
         }
 
-        if (collectionsManifest) {
-            saveCollectionsManifest(*db, *collectionsManifest);
+        if (cfc.collectionsManifest) {
+            saveCollectionsManifest(*db, *cfc.collectionsManifest);
         }
 
         auto cs_begin = ProcessClock::now();
@@ -2324,6 +2333,15 @@ couchstore_error_t CouchKVStore::saveCollectionsManifest(
                    couchkvstore_strerrno(&db, errCode).c_str());
     }
 
+    std::string k((char*)collectionsManifest.getKey().data(),
+                  collectionsManifest.getKey().size());
+
+    if (collectionsManifest.isDeleted()) {
+        auto key = Collections::DocKey::make(collectionsManifest.getKey());
+        // Wipe out _collection/<coll> stats gone
+        deleteCollectionCount(db, key.getKey());
+    }
+
     return errCode;
 }
 
@@ -2350,6 +2368,66 @@ std::string CouchKVStore::readCollectionsManifest(Db& db) {
     }
 
     return {lDoc.getLocalDoc()->json.buf, lDoc.getLocalDoc()->json.size};
+}
+
+void CouchKVStore::countCollections(kvstats_ctx& kvctx,
+                                    const CollectionsFlushContext& cfc) {
+    for (const auto& request : pendingReqsQ) {
+        cfc.collectionsCountCb(request->getKey(),
+                               request->isDelete(),
+                               kvctx.keyStats[request->getKey()]);
+    }
+}
+
+void CouchKVStore::saveCollectionCounts(
+        Db* db, std::function<std::pair<std::string, uint64_t>()> getCStat) {
+    auto cStats = getCStat();
+    while (!cStats.first.empty()) {
+        // Write out the count to a local doc named after the collection
+        cStats.first = "_collection/" + cStats.first;
+        LocalDoc lDoc;
+        lDoc.id.buf = (char*)cStats.first.c_str();
+        lDoc.id.size = cStats.first.size();
+        lDoc.json.buf = reinterpret_cast<char*>(&cStats.second);
+        lDoc.json.size = sizeof(cStats.second);
+        lDoc.deleted = 0;
+
+        auto errCode = couchstore_save_local_document(db, &lDoc);
+
+        if (errCode != COUCHSTORE_SUCCESS) {
+            logger.log(EXTENSION_LOG_WARNING,
+                       "CouchKVStore::saveCollectionCounts "
+                       "couchstore_save_local_document "
+                       "error:%s [%s]",
+                       couchstore_strerror(errCode),
+                       couchkvstore_strerrno(db, errCode).c_str());
+        }
+        cStats = getCStat();
+    }
+}
+
+void CouchKVStore::deleteCollectionCount(Db& db, cb::const_char_buffer name) {
+    std::string docName =
+            "_collection/" + std::string(name.data(), name.size());
+    LocalDoc lDoc;
+    lDoc.id.buf = (char*)docName.c_str();
+    lDoc.id.size = docName.size();
+
+    uint64_t count = 0;
+    lDoc.json.buf = reinterpret_cast<char*>(&count);
+    lDoc.json.size = sizeof(count);
+    lDoc.deleted = 1;
+
+    auto errCode = couchstore_save_local_document(&db, &lDoc);
+
+    if (errCode != COUCHSTORE_SUCCESS) {
+        logger.log(EXTENSION_LOG_WARNING,
+                   "CouchKVStore::deleteCollectionCount "
+                   "couchstore_save_local_document "
+                   "error:%s [%s]",
+                   couchstore_strerror(errCode),
+                   couchkvstore_strerrno(&db, errCode).c_str());
+    }
 }
 
 int CouchKVStore::getMultiCb(Db *db, DocInfo *docinfo, void *ctx) {

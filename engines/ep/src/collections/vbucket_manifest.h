@@ -27,8 +27,10 @@
 #include <platform/rwlock.h>
 #include <platform/sized_buffer.h>
 
+#include <functional>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 class VBucket;
 
@@ -152,6 +154,10 @@ public:
             return manifest.getManifestUid();
         }
 
+        uint64_t getItemCount(cb::const_char_buffer collection) const {
+            return manifest.getItemCount(collection);
+        }
+
         /**
          * Dump the manifest to std::cerr
          */
@@ -244,6 +250,24 @@ public:
         /// @return the manifest UID that last updated this vb::manifest
         uid_t getManifestUid() const {
             return manifest.getManifestUid();
+        }
+
+        /// increment the key's collection item count
+        void incrementDiskCount() const {
+            // We don't include system events when counting
+            if (key.getDocNamespace() == DocNamespace::System) {
+                return;
+            }
+            return manifest.incrementDiskCount(itr);
+        }
+
+        /// decrement the key's collection item count
+        void decrementDiskCount() const {
+            // We don't include system events when counting
+            if (key.getDocNamespace() == DocNamespace::System) {
+                return;
+            }
+            return manifest.decrementDiskCount(itr);
         }
 
         /**
@@ -440,6 +464,11 @@ public:
         return {*this, rwlock};
     }
 
+    std::pair<std::string, uint64_t> getNextStat();
+    void clearMutated() {
+        mutated.clear();
+    }
+
     /**
      * Return a std::string containing a JSON representation of a
      * VBucket::Manifest. The input is an Item previously created for an event
@@ -602,6 +631,26 @@ private:
     bool isLogicallyDeleted(const container::const_iterator entry,
                             int64_t seqno) const;
 
+    void incrementDiskCount(const container::const_iterator entry) const {
+        if (entry == map.end()) {
+            throwException<std::invalid_argument>(__FUNCTION__,
+                                                  "iterator is invalid");
+        }
+
+        entry->second->incrementDiskCount();
+        mutated.insert(entry->second.get());
+    }
+
+    void decrementDiskCount(const container::const_iterator entry) const {
+        if (entry == map.end()) {
+            throwException<std::invalid_argument>(__FUNCTION__,
+                                                  "iterator is invalid");
+        }
+
+        entry->second->decrementDiskCount();
+        mutated.insert(entry->second.get());
+    }
+
     /**
      * Variant of isLogicallyDeleted where the caller specifies the separator.
      *
@@ -674,6 +723,11 @@ private:
     bool exists(cb::const_char_buffer collection) const {
         return map.count(collection) > 0;
     }
+
+    /**
+     * @return the number of items stored for collection
+     */
+    uint64_t getItemCount(cb::const_char_buffer collection) const;
 
     container::const_iterator end() const {
         return map.end();
@@ -919,6 +973,12 @@ protected:
 
     /// The manifest UID which updated this vb::manifest
     uid_t manifestUid;
+
+    /// this is VB granularity and the flusher is updating this member
+    /// hence only 1 thread is affecting this member so no lock is required
+    mutable std::unordered_set<ManifestEntry*> mutated;
+    std::unordered_set<ManifestEntry*>::iterator itr;
+    bool started = false;
 
     /**
      * shared lock to allow concurrent readers and safe updates

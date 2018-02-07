@@ -125,7 +125,7 @@ protected:
                       vbid);
             kvstore->set(item, wc);
         }
-        kvstore->commit(nullptr /*no collections manifest*/);
+        kvstore->commit({nullptr /*no collections manifest*/, {}});
         // Just check that the VBucket High Seqno has been updated correctly
         EXPECT_EQ(kvstore->getVBucketState(vbid)->highSeqno, numItems);
     }
