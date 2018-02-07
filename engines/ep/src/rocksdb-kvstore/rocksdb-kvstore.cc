@@ -447,7 +447,7 @@ bool RocksDBKVStore::begin(std::unique_ptr<TransactionContext> txCtx) {
     return in_transaction;
 }
 
-bool RocksDBKVStore::commit(const Item* collectionsManifest) {
+bool RocksDBKVStore::commit(const CollectionsFlushContext& cfc) {
     // This behaviour is to replicate the one in Couchstore.
     // If `commit` is called when not in transaction, just return true.
     if (!in_transaction) {
@@ -471,7 +471,7 @@ bool RocksDBKVStore::commit(const Item* collectionsManifest) {
     auto vbid = commitBatch[0]->getVBucketId();
 
     // Flush all documents to disk
-    auto status = saveDocs(vbid, collectionsManifest, commitBatch);
+    auto status = saveDocs(vbid, cfc, commitBatch);
     if (!status.ok()) {
         logger.log(EXTENSION_LOG_WARNING,
                    "RocksDBKVStore::commit: saveDocs error:%d, "
@@ -1169,7 +1169,7 @@ rocksdb::Status RocksDBKVStore::writeAndTimeBatch(rocksdb::WriteBatch batch) {
 
 rocksdb::Status RocksDBKVStore::saveDocs(
         uint16_t vbid,
-        const Item* collectionsManifest,
+        const CollectionsFlushContext& cfc,
         const std::vector<std::unique_ptr<RocksRequest>>& commitBatch) {
     auto reqsSize = commitBatch.size();
     if (reqsSize == 0) {

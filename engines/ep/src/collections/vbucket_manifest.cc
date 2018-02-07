@@ -34,7 +34,8 @@ Manifest::Manifest(const std::string& manifest)
     : defaultCollectionExists(false),
       separator(DefaultSeparator),
       greatestEndSeqno(StoredValue::state_collection_open),
-      nDeletingCollections(0) {
+      nDeletingCollections(0),
+      itr(mutated.end()) {
     if (manifest.empty()) {
         // Empty manifest, initialise the manifest with the default collection
         addNewCollectionEntry({DefaultCollectionIdentifier, 0},
@@ -80,6 +81,7 @@ Manifest::Manifest(const std::string& manifest)
         uid_t uid = makeUid(getJsonEntry(collection, "uid"));
         int64_t startSeqno = std::stoll(getJsonEntry(collection, "startSeqno"));
         int64_t endSeqno = std::stoll(getJsonEntry(collection, "endSeqno"));
+        // uint64_t count = std::stoull(getJsonEntry(collection, "count"));
         std::string collectionName(getJsonEntry(collection, "name"));
         auto& entry = addNewCollectionEntry(
                 {collectionName, uid}, startSeqno, endSeqno);
@@ -267,6 +269,7 @@ void Manifest::completeDeletion(::VBucket& vb,
     auto uid = itr->second->getUid();
 
     if (se == SystemEvent::DeleteCollectionHard) {
+        mutated.erase(itr->second.get());
         map.erase(itr); // wipe out
     }
 
@@ -726,6 +729,35 @@ std::string Manifest::getExceptionString(const std::string& thrower,
     std::stringstream ss;
     ss << "VB::Manifest:" << thrower << ": " << error << ", this:" << *this;
     return ss.str();
+}
+
+std::pair<std::string, uint64_t> Manifest::getNextStat() {
+    if (!started) {
+        itr = mutated.begin();
+        started = true;
+    } else {
+        itr++;
+    }
+    if (itr == mutated.end()) {
+        started = false;
+        return std::make_pair<std::string, uint64_t>({}, 0);
+    }
+
+    // eh first won't copy the const std::string?
+    return std::make_pair<std::string, uint64_t>(
+            {(*itr)->getCollectionName().c_str()}, (*itr)->getDiskCount());
+}
+
+uint64_t Manifest::getItemCount(cb::const_char_buffer collection) const {
+    auto itr = map.find(collection);
+    if (itr == map.end()) {
+        throwException<std::invalid_argument>(
+                __FUNCTION__,
+                "failed find of collection:" + cb::to_string(collection));
+    }
+    // For now link through to disk count
+    // @todo: ephemeral support
+    return itr->second->getDiskCount();
 }
 
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {

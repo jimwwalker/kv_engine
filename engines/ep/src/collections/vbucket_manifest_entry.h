@@ -22,6 +22,7 @@
 #include "systemevent.h"
 
 #include <platform/make_unique.h>
+#include <platform/non_negative_counter.h>
 #include <platform/sized_buffer.h>
 
 #include <memory>
@@ -48,7 +49,8 @@ public:
                   identifier.getName().data(), identifier.getName().size())),
           uid(identifier.getUid()),
           startSeqno(-1),
-          endSeqno(-1) {
+          endSeqno(-1),
+          diskCount(0) {
         // Setters validate the start/end range is valid
         setStartSeqno(_startSeqno);
         setEndSeqno(_endSeqno);
@@ -216,6 +218,21 @@ public:
      */
     SystemEvent completeDeletion();
 
+    /// increment how many items are stored on disk for this collection
+    void incrementDiskCount() const {
+        diskCount++;
+    }
+
+    /// decrement how many items are stored on disk for this collection
+    void decrementDiskCount() const {
+        diskCount--;
+    }
+
+    /// @return how many items are stored on disk for this collection
+    uint64_t getDiskCount() const {
+        return diskCount;
+    }
+
 private:
     /**
      * Return a string for use in throwException, returns:
@@ -262,6 +279,10 @@ private:
      */
     int64_t startSeqno;
     int64_t endSeqno;
+
+    /// mutable as we can update this with Read (const) or Write access
+    mutable cb::NonNegativeCounter<uint64_t, cb::ThrowExceptionUnderflowPolicy>
+            diskCount;
 };
 
 std::ostream& operator<<(std::ostream& os, const ManifestEntry& manifestEntry);
