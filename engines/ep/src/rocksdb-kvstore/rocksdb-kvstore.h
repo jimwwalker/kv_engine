@@ -292,6 +292,17 @@ public:
         return "";
     }
 
+    std::unique_ptr<KVFileHandle, KVFileHandleDeleter> makeFileHandle(
+            uint16_t vbid) override {
+        throw std::logic_error("rocksdb makeFileHandle no support");
+    }
+
+    uint64_t getCollectionCount(const KVFileHandle& kvFileHandle,
+                                const std::string& collection) override {
+        // TODO JWW 2018-02-20 implement this.
+        return 0;
+    }
+
     void incrementRevision(uint16_t vbid) override {
         // TODO DJR 2017-05-19 implement this.
     }

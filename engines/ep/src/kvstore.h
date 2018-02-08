@@ -500,6 +500,24 @@ struct CollectionsFlushContext {
 };
 
 /**
+ * Abstract file handle class to allow a DB file to be opened and held open
+ * for muliple KVStore calls. Each kvstore (couch/rocks) implements this class
+ * to provide appropriate file handle tracking and closure.
+ */
+class KVFileHandle {
+public:
+    virtual ~KVFileHandle() {
+    }
+};
+
+/// For use as a unique_ptr deleter
+struct KVFileHandleDeleter {
+    void operator()(KVFileHandle* kvFileHandle) {
+        kvFileHandle->~KVFileHandle();
+    }
+};
+
+/**
  * Base class representing kvstore operations.
  */
 class KVStore {
@@ -803,6 +821,26 @@ public:
      * persistCollectionsManifestItem)
      */
     virtual std::string getCollectionsManifest(uint16_t vbid) = 0;
+
+    /**
+     * Obtain a KVFileHandle (which is abstract and uses RAII to close on
+     * destruction)
+     * @param vbid the vbucket to open
+     * @return a unique_ptr which wraps the KVFileHandle and uses
+     *         KVFileHandleDeleter to perform close/cleanup
+     */
+    virtual std::unique_ptr<KVFileHandle, KVFileHandleDeleter> makeFileHandle(
+            uint16_t vbid) = 0;
+
+    /**
+     * Retrieve the stored item count for the given collection, does not error
+     * for collection not found as that's a legitimate state (and returns 0)
+     * @param kvFileHandle a handle into a KV data file
+     * @param collection the name of the collection to lookup
+     * @return the count (which can be 0 for not found)
+     */
+    virtual uint64_t getCollectionCount(const KVFileHandle& kvFileHandle,
+                                        const std::string& collection) = 0;
 
     /**
      * Increment the revision number of the vbucket.

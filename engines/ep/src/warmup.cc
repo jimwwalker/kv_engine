@@ -325,6 +325,44 @@ private:
     const std::string _description;
 };
 
+class WarmupLoadingCollectionCounts : public GlobalTask {
+public:
+    WarmupLoadingCollectionCounts(KVBucket& st, uint16_t sh, Warmup& w)
+        : GlobalTask(&st.getEPEngine(),
+                     TaskId::WarmupLoadingCollectionCounts,
+                     0,
+                     false),
+          shardId(sh),
+          warmup(w) {
+        warmup.addToTaskSet(uid);
+    }
+
+    cb::const_char_buffer getDescription() {
+        return "Warmup - loading collection counts: shard " +
+               std::to_string(shardId);
+    }
+
+    std::chrono::microseconds maxExpectedDuration() {
+        // Runtime is a function of the number of documents which can
+        // be held in RAM (and need to be laoded from disk),
+        // can be many minutes in large datasets.
+        // Given this large variation; set max duration to a "way out" value
+        // which we don't expect to see.
+        return std::chrono::hours(1);
+    }
+
+    bool run() {
+        TRACE_EVENT0("ep-engine/task", "WarmupLoadingData");
+        warmup.loadCollectionCountsForShard(shardId);
+        warmup.removeFromTaskSet(uid);
+        return false;
+    }
+
+private:
+    uint16_t shardId;
+    Warmup& warmup;
+};
+
 class WarmupCompletion : public GlobalTask {
 public:
     WarmupCompletion(KVBucket& st, Warmup* w) :
@@ -468,6 +506,8 @@ const char* WarmupState::getStateDescription(State st) const {
         return "loading data";
     case State::Done:
         return "done";
+    case State::LoadingCollectionCounts:
+        return "loading collection counts";
     }
     return "Illegal state";
 }
@@ -494,7 +534,8 @@ bool WarmupState::legalTransition(State to) const {
     case State::Initialize:
         return (to == State::CreateVBuckets);
     case State::CreateVBuckets:
-        return (to == State::EstimateDatabaseItemCount);
+        return (to == State::EstimateDatabaseItemCount ||
+                to == State::LoadingCollectionCounts);
     case State::EstimateDatabaseItemCount:
         return (to == State::KeyDump || to == State::CheckForAccessLog);
     case State::KeyDump:
@@ -510,6 +551,8 @@ bool WarmupState::legalTransition(State to) const {
         return (to == State::Done);
     case State::Done:
         return false;
+    case State::LoadingCollectionCounts:
+        return (to == State::EstimateDatabaseItemCount);
     }
     return false;
 }
@@ -879,7 +922,7 @@ void Warmup::createVBuckets(uint16_t shardId) {
 
     if (++threadtask_count == store.vbMap.getNumShards()) {
         processCreateVBucketsComplete();
-        transition(WarmupState::State::EstimateDatabaseItemCount);
+        transition(WarmupState::State::LoadingCollectionCounts);
     }
 }
 
@@ -1235,6 +1278,15 @@ void Warmup::scheduleLoadingData()
     }
 }
 
+void Warmup::scheduleLoadingCollectionCounts() {
+    threadtask_count = 0;
+    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+        ExTask task = std::make_shared<WarmupLoadingCollectionCounts>(
+                store, i, *this);
+        ExecutorPool::get()->schedule(task);
+    }
+}
+
 void Warmup::loadDataforShard(uint16_t shardId)
 {
     scan_error_t errorCode = scan_success;
@@ -1264,6 +1316,33 @@ void Warmup::loadDataforShard(uint16_t shardId)
 
     if (++threadtask_count == store.vbMap.getNumShards()) {
         transition(WarmupState::State::Done);
+    }
+}
+
+void Warmup::loadCollectionCountsForShard(uint16_t shardId) {
+    // get each VB in the shard and iterate its collections manifest
+    // load the _local doc count value
+    KVStore* kvstore = store.getROUnderlyingByShard(shardId);
+    for (const auto vbid : shardVbIds[shardId]) {
+        auto vb = store.getVBucket(vbid);
+        if (!vb) {
+            LOG(EXTENSION_LOG_WARNING,
+                "loadCollectionCountsForShard could not find vb:%" PRIu16,
+                vbid);
+            continue;
+        }
+
+        // Now iterate the known collections asking for the persisted diskCount
+        auto rh = vb->lockCollections();
+        auto kvstoreContext = kvstore->makeFileHandle(vbid);
+        for (const auto& collection : rh) {
+            collection.second->setDiskCount(kvstore->getCollectionCount(
+                    *kvstoreContext, collection.second->getCollectionName()));
+        }
+    }
+
+    if (++threadtask_count == store.vbMap.getNumShards()) {
+        transition(WarmupState::State::EstimateDatabaseItemCount);
     }
 }
 
@@ -1307,6 +1386,9 @@ void Warmup::step() {
         return;
     case WarmupState::State::LoadingData:
         scheduleLoadingData();
+        return;
+    case WarmupState::State::LoadingCollectionCounts:
+        scheduleLoadingCollectionCounts();
         return;
     case WarmupState::State::Done:
         scheduleCompletion();

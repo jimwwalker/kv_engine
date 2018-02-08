@@ -228,6 +228,10 @@ public:
         diskCount--;
     }
 
+    void setDiskCount(uint64_t value) {
+        diskCount = value;
+    }
+
     /// @return how many items are stored on disk for this collection
     uint64_t getDiskCount() const {
         return diskCount;
