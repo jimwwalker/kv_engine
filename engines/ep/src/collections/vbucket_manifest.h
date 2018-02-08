@@ -68,6 +68,16 @@ namespace VB {
 class Manifest {
 public:
     /**
+     * Map from a 'string_view' to an entry.
+     * The key points to data stored in the value (which is actually a pointer
+     * to a value to remove issues where objects move).
+     * Using the string_view as the key allows faster lookups, the caller
+     * need not heap allocate.
+     */
+    using container = ::std::unordered_map<cb::const_char_buffer,
+                                           std::unique_ptr<ManifestEntry>>;
+
+    /**
      * RAII read locking for access to the Manifest.
      */
     class ReadHandle {
@@ -158,6 +168,16 @@ public:
             return manifest.getItemCount(collection);
         }
 
+        /// @return interator to the beginning of the underlying collection map
+        container::const_iterator begin() const {
+            return manifest.begin();
+        }
+
+        /// @return interator to the end of the underlying collection map
+        container::const_iterator end() const {
+            return manifest.end();
+        }
+
         /**
          * Dump the manifest to std::cerr
          */
@@ -171,16 +191,6 @@ public:
         std::unique_lock<cb::ReaderLock> readLock;
         const Manifest& manifest;
     };
-
-    /**
-     * Map from a 'string_view' to an entry.
-     * The key points to data stored in the value (which is actually a pointer
-     * to a value to remove issues where objects move).
-     * Using the string_view as the key allows faster lookups, the caller
-     * need not heap allocate.
-     */
-    using container = ::std::unordered_map<cb::const_char_buffer,
-                                           std::unique_ptr<ManifestEntry>>;
 
     /**
      * CachingReadHandle provides a limited set of functions to allow various
@@ -729,6 +739,16 @@ private:
      */
     uint64_t getItemCount(cb::const_char_buffer collection) const;
 
+    /**
+     * @return const iterator for the collections map
+     */
+    container::const_iterator begin() const {
+        return map.begin();
+    }
+
+    /**
+     * @return const end iterator for the collections map
+     */
     container::const_iterator end() const {
         return map.end();
     }
