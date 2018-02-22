@@ -168,6 +168,17 @@ public:
             return manifest.getItemCount(collection);
         }
 
+        void addStats(uint16_t vbid,
+                      const void* cookie,
+                      ADD_STAT add_stat) const {
+            manifest.addStats(vbid, cookie, add_stat);
+        }
+
+        void updateSummary(
+                std::unordered_map<std::string, uint64_t>& summary) const {
+            manifest.updateSummary(summary);
+        }
+
         /// @return interator to the beginning of the underlying collection map
         container::const_iterator begin() const {
             return manifest.begin();
@@ -764,6 +775,14 @@ private:
     uid_t getManifestUid() const {
         return manifestUid;
     }
+
+    /**
+     * Detailed stats for this VB::Manifest
+     */
+    void addStats(uint16_t vbid, const void* cookie, ADD_STAT add_stat) const;
+
+    void updateSummary(
+            std::unordered_map<std::string, uint64_t>& summary) const;
 
 protected:
     /**

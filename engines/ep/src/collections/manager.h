@@ -76,6 +76,15 @@ public:
     Collections::Filter makeFilter(uint32_t dcpOpenFlags,
                                    cb::const_byte_buffer jsonExtra) const;
 
+    static ENGINE_ERROR_CODE doStats(KVBucket& bucket,
+                                     const void* cookie,
+                                     ADD_STAT add_stat,
+                                     const std::string& statKey);
+    /**
+     * Do 'add_stat' calls for the bucket to retrieve summary collection stats
+     */
+    void addStats(const void* cookie, ADD_STAT add_stat) const;
+
     /**
      * For development, log as much collections stuff as we can
      */

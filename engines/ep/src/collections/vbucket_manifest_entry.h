@@ -18,6 +18,7 @@
 #pragma once
 
 #include "collections/collections_types.h"
+#include "memcached/engine_common.h"
 #include "stored-value.h"
 #include "systemevent.h"
 
@@ -236,6 +237,8 @@ public:
     uint64_t getDiskCount() const {
         return diskCount;
     }
+
+    void addStats(uint16_t vbid, const void* cookie, ADD_STAT add_stat) const;
 
 private:
     /**

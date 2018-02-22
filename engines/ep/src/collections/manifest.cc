@@ -17,10 +17,13 @@
 
 #include "collections/manifest.h"
 #include "collections/collections_types.h"
+#include "statwriter.h"
+#include "utility.h"
 
 #include <JSON_checker.h>
 #include <cJSON_utils.h>
 #include <gsl/gsl>
+#include <platform/checked_snprintf.h>
 
 #include <cstring>
 #include <iostream>
@@ -153,6 +156,33 @@ std::string Manifest::toJson() const {
     }
     json << "]}";
     return json.str();
+}
+
+void Manifest::addStats(const void* cookie, ADD_STAT add_stat) const {
+    try {
+        const int bsize = 512;
+        char buffer[bsize];
+        checked_snprintf(buffer, bsize, "manifest:entries");
+        add_casted_stat(buffer, collections.size(), add_stat, cookie);
+        checked_snprintf(buffer, bsize, "manifest:default_exists");
+        add_casted_stat(buffer, defaultCollectionExists, add_stat, cookie);
+        checked_snprintf(buffer, bsize, "manifest:separator");
+        add_casted_stat(buffer, separator, add_stat, cookie);
+        checked_snprintf(buffer, bsize, "manifest:uid");
+        add_casted_stat(buffer, uid, add_stat, cookie);
+
+        for (const auto& entry : collections) {
+            checked_snprintf(buffer,
+                             bsize,
+                             "manifest:collection:%s:uid",
+                             entry.getName().data());
+            add_casted_stat(buffer, entry.getUid(), add_stat, cookie);
+        }
+    } catch (const std::exception& e) {
+        LOG(EXTENSION_LOG_WARNING,
+            "Manifest::addStats failed to build stats: %s",
+            e.what());
+    }
 }
 
 void Manifest::dump() const {

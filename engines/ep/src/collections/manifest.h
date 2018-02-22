@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "collections/collections_types.h"
+#include "memcached/engine_common.h"
 
 namespace Collections {
 
@@ -124,6 +125,8 @@ public:
      * @returns this manifest as a std::string (JSON formatted)
      */
     std::string toJson() const;
+
+    void addStats(const void* cookie, ADD_STAT add_stat) const;
 
     /**
      * Write to std::cerr this

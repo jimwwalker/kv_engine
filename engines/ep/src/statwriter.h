@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <sstream>
 
 class EventuallyPersistentEngine;
 
