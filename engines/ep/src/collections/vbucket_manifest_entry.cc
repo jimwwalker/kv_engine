@@ -16,6 +16,9 @@
  */
 
 #include "collections/vbucket_manifest_entry.h"
+#include "statwriter.h"
+
+#include <platform/checked_snprintf.h>
 
 SystemEvent Collections::VB::ManifestEntry::completeDeletion() {
     if (isExclusiveDeleting()) {
@@ -35,6 +38,46 @@ std::string Collections::VB::ManifestEntry::getExceptionString(
     ss << "VB::ManifestEntry::" << thrower << ": " << error
        << ", this:" << *this;
     return ss.str();
+}
+
+void Collections::VB::ManifestEntry::addStats(uint16_t vbid,
+                                              const void* cookie,
+                                              ADD_STAT add_stat) const {
+    try {
+        const int bsize = 512;
+        char buffer[bsize];
+        const auto name = getCollectionName();
+        checked_snprintf(buffer,
+                         bsize,
+                         "vb_%d:collection:%s:entry:uid",
+                         vbid,
+                         name.c_str());
+        add_casted_stat(buffer, getUid(), add_stat, cookie);
+        checked_snprintf(buffer,
+                         bsize,
+                         "vb_%d:collection:%s:entry:start_seqno",
+                         vbid,
+                         name.c_str());
+        add_casted_stat(buffer, getStartSeqno(), add_stat, cookie);
+        checked_snprintf(buffer,
+                         bsize,
+                         "vb_%d:collection:%s:entry:end_seqno",
+                         vbid,
+                         name.c_str());
+        add_casted_stat(buffer, getEndSeqno(), add_stat, cookie);
+        checked_snprintf(buffer,
+                         bsize,
+                         "vb_%d:collection:%s:entry:items",
+                         vbid,
+                         name.c_str());
+        add_casted_stat(buffer, getDiskCount(), add_stat, cookie);
+    } catch (std::exception& error) {
+        LOG(EXTENSION_LOG_WARNING,
+            "VB::ManifestEntry::addStats (vb:%" PRIu16
+            ") failed to build stats: %s",
+            vbid,
+            error.what());
+    }
 }
 
 std::ostream& Collections::VB::operator<<(

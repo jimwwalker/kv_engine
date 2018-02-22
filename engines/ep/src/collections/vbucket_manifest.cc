@@ -762,6 +762,49 @@ uint64_t Manifest::getItemCount(cb::const_char_buffer collection) const {
     return itr->second->getDiskCount();
 }
 
+void Manifest::addStats(uint16_t vbid,
+                        const void* cookie,
+                        ADD_STAT add_stat) const {
+    try {
+        const int bsize = 512;
+        char buffer[bsize];
+        checked_snprintf(buffer, bsize, "vb_%d:manifest:entries", vbid);
+        add_casted_stat(buffer, map.size(), add_stat, cookie);
+        checked_snprintf(buffer, bsize, "vb_%d:manifest:default_exists", vbid);
+        add_casted_stat(buffer,
+                        defaultCollectionExists ? "true" : "false",
+                        add_stat,
+                        cookie);
+        checked_snprintf(buffer, bsize, "vb_%d:manifest:separator", vbid);
+        add_casted_stat(buffer, separator, add_stat, cookie);
+        checked_snprintf(buffer, bsize, "vb_%d:manifest:greatest_end", vbid);
+        add_casted_stat(buffer, greatestEndSeqno, add_stat, cookie);
+        checked_snprintf(buffer, bsize, "vb_%d:manifest:n_deleting", vbid);
+        add_casted_stat(buffer, nDeletingCollections, add_stat, cookie);
+    } catch (std::exception& e) {
+        LOG(EXTENSION_LOG_WARNING,
+            "VB::Manifest::addStats (vb:%" PRIu16 ") failed to build stats: %s",
+            vbid,
+            e.what());
+    }
+    for (const auto& entry : map) {
+        entry.second->addStats(vbid, cookie, add_stat);
+    }
+}
+
+void Manifest::updateSummary(
+        std::unordered_map<std::string, uint64_t>& summary) const {
+    for (const auto& entry : map) {
+        auto s = summary.find(entry.second->getCollectionName());
+        if (s == summary.end()) {
+            summary[entry.second->getCollectionName()] =
+                    entry.second->getDiskCount();
+        } else {
+            s->second += entry.second->getDiskCount();
+        }
+    }
+}
+
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
     os << "VB::Manifest"
        << ": defaultCollectionExists:" << manifest.defaultCollectionExists
