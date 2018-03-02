@@ -17,10 +17,12 @@
 #pragma once
 
 #include <cJSON_utils.h>
+#include <platform/compress.h>
+#include <platform/sized_buffer.h>
+#include <xattr/utils.h>
+#include <xattr/visibility.h>
 #include <cstddef>
 #include <memory>
-#include <platform/sized_buffer.h>
-#include <xattr/visibility.h>
 
 namespace cb {
 namespace xattr {
@@ -45,16 +47,20 @@ public:
      *             use that space before doing reallocations)
      */
     Blob(std::unique_ptr<char[]>& allocator_, size_t size = 0)
-        : Blob({nullptr, 0}, allocator_, size) {
+        : Blob({nullptr, 0}, allocator_, false, size) {
     }
 
     /**
      * Create a Blob to operate on the given buffer. Note that the buffer
      * *MUST* be a valid xattr encoded buffer (if not you WILL crash!)
+     * If the incoming buffer is snappy compressed, it must contain a compressed
+     * xattr value.
      *
      * @param buffer an existing buffer to use
+     * @param compressed the buffer contains snappy compressed data
      */
-    Blob(cb::char_buffer buffer) : Blob(buffer, default_allocator, 0) {
+    Blob(cb::char_buffer buffer, bool compressed)
+        : Blob(buffer, default_allocator, 0) {
     }
 
     /**
@@ -65,13 +71,35 @@ public:
      * @param buffer the buffer containing the current encoded blob
      * @param allocator_ where to store allocated data when we need to
      *                   reallocate
+     * @param compressed if the buffer contains snappy data, we will decompress
      * @param size The current allocated size in allocator_ (so that we may
      *             use that space before doing reallocations)
      */
     Blob(cb::char_buffer buffer,
          std::unique_ptr<char[]>& allocator_,
+         bool compressed,
          size_t size = 0)
         : blob(buffer), allocator(allocator_), alloc_size(size) {
+        if (compressed && blob.size()) {
+            // inflate and attach blob to the compression::buffer
+            if (!cb::compression::inflate(
+                        cb::compression::Algorithm::Snappy,
+                        {static_cast<const char*>(buffer.data()),
+                         buffer.size()},
+                        decompressed)) {
+                throw std::runtime_error("Blob::Blob failed to inflate");
+            }
+
+            // Connect blob to the decompressed xattrs after resizing which in
+            // theory /could/ release the now un-required non xattr data
+            decompressed.resize(
+                    cb::xattr::get_body_offset(decompressed.data()));
+            blob = {decompressed.data(), decompressed.size()};
+        } else if (blob.size()) {
+            // incoming data is not compressed, just get the size and attach
+            blob = {blob.data(), cb::xattr::get_body_offset(blob)};
+        }
+        // else empty blob
     }
 
     /**
@@ -242,6 +270,9 @@ protected:
 
 private:
     cb::char_buffer blob;
+
+    /// When the incoming data is compressed will auto-decompress into this
+    cb::compression::Buffer decompressed;
 
     std::unique_ptr<char[]>& allocator;
     std::unique_ptr<char[]> default_allocator;

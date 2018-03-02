@@ -307,6 +307,9 @@ void Item::pruneValueAndOrXattrs(IncludeValue includeVal,
         }
     }
 
+    // Only compress at the end if snappy and decompressValue returned true
+    bool compress = mcbp::datatype::is_snappy(datatype) && decompressValue();
+
     auto root = reinterpret_cast<const char*>(value->getData());
     const cb::const_char_buffer buffer{root, value->valueSize()};
     const auto sz = cb::xattr::get_body_offset(buffer);
@@ -334,6 +337,10 @@ void Item::pruneValueAndOrXattrs(IncludeValue includeVal,
         // Don't want the xattributes or value, so just send the key
         setData(nullptr, 0);
         setDataType(PROTOCOL_BINARY_RAW_BYTES);
+    }
+
+    if (compress) {
+        compressValue();
     }
 }
 

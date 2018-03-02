@@ -171,7 +171,7 @@ ENGINE_ERROR_CODE AppendPrependCommandContext::allocateNewItem() {
         // Calculate the size of the system xattr's.
         body_offset = cb::xattr::get_body_offset({old.buf, old.len});
         cb::char_buffer xattr_blob{old.buf, body_offset};
-        cb::xattr::Blob blob(xattr_blob);
+        cb::xattr::Blob blob(xattr_blob, /*data is compressed?*/ false);
         priv_size = blob.get_system_size();
     }
 

@@ -53,7 +53,6 @@ bool validate(const cb::const_char_buffer& blob);
  */
 XATTR_PUBLIC_API
 uint32_t get_body_offset(const cb::const_char_buffer& payload);
-
 /**
  * Get the segment where the actual body lives
  *
