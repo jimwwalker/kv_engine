@@ -45,6 +45,8 @@ enum class queue_op : uint8_t {
     /// do just that to preserve system-xattrs.
     mutation,
 
+    mutation_replication_only,
+
     /// (meta item) Testing only op, used to mark the end of a test.
     /// TODO: Remove this, it shouldn't be necessary / included just to support
     /// testing.
@@ -318,6 +320,7 @@ public:
     void setDeleted() {
         switch (op) {
         case queue_op::mutation:
+        case queue_op::mutation_replication_only:
         case queue_op::system_event:
             deleted = true;
             break;
@@ -350,6 +353,7 @@ public:
         case queue_op::empty:
         case queue_op::checkpoint_start:
         case queue_op::checkpoint_end:
+        case queue_op::mutation_replication_only:
             return false;
         }
         // Silence GCC warning
@@ -370,6 +374,7 @@ public:
     bool isCheckPointMetaItem() const {
         switch (op) {
         case queue_op::mutation:
+        case queue_op::mutation_replication_only:
         case queue_op::system_event:
             return false;
         case queue_op::flush:

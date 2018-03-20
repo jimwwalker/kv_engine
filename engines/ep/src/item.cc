@@ -141,6 +141,8 @@ std::string to_string(queue_op op) {
         return "set_vbucket_state";
     case queue_op::system_event:
         return "system_event";
+    case queue_op::mutation_replication_only:
+        return "mutation_replication_only";
     }
     return "<" +
             std::to_string(static_cast<std::underlying_type<queue_op>::type>(op)) +

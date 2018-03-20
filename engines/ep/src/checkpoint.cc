@@ -328,6 +328,7 @@ size_t Checkpoint::mergePrevCheckpoint(Checkpoint *pPrevCheckpoint) {
         const auto key = (*rit)->getKey();
         switch ((*rit)->getOperation()) {
         case queue_op::mutation:
+        case queue_op::mutation_replication_only:
             // For the 'normal' operation, re-insert into the current
             // checkpoint if the key isn't already present (if it is already
             // present then it must be an older revision and hence we can
