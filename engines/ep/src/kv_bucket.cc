@@ -2477,12 +2477,11 @@ bool KVBucket::collectionsEraseKey(
                 vb->lockCollections(key, eraserContext.getSeparator());
 
         if (collectionsRHandle.isLogicallyDeleted(bySeqno)) {
-            vb->removeKey(key, bySeqno);
-
             // Update item count for non-system collections.
             switch (key.getDocNamespace()) {
             case DocNamespace::DefaultCollection:
             case DocNamespace::Collections:
+                vb->removeKey(key, bySeqno);
                 vb->decrNumTotalItems();
                 collectionsRHandle.decrementDiskCount();
                 break;

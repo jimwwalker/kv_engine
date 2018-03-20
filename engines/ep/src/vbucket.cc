@@ -2750,6 +2750,35 @@ void VBucket::removeKey(const DocKey& key, int64_t bySeqno) {
     StoredValue* v = fetchValidValue(
             hbl, key, WantsDeleted::No, TrackReference::No, QueueExpired::Yes);
 
+
+    queued_item qi;
+    if (v) {
+        qi = v->toItemKeyOnly(getId());
+    } else {
+        // nothing in HT so create a new qi
+        qi = std::make_unique<Item>(
+                key,
+                0 /* don't need flags*/,
+                0 /* probably need this*/,
+                nullptr,
+                0, // Probably don't need any value, even for xattr
+                0 /* no value, no datatype */,
+                0 /*cas would be nice*/,
+                bySeqno,
+                getId(),
+                0 /*rev seq hmm*/);
+    }
+
+    // Force deleted and set the operation to be replication only
+    qi->setDeleted();
+    qi->setOperation(queue_op::mutation_replication_only);
+
+    VBNotifyCtx notifyCtx;
+    notifyCtx.notifyFlusher = checkpointManager->queueDirty(
+            *this, qi, GenerateBySeqno::Yes, GenerateCas::No, nullptr);
+    notifyCtx.notifyReplication = true;
+    notifyNewSeqno(notifyCtx);
+
     if (v && v->getBySeqno() == bySeqno) {
         ht.unlocked_del(hbl, v->getKey());
     }
