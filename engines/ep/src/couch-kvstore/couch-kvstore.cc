@@ -838,6 +838,10 @@ static int time_purge_hook(Db* d, DocInfo* info, sized_buf item, void* ctx_p) {
                     int64_t(info->db_seq),
                     info->deleted,
                     ctx->eraserContext)) {
+            if (max_purge_seq < info->db_seq) {
+                ctx->max_purged_seq[vbid] =
+                        info->db_seq; // track max_purged_seq
+            }
             ctx->stats.collectionsItemsPurged++;
             return COUCHSTORE_COMPACT_DROP_ITEM;
         }
