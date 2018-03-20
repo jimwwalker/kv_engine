@@ -438,6 +438,10 @@ public:
     void pruneValueAndOrXattrs(IncludeValue includeVal,
                                IncludeXattrs includeXattrs);
 
+    bool isReplicateOnlyDelete() const {
+        return isDeleted() && op == queue_op::mutation_replication_only;
+    }
+
 private:
     /**
      * Set the item's data. This is only used by constructors, so we

@@ -29,7 +29,8 @@ Collections::VB::Filter::Filter(const Collections::Filter& filter,
                                 const Collections::VB::Manifest& manifest)
     : defaultAllowed(false),
       passthrough(filter.isPassthrough()),
-      systemEventsAllowed(filter.allowSystemEvents()) {
+      systemEventsAllowed(filter.allowSystemEvents()),
+      allowErasedItems(false) {
     // Don't build a filter if all documents are allowed
     if (passthrough) {
         defaultAllowed = true;
@@ -93,8 +94,11 @@ bool Collections::VB::Filter::checkAndUpdate(const Item& item) {
 
     bool allowed = false;
     // The presence of $default is a simple check against defaultAllowed
-    if (item.getKey().getDocNamespace() == DocNamespace::DefaultCollection &&
-        defaultAllowed) {
+    if (item.isReplicateOnlyDelete() && allowErasedItems) {
+        allowed = true;
+    } else if (item.getKey().getDocNamespace() ==
+                       DocNamespace::DefaultCollection &&
+               defaultAllowed) {
         allowed = true;
     } else if (item.getKey().getDocNamespace() == DocNamespace::Collections &&
                !filter.empty()) {

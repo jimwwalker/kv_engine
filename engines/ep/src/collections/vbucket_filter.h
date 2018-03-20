@@ -121,6 +121,7 @@ protected:
     bool passthrough;
     bool systemEventsAllowed;
     std::string separator;
+    bool allowErasedItems;
 
     friend std::ostream& operator<<(std::ostream& os, const Filter& filter);
 };
