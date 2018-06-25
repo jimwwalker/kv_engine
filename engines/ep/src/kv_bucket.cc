@@ -250,7 +250,8 @@ KVBucket::KVBucket(EventuallyPersistentEngine& theEngine)
       lastTransTimePerItem(0),
       collectionsManager(std::make_unique<Collections::Manager>()),
       xattrEnabled(true),
-      maxTtl(engine.getConfiguration().getMaxTtl()) {
+      maxTtl(engine.getConfiguration().getMaxTtl()),
+      addedCallback(*this) {
     cachedResidentRatio.activeRatio.store(0);
     cachedResidentRatio.replicaRatio.store(0);
 
@@ -392,6 +393,10 @@ KVBucket::KVBucket(EventuallyPersistentEngine& theEngine)
     disableItemPager();
 
     initializeWarmupTask();
+
+    if (config.isCollectionsPrototypeEnabled()) {
+        commitUpdatedCallback.added = &addedCallback;
+    }
 }
 
 bool KVBucket::initialize() {

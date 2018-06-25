@@ -217,7 +217,8 @@ public:
      *        Can be nullptr if the commit has no manifest to write.
      * @return true if the commit is completed successfully.
      */
-    bool commit(const Item* collectionsManifest) override;
+    bool commit(const Item* collectionsManifest,
+                CommitUpdatedHowCallback callback = {}) override;
 
     /**
      * Rollback a transaction (unless not currently in one).
@@ -520,7 +521,8 @@ protected:
     void operator=(const CouchKVStore &from);
 
     void close();
-    bool commit2couchstore(const Item* collectionsManifest);
+    bool commit2couchstore(const Item* collectionsManifest,
+                           CommitUpdatedHowCallback callback);
 
     uint64_t checkNewRevNum(std::string &dbname, bool newFile = false);
     void populateFileNameMap(std::vector<std::string> &filenames,
@@ -554,7 +556,8 @@ protected:
                                 const std::vector<Doc*>& docs,
                                 std::vector<DocInfo*>& docinfos,
                                 kvstats_ctx& kvctx,
-                                const Item* collectionsManifest);
+                                const Item* collectionsManifest,
+                                CommitUpdatedHowCallback callback);
 
     void commitCallback(std::vector<CouchRequest *> &committedReqs,
                         kvstats_ctx &kvctx,

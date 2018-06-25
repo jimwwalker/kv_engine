@@ -499,6 +499,18 @@ private:
 };
 
 /**
+ * Structure of optional Callback pointers.
+ * The underlying storage engine will call added/replaced (if they exist)
+ * with each key.
+ * added is called for keys that were added into the database.
+ * replaced is called for keys that replaced a key in the database.
+ * vbid must be initialised with the vbid being flushed.
+ */
+enum class InsertUpdateDelete { Update, Insert, Delete };
+using CommitUpdatedHowCallback = std::function<void(
+        VBucket&, const DocKey&, uint64_t, InsertUpdateDelete)>;
+
+/**
  * Base class representing kvstore operations.
  */
 class KVStore {
@@ -572,7 +584,8 @@ public:
      *        Can be nullptr if the commit has no manifest to write.
      * @return false if the commit fails
      */
-    virtual bool commit(const Item* collectionsManifest) = 0;
+    virtual bool commit(const Item* collectionsManifest,
+                        CommitUpdatedHowCallback callback = {}) = 0;
 
     /**
      * Rollback the current transaction.

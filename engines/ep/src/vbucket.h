@@ -358,8 +358,8 @@ public:
 
     void doStatsForQueueing(const Item& item, size_t itemBytes);
     void doStatsForFlushing(const Item& item, size_t itemBytes);
-    void incrMetaDataDisk(const Item& qi);
-    void decrMetaDataDisk(const Item& qi);
+    void incrMetaDataDisk(const DocKey& key);
+    void decrMetaDataDisk(const DocKey& key);
 
     /// Increase the total count of items in this VBucket by 1.
     virtual void incrNumTotalItems() = 0;
@@ -1133,10 +1133,8 @@ public:
      * Update in memory data structures after an item is deleted on disk
      *
      * @param queuedItem reference to the deleted item
-     * @param deleted indicates if item actaully deleted or not (in case item
-     *                did not exist on disk)
      */
-    void deletedOnDiskCbk(const Item& queuedItem, bool deleted);
+    void deletedOnDiskCbk(const DocKey& key, uint64_t revSeqno);
 
     /**
      * Update in memory data structures after a rollback on disk

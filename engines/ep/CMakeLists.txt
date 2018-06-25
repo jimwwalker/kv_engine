@@ -155,6 +155,7 @@ SET(COLLECTIONS_SOURCE src/collections/collections_callbacks.cc
                        src/collections/collections_types.cc
                        src/collections/eraser_context.cc
                        src/collections/filter.cc
+                       src/collections/key_added_callback.cc
                        src/collections/manager.cc
                        src/collections/manifest.cc
                        src/collections/scan_context.cc

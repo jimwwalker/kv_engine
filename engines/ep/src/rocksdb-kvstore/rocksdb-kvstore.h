@@ -137,7 +137,8 @@ public:
      *
      * Returns false if the commit fails.
      */
-    bool commit(const Item* collectionsManifest) override;
+    bool commit(const Item* collectionsManifest,
+                CommitUpdatedHowCallback callback = {}) override;
 
     /**
      * Rollback a transaction (unless not currently in one).

@@ -26,78 +26,54 @@ PersistenceCallback::PersistenceCallback(const queued_item& qi, uint64_t c)
 
 PersistenceCallback::~PersistenceCallback() = default;
 
-// This callback is invoked for set only.
-void PersistenceCallback::callback(TransactionContext& txCtx,
-                                   mutation_result& value) {
-    auto& epCtx = dynamic_cast<EPTransactionContext&>(txCtx);
-    auto& vbucket = epCtx.vbucket;
-
-    if (value.first == 1) {
-        auto hbl = vbucket.ht.getLockedBucket(queuedItem->getKey());
-        StoredValue* v = vbucket.fetchValidValue(hbl,
-                                                 queuedItem->getKey(),
-                                                 WantsDeleted::Yes,
-                                                 TrackReference::No,
-                                                 QueueExpired::Yes);
-        if (v) {
-            if (v->getCas() == cas) {
-                // mark this item clean only if current and stored cas
-                // value match
-                v->markClean();
-            }
-            if (v->isNewCacheItem()) {
-                if (value.second) {
-                    // Insert in value-only or full eviction mode.
-                    ++vbucket.opsCreate;
-                    vbucket.incrNumTotalItems();
-                    vbucket.incrMetaDataDisk(*queuedItem);
-                } else {
-                    // Update for non-resident item in full eviction mode.
-                    ++vbucket.opsUpdate;
-                }
-
-                v->setNewCacheItem(false);
-            } else { // Update in value-only or full eviction mode.
-                ++vbucket.opsUpdate;
-            }
+void PersistenceCallback::updateStats(VBucket& vbucket,
+                                      const DocKey& key,
+                                      uint64_t cas,
+                                      uint64_t revSeqno,
+                                      InsertUpdateDelete how) {
+    auto hbl = vbucket.ht.getLockedBucket(key);
+    StoredValue* v = vbucket.fetchValidValue(
+            hbl, key, WantsDeleted::Yes, TrackReference::No, QueueExpired::Yes);
+    if (v) {
+        if (v->getCas() == cas) {
+            // mark this item clean only if current and stored cas
+            // value match
+            v->markClean();
         }
-
-        vbucket.doStatsForFlushing(*queuedItem, queuedItem->size());
-        --epCtx.stats.diskQueueSize;
-        epCtx.stats.totalPersisted++;
-    } else {
-        // If the return was 0 here, we're in a bad state because
-        // we do not know the rowid of this object.
-        if (value.first == 0) {
-            auto hbl = vbucket.ht.getLockedBucket(queuedItem->getKey());
-            StoredValue* v = vbucket.fetchValidValue(hbl,
-                                                     queuedItem->getKey(),
-                                                     WantsDeleted::Yes,
-                                                     TrackReference::No,
-                                                     QueueExpired::Yes);
-            if (v) {
-                LOG(EXTENSION_LOG_WARNING,
-                    "PersistenceCallback::callback: Persisting on "
-                    "vb:%" PRIu16 ", seqno:%" PRIu64 " returned 0 updates",
-                    queuedItem->getVBucketId(),
-                    v->getBySeqno());
-            } else {
-                LOG(EXTENSION_LOG_WARNING,
-                    "PersistenceCallback::callback: Error persisting, a key"
-                    "is missing from vb:%" PRIu16,
-                    queuedItem->getVBucketId());
+        if (v->isNewCacheItem()) {
+            switch (how) {
+            case InsertUpdateDelete::Insert: {
+                // Insert in value-only or full eviction mode.
+                ++vbucket.opsCreate;
+                vbucket.incrNumTotalItems();
+                vbucket.incrMetaDataDisk(key);
+                break;
+            }
+            case InsertUpdateDelete::Update: {
+                // Update for non-resident item in full eviction mode.
+                ++vbucket.opsUpdate;
+                break;
+            case InsertUpdateDelete::Delete: {
+                vbucket.deletedOnDiskCbk(key, revSeqno);
+                break;
+            }
+            }
             }
 
-            vbucket.doStatsForFlushing(*queuedItem, queuedItem->size());
-            --epCtx.stats.diskQueueSize;
-        } else {
-            LOG(EXTENSION_LOG_WARNING,
-                "PersistenceCallback::callback: Fatal error in persisting "
-                "SET on vb:%" PRIu16,
-                queuedItem->getVBucketId());
-            redirty(epCtx.stats, vbucket);
+            v->setNewCacheItem(false);
+        } else { // Update in value-only or full eviction mode.
+            ++vbucket.opsUpdate;
         }
     }
+}
+
+// This callback is invoked for set only.
+void PersistenceCallback::callback(TransactionContext& txCtx) {
+    auto& epCtx = dynamic_cast<EPTransactionContext&>(txCtx);
+    auto& vbucket = epCtx.vbucket;
+    vbucket.doStatsForFlushing(*queuedItem, queuedItem->size());
+    --epCtx.stats.diskQueueSize;
+    epCtx.stats.totalPersisted++;
 }
 
 // This callback is invoked for deletions only.
@@ -121,7 +97,7 @@ void PersistenceCallback::callback(TransactionContext& txCtx, int& value) {
     if (value >= 0) {
         // We have successfully removed an item from the disk, we
         // may now remove it from the hash table.
-        vbucket.deletedOnDiskCbk(*queuedItem, (value > 0));
+        // vbucket.deletedOnDiskCbk(*queuedItem, (value > 0));
     } else {
         LOG(EXTENSION_LOG_WARNING,
             "PersistenceCallback::callback: Fatal error in persisting "

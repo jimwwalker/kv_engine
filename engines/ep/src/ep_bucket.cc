@@ -414,10 +414,16 @@ std::pair<bool, size_t> EPBucket::flushVBucket(uint16_t vbid) {
              * Or if there is a manifest item
              */
             if (items_flushed > 0 || sef.getCollectionsManifestItem()) {
-                commit(*rwUnderlying, sef.getCollectionsManifestItem());
+                commit(*rwUnderlying,
+                       sef.getCollectionsManifestItem(),
+                       std::bind(&PersistenceCallback::updateStats,
+                                 *vb,
+                                 std::placeholders::_1,
+                                 std::placeholders::_2,
+                                 std::placeholders::_3))
 
-                // Now the commit is complete, vBucket file must exist.
-                if (vb->setBucketCreation(false)) {
+                        // Now the commit is complete, vBucket file must exist.
+                        if (vb->setBucketCreation(false)) {
                     LOG(EXTENSION_LOG_INFO, "VBucket %" PRIu16 " created", vbid);
                 }
             }
@@ -474,12 +480,22 @@ void EPBucket::setFlusherBatchSplitTrigger(size_t limit) {
     flusherBatchSplitTrigger = limit;
 }
 
-void EPBucket::commit(KVStore& kvstore, const Item* collectionsManifest) {
+void EPBucket::commit(KVStore& kvstore,
+                      const Item* collectionsManifest,
+                      CommitUpdatedHowCallback updatedCb) {
     auto& pcbs = kvstore.getPersistenceCbList();
     BlockTimer timer(&stats.diskCommitHisto, "disk_commit", stats.timingLog);
     auto commit_start = ProcessClock::now();
 
-    while (!kvstore.commit(collectionsManifest)) {
+    ctx.collectionsEraser = std::bind(&KVBucket::collectionsEraseKey,
+                                      this,
+                                      uint16_t(config.db_file_id),
+                                      std::placeholders::_1,
+                                      std::placeholders::_2,
+                                      std::placeholders::_3,
+                                      std::placeholders::_4);
+
+    while (!kvstore.commit(collectionsManifest, updatedCb) {
         ++stats.commitFailed;
         LOG(EXTENSION_LOG_WARNING,
             "KVBucket::commit: kvstore.commit failed!!! Retry in 1 sec...");

@@ -16,6 +16,7 @@
 
 #include "config.h"
 
+#include "collections/key_added_callback.h"
 #include "ep_types.h"
 #include "executorpool.h"
 #include "item_freq_decayer.h"
@@ -1016,6 +1017,9 @@ protected:
     std::unique_ptr<ReplicationThrottle> replicationThrottle;
 
     std::atomic<size_t> maxTtl;
+
+    Collections::KeyAddedCallback addedCallback;
+    CommitUpdatedHowCallback commitUpdatedCallback;
 
     friend class KVBucketTest;
 

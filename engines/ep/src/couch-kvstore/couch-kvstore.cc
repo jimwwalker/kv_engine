@@ -1174,14 +1174,15 @@ StorageProperties CouchKVStore::getStorageProperties() {
     return rv;
 }
 
-bool CouchKVStore::commit(const Item* collectionsManifest) {
+bool CouchKVStore::commit(const Item* collectionsManifest,
+                          CommitUpdatedHowCallback callback) {
     if (isReadOnly()) {
         throw std::logic_error("CouchKVStore::commit: Not valid on a read-only "
                         "object.");
     }
 
     if (intransaction) {
-        if (commit2couchstore(collectionsManifest)) {
+        if (commit2couchstore(collectionsManifest, callback)) {
             intransaction = false;
             transactionCtx.reset();
         }
@@ -1858,7 +1859,8 @@ int CouchKVStore::recordDbDump(Db *db, DocInfo *docinfo, void *ctx) {
     return COUCHSTORE_SUCCESS;
 }
 
-bool CouchKVStore::commit2couchstore(const Item* collectionsManifest) {
+bool CouchKVStore::commit2couchstore(const Item* collectionsManifest,
+                                     CommitUpdatedHowCallback callback) {
     bool success = true;
 
     size_t pendingCommitCnt = pendingReqsQ.size();
@@ -1909,8 +1911,12 @@ bool CouchKVStore::commit2couchstore(const Item* collectionsManifest) {
     // The docinfo callback needs to know if the DocNamespace feature is on
     kvstats_ctx kvctx(configuration.shouldPersistDocNamespace());
     // flush all
-    couchstore_error_t errCode =
-            saveDocs(vbucket2flush, docs, docinfos, kvctx, collectionsManifest);
+    couchstore_error_t errCode = saveDocs(vbucket2flush,
+                                          docs,
+                                          docinfos,
+                                          kvctx,
+                                          collectionsManifest,
+                                          callback);
 
     if (errCode) {
         success = false;
@@ -1950,11 +1956,45 @@ static int readDocInfos(Db *db, DocInfo *docinfo, void *ctx) {
     return 0;
 }
 
+// Method called by couchstore when we call couchstore_save_docs. Function
+// is given information about the key being stored and if it is an update to
+// an existing key, or a newly stored key (from this KV-engine can do statistic
+// tracking)
+static void saveDocUpdateCallback(DocInfo* info,
+                                  uint64_t seqno,
+                                  uint64_t p,
+                                  couchstore_updated_how how,
+                                  void* context) {
+    auto* cb = reinterpret_cast<CommitUpdatedHowCallback*>(context);
+    InsertUpdateDelete updatedHow = InsertUpdateDelete::Update;
+
+    if (how == COUCHSTORE_ADDED) {
+        updatedHow = InsertUpdateDelete::Insert;
+    }
+
+    auto documentMetaData = MetaDataFactory::createMetaData((*info)->rev_meta);
+
+    if (info->deleted) {
+        // need cb->deleted(); ?
+        cb(makeDocKey(info->id, true),
+           documentMetaData->getCas(),
+           info->rev_seq,
+           InsertUpdateDelete::Delete);
+    } else {
+        // need cb->insertUpdate(); ?
+        cb(makeDocKey(info->id, true),
+           documentMetaData->getCas(),
+           info->rev_seq,
+           updatedHow);
+    }
+}
+
 couchstore_error_t CouchKVStore::saveDocs(uint16_t vbid,
                                           const std::vector<Doc*>& docs,
                                           std::vector<DocInfo*>& docinfos,
                                           kvstats_ctx& kvctx,
-                                          const Item* collectionsManifest) {
+                                          const Item* collectionsManifest,
+                                          CommitUpdatedHowCallback callback) {
     couchstore_error_t errCode;
     DbInfo info;
     DbHolder db(*this);
@@ -1997,14 +2037,19 @@ couchstore_error_t CouchKVStore::saveDocs(uint16_t vbid,
 
             auto cs_begin = ProcessClock::now();
             uint64_t flags = COMPRESS_DOC_BODIES | COUCHSTORE_SEQUENCE_AS_IS;
-            errCode = couchstore_save_documents(db,
-                                                docs.data(),
-                                                docinfos.data(),
-                                                (unsigned)docs.size(),
-                                                flags);
+            errCode = couchstore_save_documents_and_callback(
+                    db.getDb(),
+                    docs.data(),
+                    docinfos.data(),
+                    (unsigned)docs.size(),
+                    flags,
+                    &saveDocUpdateCallback, // Local callback
+                    &callback); // context for the callback
+
             st.saveDocsHisto.add(
                     std::chrono::duration_cast<std::chrono::microseconds>(
                             ProcessClock::now() - cs_begin));
+
             if (errCode != COUCHSTORE_SUCCESS) {
                 logger.log(EXTENSION_LOG_WARNING,
                            "CouchKVStore::saveDocs: couchstore_save_documents "
@@ -2090,8 +2135,10 @@ void CouchKVStore::commitCallback(std::vector<CouchRequest *> &committedReqs,
                 const auto& key = committedReqs[index]->getKey();
                 if (kvctx.keyStats[key]) {
                     rv = 1; // Deletion is for an existing item on DB file.
+                            // replace an item with a delete
                 } else {
                     rv = 0; // Deletion is for a non-existing item on DB file.
+                            // insert a delete (weird)
                 }
             }
             if (errCode) {

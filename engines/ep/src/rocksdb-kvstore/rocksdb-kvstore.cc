@@ -453,7 +453,8 @@ bool RocksDBKVStore::begin(std::unique_ptr<TransactionContext> txCtx) {
     return in_transaction;
 }
 
-bool RocksDBKVStore::commit(const Item* collectionsManifest) {
+bool RocksDBKVStore::commit(const Item* collectionsManifest,
+                            CommitUpdatedHowCallback callback) {
     // This behaviour is to replicate the one in Couchstore.
     // If `commit` is called when not in transaction, just return true.
     if (!in_transaction) {
