@@ -106,8 +106,7 @@ TEST_F(CheckpointRemoverEPTest, CursorsEligibleToDrop) {
     // We should only have one cursor, which is for persistence
     ASSERT_EQ(1, checkpointManager->getNumOfCursors());
 
-    auto producer =
-            createDcpProducer(cookie, {}, false, IncludeDeleteTime::Yes);
+    auto producer = createDcpProducer(cookie, {}, IncludeDeleteTime::Yes);
 
     // The persistence cursor is still within the current checkpoint,
     // so we should not be allowed to drop any cursors at this time
@@ -159,8 +158,7 @@ TEST_F(CheckpointRemoverEPTest, CursorDropMemoryFreed) {
 
     auto initialSize = checkpointManager->getMemoryUsage();
 
-    auto producer =
-            createDcpProducer(cookie, {}, false, IncludeDeleteTime::Yes);
+    auto producer = createDcpProducer(cookie, {}, IncludeDeleteTime::Yes);
 
     createDcpStream(*producer);
 

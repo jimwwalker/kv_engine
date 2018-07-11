@@ -56,7 +56,6 @@ protected:
         producer = SingleThreadedKVBucketTest::createDcpProducer(
                 cookie,
                 {},
-                /*dcpCollectionAware*/ false,
                 IncludeDeleteTime::No);
         producer->scheduleCheckpointProcessorTask();
 

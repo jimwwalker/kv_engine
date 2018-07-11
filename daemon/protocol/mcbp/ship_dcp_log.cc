@@ -176,8 +176,7 @@ ENGINE_ERROR_CODE Connection::mutation(uint32_t opaque,
                                        uint32_t lock_time,
                                        const void* meta,
                                        uint16_t nmeta,
-                                       uint8_t nru,
-                                       uint8_t collection_len) {
+                                       uint8_t nru) {
     // Use a unique_ptr to make sure we release the item in all error paths
     cb::unique_item_ptr item(it, cb::ItemDeleter{getBucketEngineAsV0()});
 
@@ -198,12 +197,17 @@ ENGINE_ERROR_CODE Connection::mutation(uint32_t opaque,
     // we've reserved the item, and it'll be released when we're done sending
     // the item.
     item.release();
+
+    auto nkey = info.nkey;
+    if (isCollectionsSupported()) {
+        nkey += sizeof(CollectionID);
+    }
+
     protocol_binary_request_dcp_mutation packet(
-            isDcpCollectionAware(),
             opaque,
             vbucket,
             info.cas,
-            info.nkey,
+            nkey,
             gsl::narrow<uint32_t>(buffer.len),
             info.datatype,
             by_seqno,
@@ -212,32 +216,33 @@ ENGINE_ERROR_CODE Connection::mutation(uint32_t opaque,
             gsl::narrow<uint32_t>(info.exptime),
             lock_time,
             nmeta,
-            nru,
-            collection_len);
+            nru);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     write->produce([this, &packet, &info, &buffer, &meta, &nmeta, &ret](
                            cb::byte_buffer wbuf) -> size_t {
+        size_t hlen = protocol_binary_request_dcp_mutation::getHeaderLength();
+        size_t clen = isCollectionsSupported() ? sizeof(CollectionID) : 0;
 
-        const size_t packetlen =
-                protocol_binary_request_dcp_mutation::getHeaderLength(
-                        isDcpCollectionAware());
-
-        if (wbuf.size() < (packetlen + nmeta)) {
+        if (wbuf.size() < (hlen + clen + nmeta)) {
             ret = ENGINE_E2BIG;
             return 0;
         }
 
-        std::copy(packet.bytes, packet.bytes + packetlen, wbuf.begin());
+        auto next = std::copy(packet.bytes, packet.bytes + hlen, wbuf.begin());
+        if (isCollectionsSupported()) {
+            auto cid = info.collectionID.hton();
+            std::copy_n(&cid, 1, next);
+        }
 
         if (nmeta > 0) {
             std::copy(static_cast<const uint8_t*>(meta),
                       static_cast<const uint8_t*>(meta) + nmeta,
-                      wbuf.data() + packetlen);
+                      wbuf.data() + hlen + clen);
         }
 
-        // Add the header
-        addIov(wbuf.data(), packetlen);
+        // Add the header (with collectionID if enabled)
+        addIov(wbuf.data(), hlen + clen);
 
         // Add the key
         addIov(info.key, info.nkey);
@@ -247,37 +252,42 @@ ENGINE_ERROR_CODE Connection::mutation(uint32_t opaque,
 
         // Add the optional meta section
         if (nmeta > 0) {
-            addIov(wbuf.data() + packetlen, nmeta);
+            addIov(wbuf.data() + hlen + clen, nmeta);
         }
 
-        return packetlen + nmeta;
+        return hlen + clen + nmeta;
     });
 
     return ret;
 }
 
-ENGINE_ERROR_CODE Connection::deletionInner(
-        const item_info& info,
-        cb::const_byte_buffer packet,
-        cb::const_byte_buffer extendedMeta) {
+ENGINE_ERROR_CODE Connection::deletionInner(const item_info& info,
+                                            cb::const_byte_buffer packet,
+                                            cb::const_byte_buffer extendedMeta,
+                                            CollectionID cid) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    write->produce([this, &packet, &extendedMeta, &info, &ret](
+    write->produce([this, &packet, &extendedMeta, &info, &cid, &ret](
                            cb::byte_buffer buffer) -> size_t {
-        if (buffer.size() < (packet.size() + extendedMeta.size())) {
+        size_t clen = isCollectionsSupported() ? sizeof(CollectionID) : 0;
+        if (buffer.size() < (packet.size() + clen + extendedMeta.size())) {
             ret = ENGINE_E2BIG;
             return 0;
         }
 
-        std::copy(packet.begin(), packet.end(), buffer.begin());
+        auto next = std::copy(packet.begin(), packet.end(), buffer.begin());
+
+        if (isCollectionsSupported()) {
+            std::copy_n(&cid, 1, next);
+        }
 
         if (extendedMeta.size() > 0) {
             std::copy(extendedMeta.begin(),
                       extendedMeta.end(),
-                      buffer.data() + packet.size());
+                      buffer.data() + packet.size() + clen);
         }
 
         // Add the header
-        addIov(buffer.data(), packet.size());
+        addIov(buffer.data(), packet.size() + clen);
 
         // Add the key
         addIov(info.key, info.nkey);
@@ -289,7 +299,7 @@ ENGINE_ERROR_CODE Connection::deletionInner(
 
         // Add the optional meta section
         if (extendedMeta.size() > 0) {
-            addIov(buffer.data() + packet.size(), extendedMeta.size());
+            addIov(buffer.data() + packet.size() + clen, extendedMeta.size());
         }
 
         return packet.size() + extendedMeta.size();
@@ -339,7 +349,8 @@ ENGINE_ERROR_CODE Connection::deletion(uint32_t opaque,
     cb::const_byte_buffer extendedMeta{reinterpret_cast<const uint8_t*>(meta),
                                        nmeta};
 
-    return deletionInner(info, packetBuffer, extendedMeta);
+    return deletionInner(
+            info, packetBuffer, extendedMeta, CollectionID::DefaultCollection);
 }
 
 ENGINE_ERROR_CODE Connection::deletion_v2(uint32_t opaque,
@@ -347,8 +358,7 @@ ENGINE_ERROR_CODE Connection::deletion_v2(uint32_t opaque,
                                           uint16_t vbucket,
                                           uint64_t by_seqno,
                                           uint64_t rev_seqno,
-                                          uint32_t delete_time,
-                                          uint8_t collection_len) {
+                                          uint32_t delete_time) {
     // Use a unique_ptr to make sure we release the item in all error paths
     cb::unique_item_ptr item(it, cb::ItemDeleter{getBucketEngineAsV0()});
     item_info info;
@@ -368,21 +378,27 @@ ENGINE_ERROR_CODE Connection::deletion_v2(uint32_t opaque,
     // the item.
     item.release();
 
+    auto nkey = info.nkey;
+    if (isCollectionsSupported()) {
+        nkey += sizeof(CollectionID);
+    }
+
     protocol_binary_request_dcp_deletion_v2 packet(opaque,
                                                    vbucket,
                                                    info.cas,
-                                                   info.nkey,
+                                                   nkey,
                                                    info.nbytes,
                                                    info.datatype,
                                                    by_seqno,
                                                    rev_seqno,
                                                    delete_time,
-                                                   collection_len);
+                                                   0 /*unused*/);
 
     return deletionInner(
             info,
             {reinterpret_cast<const uint8_t*>(&packet), sizeof(packet.bytes)},
-            {/*no extended meta in v2*/});
+            {/*no extended meta in v2*/},
+            info.collectionID.hton());
 }
 
 ENGINE_ERROR_CODE Connection::expiration(uint32_t opaque,
@@ -391,8 +407,7 @@ ENGINE_ERROR_CODE Connection::expiration(uint32_t opaque,
                                          uint64_t by_seqno,
                                          uint64_t rev_seqno,
                                          const void* meta,
-                                         uint16_t nmeta,
-                                         uint8_t collection_len) {
+                                         uint16_t nmeta) {
     /*
      * EP engine don't use expiration, so we won't have tests for this
      * code. Add it back once we have people calling the method

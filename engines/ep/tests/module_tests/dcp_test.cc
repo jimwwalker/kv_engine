@@ -105,7 +105,7 @@ protected:
                 cookie,
                 "test_producer",
                 flags,
-                cb::const_byte_buffer() /*no json*/,
+                boost::optional<cb::const_char_buffer>{/*no collections*/},
                 /*startTask*/ true);
 
         if (includeXattrs == IncludeXattrs::Yes) {
@@ -324,8 +324,7 @@ ENGINE_ERROR_CODE mock_mutation_return_engine_e2big(
         uint32_t lock_time,
         const void* meta,
         uint16_t nmeta,
-        uint8_t nru,
-        uint8_t collection_len) {
+        uint8_t nru) {
     Item* item = reinterpret_cast<Item*>(itm);
     delete item;
     return ENGINE_E2BIG;
@@ -1823,7 +1822,7 @@ TEST_P(ConnectionTest, test_mb19955) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
     // "1" is not a multiple of "2" and so we should return ENGINE_EINVAL
     EXPECT_EQ(ENGINE_EINVAL,
               producer->control(0,
@@ -1843,7 +1842,7 @@ TEST_P(ConnectionTest, test_maybesendnoop_buffer_full) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     MockDcpMessageProducers producers;
     producers.noop = mock_noop_return_engine_e2big;
@@ -1870,7 +1869,7 @@ TEST_P(ConnectionTest, test_maybesendnoop_send_noop) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     MockDcpMessageProducers producers(handle);
     producer->setNoopEnabled(true);
@@ -1895,7 +1894,7 @@ TEST_P(ConnectionTest, test_maybesendnoop_noop_already_pending) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     MockDcpMessageProducers producers(engine);
     const auto send_time = ep_current_time();
@@ -1939,7 +1938,7 @@ TEST_P(ConnectionTest, test_maybesendnoop_not_enabled) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     MockDcpMessageProducers producers(handle);
     producer->setNoopEnabled(false);
@@ -1964,7 +1963,7 @@ TEST_P(ConnectionTest, test_maybesendnoop_not_sufficient_time_passed) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     MockDcpMessageProducers producers(handle);
     producer->setNoopEnabled(true);
@@ -2157,7 +2156,7 @@ TEST_P(ConnectionTest, test_producer_stream_end_on_client_close_stream) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     /* Send a control message to the producer indicating that the DCP client
        expects a "DCP_STREAM_END" upon stream close */
@@ -2289,7 +2288,7 @@ TEST_P(ConnectionTest, test_producer_unknown_ctrl_msg) {
             cookie,
             "test_producer",
             /*flags*/ 0,
-            cb::const_byte_buffer() /*no json*/);
+            boost::optional<cb::const_char_buffer>{/*no collections*/});
 
     /* Send an unkown control message to the producer and expect an error code
        of "ENGINE_EINVAL" */
@@ -3361,7 +3360,7 @@ public:
                 cookie,
                 "test_producer",
                 0 /*flags*/,
-                cb::const_byte_buffer() /*no json*/,
+                boost::optional<cb::const_char_buffer>{/*no collections*/},
                 false /*startTask*/);
 
         /* Create the checkpoint processor task object, but don't schedule */

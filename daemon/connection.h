@@ -458,14 +458,6 @@ public:
         Connection::dcpXattrAware = dcpXattrAware;
     }
 
-    bool isDcpCollectionAware() const {
-        return dcpCollectionAware;
-    }
-
-    void setDcpCollectionAware(bool dcpCollectionAware) {
-        Connection::dcpCollectionAware = dcpCollectionAware;
-    }
-
     void setDcpDeleteTimeEnabled(bool dcpDeleteTimeEnabled) {
         Connection::dcpDeleteTimeEnabled = dcpDeleteTimeEnabled;
     }
@@ -476,7 +468,7 @@ public:
 
     /// returns true if either collections or delete_time is enabled
     bool isDcpDeleteV2() const {
-        return isDcpCollectionAware() || isDcpDeleteTimeEnabled();
+        return isCollectionsSupported() || isDcpDeleteTimeEnabled();
     }
 
     /**
@@ -967,8 +959,7 @@ public:
                                uint32_t lock_time,
                                const void* meta,
                                uint16_t nmeta,
-                               uint8_t nru,
-                               uint8_t collection_len) override;
+                               uint8_t nru) override;
 
     ENGINE_ERROR_CODE deletion(uint32_t opaque,
                                item* itm,
@@ -983,8 +974,7 @@ public:
                                   uint16_t vbucket,
                                   uint64_t by_seqno,
                                   uint64_t rev_seqno,
-                                  uint32_t delete_time,
-                                  uint8_t collection_len) override;
+                                  uint32_t delete_time) override;
 
     ENGINE_ERROR_CODE expiration(uint32_t opaque,
                                  item* itm,
@@ -992,8 +982,7 @@ public:
                                  uint64_t by_seqno,
                                  uint64_t rev_seqno,
                                  const void* meta,
-                                 uint16_t nmeta,
-                                 uint8_t collection_len) override;
+                                 uint16_t nmeta) override;
 
     ENGINE_ERROR_CODE flush(uint32_t opaque, uint16_t vbucket) override;
 
@@ -1077,7 +1066,8 @@ protected:
     // Shared DCP_DELETION write function for the v1/v2 commands.
     ENGINE_ERROR_CODE deletionInner(const item_info& info,
                                     cb::const_byte_buffer packet,
-                                    cb::const_byte_buffer extendedMeta);
+                                    cb::const_byte_buffer extendedMeta,
+                                    CollectionID cid);
 
     /**
      * The actual socket descriptor used by this connection
@@ -1229,9 +1219,6 @@ protected:
 
     /** Shuld values be stripped off? */
     bool dcpNoValue = false;
-
-    /** Is this DCP channel collection aware? */
-    bool dcpCollectionAware = false;
 
     /** Is Tracing enabled for this connection? */
     bool tracingEnabled = false;

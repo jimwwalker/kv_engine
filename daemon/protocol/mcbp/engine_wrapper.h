@@ -344,7 +344,8 @@ ENGINE_ERROR_CODE dcpNoop(Cookie& cookie, uint32_t opaque);
  * @param seqno
  * @param flags The DCP open flags
  * @param name The DCP connection name
- * @param collectionFilter The list of collections in JSON format
+ * @param collections Initialised if collections is enabled, can still contain
+ *        an empty buffer if no filter data is specified
  * @return ENGINE_ERROR_CODE
  */
 ENGINE_ERROR_CODE dcpOpen(Cookie& cookie,
@@ -352,7 +353,7 @@ ENGINE_ERROR_CODE dcpOpen(Cookie& cookie,
                           uint32_t seqno,
                           uint32_t flags,
                           cb::const_char_buffer name,
-                          cb::const_byte_buffer collectionFilter);
+                          boost::optional<cb::const_char_buffer> collections);
 
 /**
  * Calls the underlying engine DCP set-vbucket-state

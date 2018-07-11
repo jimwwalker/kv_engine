@@ -588,8 +588,7 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                                       0 /* lock time */,
                                       meta.first,
                                       meta.second,
-                                      hotness,
-                                      mutationResponse->getCollectionLen());
+                                      hotness);
             break;
         }
         case DcpResponse::Event::Deletion:
@@ -607,8 +606,7 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                         mutationResponse->getVBucket(),
                         *mutationResponse->getBySeqno(),
                         mutationResponse->getRevSeqno(),
-                        mutationResponse->getItem()->getExptime(),
-                        mutationResponse->getCollectionLen());
+                        mutationResponse->getItem()->getExptime());
             } else {
                 std::pair<const char*, uint16_t> meta{nullptr, 0};
                 if (mutationResponse->getExtMetaData()) {

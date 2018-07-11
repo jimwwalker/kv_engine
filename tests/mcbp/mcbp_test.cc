@@ -1483,8 +1483,8 @@ TEST_F(DcpOpenValidatorTest, ValueButNoCollections) {
 }
 
 TEST_F(DcpOpenValidatorTest, CorrectMessageValueCollections) {
+    connection.setCollectionsSupported(true);
     request.message.header.request.bodylen = htonl(10 + 20);
-    request.message.body.flags = ntohl(DCP_OPEN_COLLECTIONS);
     EXPECT_EQ(PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, validate());
 }
 
@@ -1754,11 +1754,10 @@ class DcpMutationValidatorTest : public ValidatorTest,
                                  public ::testing::WithParamInterface<bool> {
 public:
     DcpMutationValidatorTest()
-        : request(GetParam(),
-                  0 /*opaque*/,
+        : request(0 /*opaque*/,
                   0 /*vbucket*/,
                   0 /*cas*/,
-                  1 /*keylen*/,
+                  GetParam() ? 5 : 1 /*keylen*/,
                   0 /*valueLen*/,
                   PROTOCOL_BINARY_RAW_BYTES,
                   0 /*bySeqno*/,
@@ -1767,13 +1766,12 @@ public:
                   0 /*expiration*/,
                   0 /*lockTime*/,
                   0 /*nmeta*/,
-                  0 /*nru*/,
-                  0 /*collectionLen*/) {
+                  0 /*nru*/) {
     }
 
     void SetUp() override {
         ValidatorTest::SetUp();
-        connection.setDcpCollectionAware(GetParam());
+        connection.setCollectionsSupported(GetParam());
     }
 
 protected:
@@ -1808,12 +1806,12 @@ TEST_P(DcpMutationValidatorTest, InvalidExtlen) {
 
 TEST_P(DcpMutationValidatorTest, InvalidExtlenCollections) {
     request.message.header.request.extlen =
-            protocol_binary_request_dcp_mutation::getExtrasLength(!GetParam());
+            protocol_binary_request_dcp_mutation::getExtrasLength() + 1;
     EXPECT_EQ(PROTOCOL_BINARY_RESPONSE_EINVAL, validate());
 }
 
 TEST_P(DcpMutationValidatorTest, InvalidKeylen) {
-    request.message.header.request.keylen = 0;
+    request.message.header.request.keylen = GetParam() ? htons(4) : 0;
     request.message.header.request.bodylen = htonl(31);
     EXPECT_EQ(PROTOCOL_BINARY_RESPONSE_EINVAL, validate());
 }
@@ -1830,11 +1828,14 @@ public:
           request(GetParam() ? makeV2() : makeV1()),
           header(request->getHeader()) {
         header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_DCP_DELETION;
+        if (GetParam()) {
+            header.request.keylen = htons(5); // min-collection key
+        }
     }
 
     void SetUp() override {
         ValidatorTest::SetUp();
-        connection.setDcpCollectionAware(GetParam());
+        connection.setCollectionsSupported(GetParam());
     }
 
 protected:
@@ -2003,24 +2004,22 @@ class DcpExpirationValidatorTest : public ValidatorTest,
 public:
     DcpExpirationValidatorTest()
         : ValidatorTest(),
-          request(GetParam(),
-                  0 /*opaque*/,
+          request(0 /*opaque*/,
                   0 /*vbucket*/,
                   0 /*cas*/,
-                  2 /*keylen*/,
+                  GetParam() ? 5 : 1 /*keylen*/,
                   0 /*valueLen*/,
                   PROTOCOL_BINARY_RAW_BYTES,
                   0 /*bySeqno*/,
                   0 /*revSeqno*/,
-                  0 /*nmeta*/,
-                  0 /*collectionLen*/) {
+                  0 /*nmeta*/) {
         request.message.header.request.opcode =
             (uint8_t)PROTOCOL_BINARY_CMD_DCP_EXPIRATION;
     }
 
     void SetUp() override {
         ValidatorTest::SetUp();
-        connection.setDcpCollectionAware(GetParam());
+        connection.setCollectionsSupported(GetParam());
     }
 
 protected:

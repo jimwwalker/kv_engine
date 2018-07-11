@@ -109,7 +109,6 @@ struct dcp_message_producers {
      * @param meta
      * @param nmeta
      * @param nru the nru field used by ep-engine (may safely be ignored)
-     * @param collection_len how many bytes of the key are the collection
      *
      * @return ENGINE_WANT_MORE or ENGINE_SUCCESS upon success
      */
@@ -121,8 +120,7 @@ struct dcp_message_producers {
                                        uint32_t lock_time,
                                        const void* meta,
                                        uint16_t nmeta,
-                                       uint8_t nru,
-                                       uint8_t collection_len) = 0;
+                                       uint8_t nru) = 0;
 
     /**
      * Send a deletion
@@ -158,7 +156,6 @@ struct dcp_message_producers {
      * @param by_seqno
      * @param rev_seqno
      * @param delete_time the time of the deletion (tombstone creation time)
-     * @param collection_len how many bytes of the key are the collection
      *
      * @return ENGINE_WANT_MORE or ENGINE_SUCCESS upon success
      */
@@ -167,8 +164,7 @@ struct dcp_message_producers {
                                           uint16_t vbucket,
                                           uint64_t by_seqno,
                                           uint64_t rev_seqno,
-                                          uint32_t delete_time,
-                                          uint8_t collection_len) = 0;
+                                          uint32_t delete_time) = 0;
 
     /**
      * Send an expiration
@@ -181,7 +177,6 @@ struct dcp_message_producers {
      * @param vbucket the vbucket id the message belong to
      * @param by_seqno
      * @param rev_seqno
-     * @param collection_len how many bytes of the key are the collection
      *
      * @return ENGINE_WANT_MORE or ENGINE_SUCCESS upon success
      */
@@ -191,8 +186,7 @@ struct dcp_message_producers {
                                          uint64_t by_seqno,
                                          uint64_t rev_seqno,
                                          const void* meta,
-                                         uint16_t nmeta,
-                                         uint8_t collection_len) = 0;
+                                         uint16_t nmeta) = 0;
 
     /**
      * Send a flush for a single vbucket
@@ -345,18 +339,19 @@ struct MEMCACHED_PUBLIC_CLASS DcpIface {
      * @param name Identifier for this connection. Note that the name must be
      *             unique; attempting to (re)connect with a name already in use
      *             will disconnect the existing connection.
-     * @param jsonExtras Optional JSON string; which if non-empty can be used
+     * @param collections Optional JSON string; which if non-empty can be used
      *                   to further control how data is requested - for example
      *                   to filter to specific collections.
      * @return ENGINE_SUCCESS if the DCP connection was successfully opened,
      *         otherwise error code indicating reason for the failure.
      */
-    virtual ENGINE_ERROR_CODE open(gsl::not_null<const void*> cookie,
-                                   uint32_t opaque,
-                                   uint32_t seqno,
-                                   uint32_t flags,
-                                   cb::const_char_buffer name,
-                                   cb::const_byte_buffer jsonExtras) = 0;
+    virtual ENGINE_ERROR_CODE open(
+            gsl::not_null<const void*> cookie,
+            uint32_t opaque,
+            uint32_t seqno,
+            uint32_t flags,
+            cb::const_char_buffer name,
+            boost::optional<cb::const_char_buffer> collections) = 0;
 
     /**
      * Called from the memcached core to add a vBucket stream to the set of

@@ -419,7 +419,7 @@ public:
         for (const auto& qi : events) {
             lastSeqno = qi->getBySeqno();
             if (qi->getOperation() == queue_op::system_event) {
-                auto dcpData = Collections::VB::Manifest::getSystemEventData(
+                auto dcpData = Collections::VB::Manifest::getSystemEventDcpData(
                         {qi->getData(), qi->getNBytes()});
 
                 switch (SystemEvent(qi->getFlags())) {

@@ -555,12 +555,13 @@ ENGINE_ERROR_CODE dcpNoop(Cookie& cookie, uint32_t opaque) {
     return ret;
 }
 
-ENGINE_ERROR_CODE dcpOpen(Cookie& cookie,
-                          uint32_t opaque,
-                          uint32_t seqno,
-                          uint32_t flags,
-                          cb::const_char_buffer name,
-                          cb::const_byte_buffer collectionFilter) {
+ENGINE_ERROR_CODE dcpOpen(
+        Cookie& cookie,
+        uint32_t opaque,
+        uint32_t seqno,
+        uint32_t flags,
+        cb::const_char_buffer name,
+        boost::optional<cb::const_char_buffer> collectionFilter) {
     auto& connection = cookie.getConnection();
     auto* dcp = connection.getBucket().getDcpIface();
     auto ret = dcp->open(&cookie, opaque, seqno, flags, name, collectionFilter);
