@@ -719,12 +719,7 @@ ENGINE_ERROR_CODE KVBucket::replace(Item& itm,
             return ENGINE_UNKNOWN_COLLECTION;
         } // now hold collections read access for the duration of the set
 
-        return vb->replace(itm,
-                           cookie,
-                           engine,
-                           bgFetchDelay,
-                           predicate,
-                           collectionsRHandle);
+        return vb->replace(itm, cookie, engine, bgFetchDelay, predicate);
     }
 }
 
@@ -1386,13 +1381,13 @@ GetValue KVBucket::getInternal(const DocKey& key,
             return GetValue(NULL, ENGINE_UNKNOWN_COLLECTION);
         }
 
-        return vb->getInternal(cookie,
+        return vb->getInternal(key,
+                               cookie,
                                engine,
                                bgFetchDelay,
                                options,
                                diskDeleteAll,
-                               VBucket::GetKeyOnly::No,
-                               collectionsRHandle);
+                               VBucket::GetKeyOnly::No);
     }
 }
 
@@ -1461,13 +1456,8 @@ ENGINE_ERROR_CODE KVBucket::getMetaData(const DocKey& key,
             return ENGINE_UNKNOWN_COLLECTION;
         }
 
-        return vb->getMetaData(cookie,
-                               engine,
-                               bgFetchDelay,
-                               collectionsRHandle,
-                               metadata,
-                               deleted,
-                               datatype);
+        return vb->getMetaData(
+                key, cookie, engine, bgFetchDelay, metadata, deleted, datatype);
     }
 }
 
@@ -1525,8 +1515,7 @@ ENGINE_ERROR_CODE KVBucket::setWithMeta(Item& itm,
                                  allowExisting,
                                  genBySeqno,
                                  genCas,
-                                 isReplication,
-                                 collectionsRHandle);
+                                 isReplication);
         }
     }
 
@@ -1564,8 +1553,7 @@ GetValue KVBucket::getAndUpdateTtl(const DocKey& key, uint16_t vbucket,
             return GetValue(NULL, ENGINE_UNKNOWN_COLLECTION);
         }
 
-        return vb->getAndUpdateTtl(
-                cookie, engine, bgFetchDelay, exptime, collectionsRHandle);
+        return vb->getAndUpdateTtl(key, cookie, engine, bgFetchDelay, exptime);
     }
 }
 
@@ -1584,12 +1572,8 @@ GetValue KVBucket::getLocked(const DocKey& key, uint16_t vbucket,
             return GetValue(NULL, ENGINE_UNKNOWN_COLLECTION);
         }
 
-        return vb->getLocked(currentTime,
-                             lockTimeout,
-                             cookie,
-                             engine,
-                             bgFetchDelay,
-                             collectionsRHandle);
+        return vb->getLocked(
+                key, currentTime, lockTimeout, cookie, engine, bgFetchDelay);
     }
 }
 
@@ -1618,7 +1602,7 @@ ENGINE_ERROR_CODE KVBucket::unlockKey(const DocKey& key,
                                          QueueExpired::Yes);
 
     if (v) {
-        if (VBucket::isLogicallyNonExistent(*v, collectionsRHandle)) {
+        if (VBucket::isLogicallyNonExistent(*v)) {
             vb->ht.cleanupIfTemporaryItem(hbl, *v);
             return ENGINE_KEY_ENOENT;
         }
@@ -1661,12 +1645,8 @@ ENGINE_ERROR_CODE KVBucket::getKeyStats(const DocKey& key,
             return ENGINE_UNKNOWN_COLLECTION;
         }
 
-        return vb->getKeyStats(cookie,
-                               engine,
-                               bgFetchDelay,
-                               kstats,
-                               wantsDeleted,
-                               collectionsRHandle);
+        return vb->getKeyStats(
+                key, cookie, engine, bgFetchDelay, kstats, wantsDeleted);
 }
 }
 
@@ -1684,7 +1664,7 @@ std::string KVBucket::validateKey(const DocKey& key, uint16_t vbucket,
             hbl, key, WantsDeleted::Yes, TrackReference::No, QueueExpired::Yes);
 
     if (v) {
-        if (VBucket::isLogicallyNonExistent(*v, collectionsRHandle)) {
+        if (VBucket::isLogicallyNonExistent(*v)) {
             vb->ht.cleanupIfTemporaryItem(hbl, *v);
             return "item_deleted";
         }
@@ -1732,13 +1712,8 @@ ENGINE_ERROR_CODE KVBucket::deleteItem(const DocKey& key,
             return ENGINE_UNKNOWN_COLLECTION;
         }
 
-        return vb->deleteItem(cas,
-                              cookie,
-                              engine,
-                              bgFetchDelay,
-                              itemMeta,
-                              mutInfo,
-                              collectionsRHandle);
+        return vb->deleteItem(
+                key, cas, cookie, engine, bgFetchDelay, itemMeta, mutInfo);
     }
 }
 
@@ -1792,7 +1767,8 @@ ENGINE_ERROR_CODE KVBucket::deleteWithMeta(const DocKey& key,
             return ENGINE_UNKNOWN_COLLECTION;
         }
 
-        return vb->deleteWithMeta(cas,
+        return vb->deleteWithMeta(key,
+                                  cas,
                                   seqno,
                                   cookie,
                                   engine,
@@ -1803,8 +1779,7 @@ ENGINE_ERROR_CODE KVBucket::deleteWithMeta(const DocKey& key,
                                   genBySeqno,
                                   generateCas,
                                   bySeqno,
-                                  isReplication,
-                                  collectionsRHandle);
+                                  isReplication);
     }
 }
 
