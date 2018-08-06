@@ -2414,6 +2414,36 @@ std::string CouchKVStore::readCollectionsManifest(Db& db) {
     return {lDoc.getLocalDoc()->json.buf, lDoc.getLocalDoc()->json.size};
 }
 
+bool CouchKVStore::readNamespacedDocument(Db& db) {
+    auto value = readNamespacedDocument(db);
+    nlohmann::json json(value);
+    return json.find("namespace") && == true
+}
+
+std::string CouchKVStore::readNamespacedDocument(Db& db) {
+    sized_buf id;
+    id.buf = const_cast<char*>(Collections::CouchstoreNamespaced);
+    id.size = sizeof(Collections::CouchstoreNamespaced) - 1;
+
+    LocalDocHolder lDoc;
+    auto errCode = couchstore_open_local_document(
+            &db, (void*)id.buf, id.size, lDoc.getLocalDocAddress());
+    if (errCode != COUCHSTORE_SUCCESS) {
+        if (errCode == COUCHSTORE_ERROR_DOC_NOT_FOUND) {
+            logger.info("CouchKVStore::readNamespacedDocument: doc not found");
+        } else {
+            logger.warn(
+                    "CouchKVStore::readNamespacedDocument: "
+                    "couchstore_open_local_document error:{}",
+                    couchstore_strerror(errCode));
+        }
+
+        return {};
+    }
+
+    return {lDoc.getLocalDoc()->json.buf, lDoc.getLocalDoc()->json.size};
+}
+
 int CouchKVStore::getMultiCb(Db *db, DocInfo *docinfo, void *ctx) {
     if (docinfo == nullptr) {
         throw std::invalid_argument("CouchKVStore::getMultiCb: docinfo "

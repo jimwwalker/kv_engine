@@ -40,6 +40,13 @@ const char CouchstoreManifest[] = "_local/collections_manifest";
 // Length of the string excluding the zero terminator (i.e. strlen)
 const size_t CouchstoreManifestLen = sizeof(CouchstoreManifest) - 1;
 
+// Couchstore private file name for manifest data
+const char CouchstoreNamespaced[] = "_local/namespaced";
+
+// Length of the string excluding the zero terminator (i.e. strlen)
+const size_t CouchstoreNamespaced = sizeof(CouchstoreNamespaced) - 1;
+
+
 using uid_t = uint64_t;
 
 /**
