@@ -737,18 +737,13 @@ CheckpointManager::ItemsForCursor CheckpointManager::getItemsForCursor(
 queued_item CheckpointManager::nextItem(CheckpointCursor* constCursor,
                                         bool& isLastMutationItem) {
     LockHolder lh(queueLock);
-
+    static StoredDocKey emptyKey("", CollectionID::System);
     if (!constCursor) {
         EP_LOG_WARN(
                 "CheckpointManager::nextItemForPersistence called with a null "
                 "cursor for vb:{}",
                 vbucketId);
-        queued_item qi(new Item(
-                DocKey("", DocKeyEncodesCollectionId::No, DocNamespace::System),
-                0xffff,
-                queue_op::empty,
-                0,
-                0));
+        queued_item qi(new Item(emptyKey, 0xffff, queue_op::empty, 0, 0));
         return qi;
     }
     if (getOpenCheckpointId_UNLOCKED(lh) == 0) {
@@ -756,12 +751,7 @@ queued_item CheckpointManager::nextItem(CheckpointCursor* constCursor,
                 "vb:{} is still in backfill phase that doesn't allow "
                 " the cursor to fetch an item from it's current checkpoint",
                 vbucketId);
-        queued_item qi(new Item(
-                DocKey("", DocKeyEncodesCollectionId::No, DocNamespace::System),
-                0xffff,
-                queue_op::empty,
-                0,
-                0));
+        queued_item qi(new Item(emptyKey, 0xffff, queue_op::empty, 0, 0));
         return qi;
     }
 
@@ -772,12 +762,7 @@ queued_item CheckpointManager::nextItem(CheckpointCursor* constCursor,
         return *(cursor.currentPos);
     } else {
         isLastMutationItem = false;
-        queued_item qi(new Item(
-                DocKey("", DocKeyEncodesCollectionId::No, DocNamespace::System),
-                0xffff,
-                queue_op::empty,
-                0,
-                0));
+        queued_item qi(new Item(emptyKey, 0xffff, queue_op::empty, 0, 0));
         return qi;
     }
 }
@@ -1072,23 +1057,19 @@ void CheckpointManager::checkAndAddNewCheckpoint() {
 queued_item CheckpointManager::createCheckpointItem(uint64_t id, uint16_t vbid,
                                                     queue_op checkpoint_op) {
     uint64_t bySeqno;
-    std::string key;
+    StoredDocKey key(to_string(checkpoint_op), DocNamespace::System);
 
     switch (checkpoint_op) {
     case queue_op::checkpoint_start:
-        key = "checkpoint_start";
         bySeqno = lastBySeqno + 1;
         break;
     case queue_op::checkpoint_end:
-        key = "checkpoint_end";
         bySeqno = lastBySeqno;
         break;
     case queue_op::empty:
-        key = "dummy_key";
         bySeqno = lastBySeqno;
         break;
     case queue_op::set_vbucket_state:
-        key = "set_vbucket_state";
         bySeqno = lastBySeqno + 1;
         break;
 
@@ -1099,12 +1080,7 @@ queued_item CheckpointManager::createCheckpointItem(uint64_t id, uint16_t vbid,
                         ") is not a valid item to create");
     }
 
-    queued_item qi(new Item(
-            DocKey(key, DocKeyEncodesCollectionId::No, DocNamespace::System),
-            vbid,
-            checkpoint_op,
-            id,
-            bySeqno));
+    queued_item qi(new Item(key, vbid, checkpoint_op, id, bySeqno));
     return qi;
 }
 
