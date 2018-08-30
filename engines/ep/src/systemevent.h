@@ -59,7 +59,14 @@ enum class SystemEvent : uint32_t {
      * fully removes the collection and also deleted the special marker document
      * created by CreateCollection.
      */
-    DeleteCollectionHard
+    DeleteCollectionHard,
+
+    /**
+     * The FlushCollection event represents the point at which the designated
+     * collection was flushed. All documents of the collection with a seqno
+     * less than the flush are no logically deleted.
+     */
+    FlushCollection
 };
 
 static inline std::string to_string(const SystemEvent se) {
@@ -68,6 +75,8 @@ static inline std::string to_string(const SystemEvent se) {
         return "Collection";
     case SystemEvent::DeleteCollectionHard:
         return "DeleteCollectionHard";
+    case SystemEvent::FlushCollection:
+        return "FlushCollection";
     }
     throw std::invalid_argument("to_string(SystemEvent) unknown " +
                                 std::to_string(int(se)));

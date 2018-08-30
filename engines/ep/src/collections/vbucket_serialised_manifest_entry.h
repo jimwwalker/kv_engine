@@ -88,11 +88,11 @@ private:
     SerialisedManifestEntry(CollectionID collection,
                             const Collections::VB::ManifestEntry& me,
                             cb::char_buffer out) {
-        tryConstruction(out, collection, me.getStartSeqno(), me.getEndSeqno());
+        tryConstruction(out, collection, me.getStartSeqno(), me.getEndSeqno(), me.getFlushCount());
     }
 
     SerialisedManifestEntry(CollectionID identifier, cb::char_buffer out) {
-        tryConstruction(out, identifier, 0, StoredValue::state_collection_open);
+        tryConstruction(out, identifier, 0, StoredValue::state_collection_open, Collections::VB::ManifestEntry::NoFlush);
     }
 
     /**
@@ -103,13 +103,15 @@ private:
      * @param identifier The Identifier of the collection to save in this entry
      * @param startSeqno The startSeqno value to be used
      * @param endSeqno The endSeqno value to be used
+     * @param flushCount The flushCount value to be used
      * @throws std::length_error if the function would write outside of out's
      *         bounds.
      */
     void tryConstruction(cb::char_buffer out,
                          CollectionID identifier,
                          int64_t startSeqno,
-                         int64_t endSeqno) {
+                         int64_t endSeqno,
+                         int32_t flushCount) {
         if (!((out.data() + out.size()) >=
               (reinterpret_cast<char*>(this) + getObjectSize()))) {
             throw std::length_error(
@@ -120,6 +122,7 @@ private:
         this->cid = identifier;
         this->startSeqno = startSeqno;
         this->endSeqno = endSeqno;
+        this->flushCount = flushCount;
     }
 
     /**
@@ -134,13 +137,19 @@ private:
         std::stringstream json;
         json << R"({"uid":")" << std::hex << cid << "\"," << std::dec
              << R"("startSeqno":")" << _startSeqno << "\","
-             << R"("endSeqno":")" << _endSeqno << "\"}";
+             << R"("endSeqno":")" << _endSeqno
+        if (flushCount >= 0) {
+            json << R"(,"flushCount":")" << flushCount  << "\"}";
+        } else {
+            json << "\"}";
+        }
         return json.str();
     }
 
-    CollectionID cid;
-    int64_t startSeqno;
-    int64_t endSeqno;
+    CollectionID cid{0};
+    int64_t startSeqno{0};
+    int64_t endSeqno{0};
+    int32_t flushCount{0};
 };
 
 /**

@@ -30,9 +30,10 @@ static cb::const_char_buffer DefaultCollectionIdentifier(
 
 // SystemEvent keys or parts which will be made into keys
 const char* const SystemSeparator = ":"; // Note this never changes
-const char* const SystemEventPrefix = "_collections";
-const char* const SystemEventPrefixWithSeparator = "_collections:";
-const char* const DeleteKey = "_collections_delete:";
+const char* const SystemEventPrefix = "_collection";
+const char* const SystemEventPrefixWithSeparator = "_collection:";
+const char* const DeleteKey = "_collection_delete:";
+const char* const FlushKey = "_collection_flush:";
 
 // Couchstore private file name for manifest data
 const char CouchstoreManifest[] = "_local/collections_manifest";

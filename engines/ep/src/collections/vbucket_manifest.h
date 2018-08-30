@@ -360,7 +360,7 @@ public:
          * @param vb The vbucket to begin collection deletion on.
          * @param manifestUid the uid of the manifest which made the change
          * @param identifier CID for the collection being removed.
-         * @param endSeqno The end-seqno assigned to the end collection.
+         * @param endSeqno The end-seqno assigned to the collection.
          */
         void replicaBeginDelete(::VBucket& vb,
                                 uid_t manifestUid,
@@ -368,6 +368,24 @@ public:
                                 int64_t endSeqno) {
             manifest.beginCollectionDelete(
                     vb, manifestUid, identifier, OptionalSeqno{endSeqno});
+        }
+
+         /**
+         * Begin a flush collection for a replica VB, this is for receiving
+         * collection updates via DCP and the collection already has an end
+         * seqno assigned.
+         *
+         * @param vb The vbucket to begin collection flush on.
+         * @param manifestUid the uid of the manifest which made the change
+         * @param identifier CID for the collection being flushed.
+         * @param startSeqno The new start-seqno assigned to the collection.
+         */
+        void replicaFlush(::VBucket& vb,
+                                uid_t manifestUid,
+                                CollectionID identifier,
+                                int64_t startSeqno) {
+            manifest.flushCollection(
+                    vb, manifestUid, identifier, OptionalSeqno{startSeqno});
         }
 
         /**
@@ -541,6 +559,21 @@ private:
                                OptionalSeqno optionalSeqno);
 
     /**
+     * Flush a collection - updates the start seqno of the collection
+     * and generates a system event for the flush
+     *
+     * @param vb The vbucket for which the flush is being performed.
+     * @param manifestUid the uid of the manifest which made the change
+     * @param identifier CollectionID of the new collection.
+     * @param optionalSeqno Either a new seqno to assign to the collection or
+     *        none (none means the checkpoint will assign the new seqno).
+     */
+    void flushCollection(::VBucket& vb,
+                         uid_t manifestUid,
+                       CollectionID identifier,
+                       OptionalSeqno optionalSeqno);
+
+    /**
      * Complete the deletion of a collection, that is all data has been
      * erased and now the collection meta data can be erased
      *
@@ -681,24 +714,24 @@ protected:
      * @param identifier CollectionID of the collection to add.
      * @param startSeqno The seqno where the collection begins
      * @param endSeqno The seqno where it ends (can be the special open marker)
+     * @param flushCount The flushCount value if the collection is mid-flush,
+     *        NoFlush if the collection is not flushing
      * @return a non const reference to the new ManifestEntry so the caller can
      *         set the correct seqno.
      */
     ManifestEntry& addNewCollectionEntry(CollectionID identifier,
                                          int64_t startSeqno,
-                                         int64_t endSeqno);
+                                         int64_t endSeqno,
+                                         int32_t flushCount);
 
     /**
-     * Begin the deletion process by marking the collection entry with the seqno
-     * that represents its end.
+     * Get a collection manifest entry
      *
-     * After "begin" delete a collection can be added again or fully deleted
-     * by the completeDeletion method.
-     *
-     * @param identifier CollectionID of the collection to delete.
+     * @param identifier CollectionID to lookup
+     * @throw std::logic_error if not found
      * @return a reference to the updated ManifestEntry
      */
-    ManifestEntry& beginDeleteCollectionEntry(CollectionID identifier);
+    ManifestEntry& getCollectionEntry(CollectionID identifier);
 
     /**
      * Process a Collections::Manifest to determine if collections need adding
@@ -773,10 +806,16 @@ protected:
     const char* getJsonEntry(cJSON* cJson, const char* key);
 
     /**
-     * Update greatestEndSeqno if the seqno is larger
-     * @param seqno an endSeqno for a deleted collection
+     * @returns the flushCount for the cJSON object (NoFlush if no flushCount)
      */
-    void trackEndSeqno(int64_t seqno);
+    int32_t getFlushCount(cJSON* cJson) const;
+
+    /**
+     * Update greatestLogicallyDeletedSeqno if the seqno is larger, i.e. we
+     * will track the upper bound of the logically-deleted range.
+     * @param seqno a seqno to set
+     */
+    void trackLogicallyDeletedBoundary(int64_t seqno);
 
     /**
      * For creation of collection SystemEvents - The SystemEventFactory
@@ -825,11 +864,13 @@ protected:
 
     /**
      * A key below this seqno might be logically deleted and should be checked
-     * against the manifest. This member will be set to
-     * StoredValue::state_collection_open when no collections are being deleted
-     * and the greatestEndSeqno has no use (all collections exclusively open)
+     * against the manifest (i.e. a map lookup is needed).
+     * This member will be set to StoredValue::state_collection_open when no
+     * collections are being deleted/flushed and the
+     * greatestLogicallyDeletedSeqno has no use (all collections exclusively
+     * open)
      */
-    int64_t greatestEndSeqno;
+    int64_t greatestLogicallyDeletedSeqno;
 
     /**
      * The manifest tracks how many collections are being deleted so we know

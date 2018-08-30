@@ -34,7 +34,7 @@ namespace VB {
 
 Manifest::Manifest(const std::string& manifest)
     : defaultCollectionExists(false),
-      greatestEndSeqno(StoredValue::state_collection_open),
+      greatestLogicallyDeletedSeqno(StoredValue::state_collection_open),
       nDeletingCollections(0) {
     if (manifest.empty()) {
         // Empty manifest, initialise the manifest with the default collection
@@ -78,7 +78,9 @@ Manifest::Manifest(const std::string& manifest)
         CollectionID cid = makeCollectionID(getJsonEntry(collection, "uid"));
         int64_t startSeqno = std::stoll(getJsonEntry(collection, "startSeqno"));
         int64_t endSeqno = std::stoll(getJsonEntry(collection, "endSeqno"));
-        auto& entry = addNewCollectionEntry(cid, startSeqno, endSeqno);
+        int32_t flushCount = getFlushCount(collection);
+
+        auto& entry = addNewCollectionEntry(cid, startSeqno, endSeqno, flushCount);
 
         if (cid.isDefaultCollection()) {
             defaultCollectionExists = entry.isOpen();
@@ -166,7 +168,8 @@ ManifestEntry& Manifest::addCollectionEntry(CollectionID identifier) {
 
 ManifestEntry& Manifest::addNewCollectionEntry(CollectionID identifier,
                                                int64_t startSeqno,
-                                               int64_t endSeqno) {
+                                               int64_t endSeqno,
+                                               int32_t flushCount) {
     // This method is only for when the map does not have the collection
     if (map.count(identifier) > 0) {
         throwException<std::logic_error>(
@@ -174,16 +177,23 @@ ManifestEntry& Manifest::addNewCollectionEntry(CollectionID identifier,
                 "collection already exists, collection:" +
                         identifier.to_string() +
                         ", startSeqno:" + std::to_string(startSeqno) +
-                        ", endSeqno:" + std::to_string(endSeqno));
+                        ", endSeqno:" + std::to_string(endSeqno)
+                        ", flushCount:" + std::to_string(flushCount));
     }
 
     auto inserted =
-            map.emplace(identifier, ManifestEntry(startSeqno, endSeqno));
+            map.emplace(identifier, ManifestEntry(startSeqno, endSeqno, flushCount));
 
     // Did we insert a deleting collection (can happen if restoring from
     // persisted manifest)
     if ((*inserted.first).second.isDeleting()) {
-        trackEndSeqno(endSeqno);
+        trackLogicallyDeletedBoundary(endSeqno);
+    }
+
+    // Did we insert a flushing collection (can happen if restoring from
+    // persisted manifest)
+    if ((*inserted.first).second.isFlushing()) {
+        trackLogicallyDeletedBoundary(startSeqno);
     }
 
     return (*inserted.first).second;
@@ -193,7 +203,7 @@ void Manifest::beginCollectionDelete(::VBucket& vb,
                                      uid_t manifestUid,
                                      CollectionID identifier,
                                      OptionalSeqno optionalSeqno) {
-    auto& entry = beginDeleteCollectionEntry(identifier);
+    auto& entry = getCollectionEntry(identifier);
 
     // record the uid of the manifest which removed the collection
     this->manifestUid = manifestUid;
@@ -220,10 +230,10 @@ void Manifest::beginCollectionDelete(::VBucket& vb,
 
     entry.setEndSeqno(seqno);
 
-    trackEndSeqno(seqno);
+    trackLogicallyDeletedBoundary(seqno);
 }
 
-ManifestEntry& Manifest::beginDeleteCollectionEntry(CollectionID identifier) {
+ManifestEntry& Manifest::getCollectionEntry(CollectionID identifier) {
     auto itr = map.find(identifier);
     if (itr == map.end()) {
         throwException<std::logic_error>(
@@ -234,10 +244,50 @@ ManifestEntry& Manifest::beginDeleteCollectionEntry(CollectionID identifier) {
     return itr->second;
 }
 
+void Manifest::flushCollection(::VBucket& vb,
+                         uid_t manifestUid,
+                       CollectionID identifier,
+                       OptionalSeqno optionalSeqno) {
+
+    // We may need to add the collection here because consumers still need to see the add and flush event?
+#warning "test for fast-forward i.e. when a manifest adds a flushing collection (i.e. we never saw the add, but now learn of the add whilst it is flushing)"
+    // 1. Update the manifest
+    auto& entry = getCollectionEntry(identifier);
+
+    // 1.1 record the uid of the manifest which is adding the collection
+    this->manifestUid = manifestUid;
+
+    // 2. Queue a system event, this will take a copy of the manifest ready
+    //    for persistence into the vb state file.
+    auto seqno = queueSystemEvent(vb,
+                                  SystemEvent::FlushCollection,
+                                  identifier,
+                                  false /*deleted*/,
+                                  optionalSeqno);
+
+    EP_LOG_INFO(
+            "collections: vb:{} flush collection:{:x}, replica:{}, "
+            "backfill:{}, seqno:{}, manifest:{:x}",
+            vb.getId(),
+            identifier,
+            optionalSeqno.is_initialized(),
+            vb.isBackfillPhase(),
+            seqno,
+            manifestUid);
+
+    trackLogicallyDeletedBoundary(seqno);
+
+    // 3. Now patch the entry with the seqno of the system event, note the copy
+    //    of the manifest taken at step 1 gets the correct seqno when the system
+    //    event is flushed. The flush updates the start-seqno
+    entry.setStartSeqno(seqno);
+    entry.setFlushing(true);
+}
+
 void Manifest::completeDeletion(::VBucket& vb, CollectionID identifier) {
     auto itr = map.find(identifier);
 
-    EP_LOG_INFO("collections: vb:{} complete delete of collection:{:x}",
+    EP_LOG_INFO("collections: vb:{} completed delete of collection:{:x}",
                 vb.getId(),
                 identifier);
 
@@ -255,11 +305,27 @@ void Manifest::completeDeletion(::VBucket& vb, CollectionID identifier) {
 
     nDeletingCollections--;
     if (nDeletingCollections == 0) {
-        greatestEndSeqno = StoredValue::state_collection_open;
+        greatestLogicallyDeletedSeqno = StoredValue::state_collection_open;
     }
 
     queueSystemEvent(
             vb, se, identifier, false /*delete*/, OptionalSeqno{/*none*/});
+}
+
+void Manifest::completeFlush(::VBucket& vb, CollectionID identifier) {
+    auto itr = map.find(identifier);
+
+    EP_LOG_INFO("collections: vb:{} completed flush of collection:{:x}",
+                vb.getId(),
+                identifier);
+
+    if (itr == map.end()) {
+        throwException<std::logic_error>(
+                __FUNCTION__,
+                "could not find collection:" + identifier.to_string());
+    }
+
+    itr->second.completedFlushing();
 }
 
 Manifest::processResult Manifest::processManifest(
@@ -317,7 +383,7 @@ Manifest::container::const_iterator Manifest::getManifestEntry(
 
 bool Manifest::isLogicallyDeleted(const DocKey& key, int64_t seqno) const {
     // Only do the searching/scanning work for keys in the deleted range.
-    if (seqno <= greatestEndSeqno) {
+    if (seqno <= greatestLogicallyDeletedSeqno) {
         if (key.getCollectionID().isDefaultCollection()) {
             return !defaultCollectionExists;
         } else {
@@ -327,7 +393,7 @@ bool Manifest::isLogicallyDeleted(const DocKey& key, int64_t seqno) const {
             }
             auto itr = map.find(lookup);
             if (itr != map.end()) {
-                return seqno <= itr->second.getEndSeqno();
+                return itr->second.isLogicallyDeleted(seqno);
             }
         }
     }
@@ -342,10 +408,7 @@ bool Manifest::isLogicallyDeleted(const container::const_iterator entry,
                 "iterator is invalid, seqno:" + std::to_string(seqno));
     }
 
-    if (seqno <= greatestEndSeqno) {
-        return seqno <= entry->second.getEndSeqno();
-    }
-    return false;
+    return entry->second.isLogicallyDeleted(seqno);
 }
 
 boost::optional<CollectionID> Manifest::shouldCompleteDeletion(
@@ -549,11 +612,26 @@ const char* Manifest::getJsonEntry(cJSON* cJson, const char* key) {
     return jsonEntry->valuestring;
 }
 
-void Manifest::trackEndSeqno(int64_t seqno) {
+int32_t Manifest::getFlushCount(cJSON* cJson) const {
+    auto jsonEntry = cJSON_GetObjectItem(cJson, "flushCount");
+    if (!jsonEntry) {
+        return ManifestEntry::NoFlush;
+    }
+
+        if (jsonEntry->type != cJSON_String) {
+             throwException<std::invalid_argument>(
+                __FUNCTION__,
+                "not string, key:flushCount type:" std::to_string(jsonEntry->type));
+        }
+        return std::stoi(jsonEntry->valuestring);
+
+}
+
+void Manifest::trackLogicallyDeletedBoundary(int64_t seqno) {
     nDeletingCollections++;
-    if (seqno > greatestEndSeqno ||
-        greatestEndSeqno == StoredValue::state_collection_open) {
-        greatestEndSeqno = seqno;
+    if (seqno > greatestLogicallyDeletedSeqno ||
+        greatestLogicallyDeletedSeqno == StoredValue::state_collection_open) {
+        greatestLogicallyDeletedSeqno = seqno;
     }
 }
 
@@ -587,7 +665,7 @@ uint64_t Manifest::getItemCount(CollectionID collection) const {
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
     os << "VB::Manifest"
        << ": defaultCollectionExists:" << manifest.defaultCollectionExists
-       << ", greatestEndSeqno:" << manifest.greatestEndSeqno
+       << ", greatestLogicallyDeletedSeqno:" << manifest.greatestLogicallyDeletedSeqno
        << ", nDeletingCollections:" << manifest.nDeletingCollections
        << ", map.size:" << manifest.map.size() << std::endl;
     for (auto& m : manifest.map) {

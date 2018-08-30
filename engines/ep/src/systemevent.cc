@@ -48,12 +48,17 @@ std::string SystemEventFactory::makeKey(SystemEvent se,
     std::string key;
     switch (se) {
     case SystemEvent::Collection:
-        // $collection:<collection-id>
+        // _collection:<collection-id>
         key = Collections::SystemEventPrefixWithSeparator + keyExtra;
         break;
     case SystemEvent::DeleteCollectionHard: {
-        // $collections_delete:<collection-id>
+        // _collections_delete:<collection-id>
         key = Collections::DeleteKey + keyExtra;
+        break;
+    }
+    case SystemEvent::FlushCollection: {
+        // _collections_flush:<collection-id>
+        key = Collections::FlushKey + keyExtra;
         break;
     }
     }
@@ -103,6 +108,7 @@ ProcessStatus SystemEventFlush::process(const queued_item& item) {
 
     switch (SystemEvent(item->getFlags())) {
     case SystemEvent::Collection: {
+    case SystemEvent::FlushCollection: {
         return ProcessStatus::Continue; // And flushes an item
     }
     case SystemEvent::DeleteCollectionHard: {
@@ -122,6 +128,7 @@ ProcessStatus SystemEventReplicate::process(const Item& item) {
         } else {
             switch (SystemEvent(item.getFlags())) {
             case SystemEvent::Collection:
+            case SystemEvent::Collection:
                 return ProcessStatus::Continue;
             case SystemEvent::DeleteCollectionHard:
                 // DeleteHard does not replicate
@@ -136,7 +143,8 @@ ProcessStatus SystemEventReplicate::process(const Item& item) {
 std::unique_ptr<SystemEventProducerMessage> SystemEventProducerMessage::make(
         uint32_t opaque, const queued_item& item) {
     switch (SystemEvent(item->getFlags())) {
-    case SystemEvent::Collection: {
+    case SystemEvent::Collection:
+    case SystemEvent::FlushCollection: {
         // Note: constructor is private and make_unique is a pain to make friend
         return std::unique_ptr<CollectionsProducerMessage>{
                 new CollectionsProducerMessage(

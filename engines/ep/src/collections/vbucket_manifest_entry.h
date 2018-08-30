@@ -37,11 +37,13 @@ namespace VB {
  */
 class ManifestEntry {
 public:
-    ManifestEntry(int64_t _startSeqno, int64_t _endSeqno)
-        : startSeqno(-1), endSeqno(-1), diskCount(0) {
+    ManifestEntry(int64_t _startSeqno, int64_t _endSeqno) {
         // Setters validate the start/end range is valid
         setStartSeqno(_startSeqno);
         setEndSeqno(_endSeqno);
+    }
+
+    ManifestEntry(int64_t _startSeqno, int64_t _endSeqno, int32_t flushCount) : ManifestEntry(_startSeqno, _endSeqno) : flushCount(flushCount) {
     }
 
     int64_t getStartSeqno() const {
@@ -122,6 +124,23 @@ public:
         return diskCount;
     }
 
+    bool isLogicallyDeleted(int64_t seqno) const {
+        return seqno < startSeqno || seqno <= endSeqno;
+    }
+
+    void setFlushCount(int32_t flushCount) const {
+        flushing = flushCount;
+    }
+
+    int32_t getFlushCount() const {
+        return flushing;
+    }
+
+static constexpr int32_t NoFlush = 1;
+    void completedFlushing() const {
+        flushing = NoFlush;
+    }
+
 private:
     /**
      * Return a string for use in throwException, returns:
@@ -155,8 +174,16 @@ private:
      * If a collection is not being deleted then endSeqno has a value of
      * StoredValue::state_collection_open to indicate this.
      */
-    int64_t startSeqno;
-    int64_t endSeqno;
+    int64_t startSeqno{-1};
+    int64_t endSeqno{-1};
+
+    /**
+     * A flushing collection can be flushed again, which is indicated from
+     * the server by just incrementing the flush-count. The current flushed
+     * count must be maintained (and persisted) so that we can start new flushes
+     * and resume unfinished ones.
+     */
+    int32_t flushing{-1};
 
     /**
      * The count of items in this collection
@@ -165,7 +192,7 @@ private:
      *           The write lock is really for the Manifest map being changed.
      */
     mutable cb::NonNegativeCounter<uint64_t, cb::ThrowExceptionUnderflowPolicy>
-            diskCount;
+            diskCount{0};
 };
 
 std::ostream& operator<<(std::ostream& os, const ManifestEntry& manifestEntry);
