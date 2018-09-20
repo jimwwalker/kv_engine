@@ -121,3 +121,64 @@ TEST_F(AtomicUnorderedMapTest, ConcurrentOverlappingInsert) {
 
     EXPECT_EQ(n_elements, map.size());
 }
+
+TEST_F(AtomicUnorderedMapTest, apply) {
+    insert_into_map(map, 10, 0);
+
+    for (size_t n = 0; n < 10; n++) {
+        EXPECT_TRUE(map.apply(n, [n](const TestMap::value_type& value) {
+            EXPECT_EQ(n * 10, value.second->value);
+        }));
+    }
+    for (size_t n = 10; n < 20; n++) {
+        EXPECT_FALSE(map.apply(n, [](const TestMap::value_type& value) {
+            EXPECT_FALSE(true) << "Should not of been called";
+        }));
+    }
+}
+
+TEST_F(AtomicUnorderedMapTest, apply2) {
+    insert_into_map(map, 10, 0);
+
+    for (size_t n = 0; n < 10; n++) {
+        auto rv = map.apply2(n, [](const TestMap::value_type& value) {
+            return value.second;
+        });
+        ASSERT_TRUE(rv);
+        EXPECT_EQ(n * 10, rv.get()->value);
+    }
+    for (size_t n = 10; n < 20; n++) {
+        auto rv = map.apply2(n, [](const TestMap::value_type& value) {
+            return value.second;
+        });
+        EXPECT_FALSE(rv);
+    }
+}
+
+TEST_F(AtomicUnorderedMapTest, for_each2) {
+    insert_into_map(map, 10, 0);
+
+    // use for_each2 to find a mapped value which matches n
+    size_t n = 5 * 10;
+    auto rv = map.for_each2([n](const TestMap::value_type& value) {
+        if (value.second->value == n) {
+            // returning a SingleThreadedRCPtr
+            return value.second;
+        }
+        return SingleThreadedRCPtr<DummyValue>{};
+    });
+
+    EXPECT_NE(nullptr, rv.get());
+    EXPECT_EQ(n, rv->value);
+
+    n = 11 * 10;
+    auto rv2 = map.for_each2([n](const TestMap::value_type& value) {
+        if (value.second->value == n) {
+            // returning a SingleThreadedRCPtr
+            return value.second;
+        }
+        return SingleThreadedRCPtr<DummyValue>{};
+    });
+
+    EXPECT_EQ(nullptr, rv2.get());
+}

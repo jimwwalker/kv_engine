@@ -287,6 +287,7 @@ public:
     ~SingleThreadedRCPtr() {
         if (value != nullptr && value->getRCValue()._rc_decref() == 0) {
             Deleter()(value);
+            value = nullptr;
         }
     }
 

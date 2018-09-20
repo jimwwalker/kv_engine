@@ -335,7 +335,7 @@ ENGINE_ERROR_CODE DcpProducer::streamRequest(
         std::lock_guard<StreamsMap> guard(streams);
         auto it = streams.find(vbucket, guard);
         if (it.second) {
-            auto& stream = it.first;
+            auto& stream = it.first.front();
             if (stream->isActive()) {
                 logger->warn(
                         "({}) Stream request failed"
@@ -519,7 +519,8 @@ ENGINE_ERROR_CODE DcpProducer::streamRequest(
             // streams map.
             static_cast<ActiveStream*>(s.get())->setActive();
         }
-        streams.insert(std::make_pair(vbucket, s));
+
+        streams.insert(std::make_pair(vbucket, StreamsQueue{s}));
     }
 
     // See MB-25820:  Ensure that callback is called only after all other
@@ -935,20 +936,19 @@ bool DcpProducer::handleResponse(const protocol_binary_response_header* resp) {
         const auto opaque = pkt->message.header.response.getOpaque();
 
         // Search for an active stream with the same opaque as the response.
-        auto itr = streams.find_if(
-            [opaque](const StreamsMap::value_type& s) {
-                const auto& stream = s.second;
-                if (stream && stream->isTypeActive()) {
-                    ActiveStream* as = static_cast<ActiveStream*>(stream.get());
-                    return (as && opaque == stream->getOpaque());
-                } else {
-                    return false;
-                }
+        auto itr = streams.find_if([opaque](const StreamsMap::value_type& s) {
+            const auto& stream = s.second.front();
+            if (stream && stream->isTypeActive()) {
+                ActiveStream* as = static_cast<ActiveStream*>(stream.get());
+                return (as && opaque == stream->getOpaque());
+            } else {
+                return false;
             }
-        );
+        });
 
         if (itr.second) {
-            ActiveStream *as = static_cast<ActiveStream*>(itr.first.get());
+            ActiveStream* as =
+                    static_cast<ActiveStream*>(itr.first.front().get());
             if (opcode == cb::mcbp::ClientOpcode::DcpSetVbucketState) {
                 as->setVBucketStateAckRecieved();
             } else if (opcode == cb::mcbp::ClientOpcode::DcpSnapshotMarker) {
@@ -986,9 +986,21 @@ ENGINE_ERROR_CODE DcpProducer::closeStream(uint32_t opaque, Vbid vbucket) {
 
     /* We should not remove the stream from the streams map if we have to
        send the "STREAM_END" response asynchronously to the consumer */
-    auto stream = sendStreamEndOnClientStreamClose
-                          ? findStream(vbucket)
-                          : streams.erase(vbucket).first;
+    std::shared_ptr<Stream> stream;
+
+    if (sendStreamEndOnClientStreamClose) {
+        stream = findStream(vbucket);
+    } else {
+        // @todo: When we do manage many streams per VB this code will change.
+        // closeStream will be changed to close one of the possibly many streams
+        // for the given vbucket. When that happens we won't be calling
+        // streams.erase, and can then remove the code which is making a copy
+        // of the vbucket's StreamQueue.
+        auto queue = streams.erase(vbucket).first;
+        if (!queue.empty()) {
+            stream = queue.front();
+        }
+    }
 
     ENGINE_ERROR_CODE ret;
     if (!stream) {
@@ -1101,13 +1113,11 @@ void DcpProducer::addStats(ADD_STAT add_stat, const void *c) {
     // Make a copy of all valid streams (under lock), and then call addStats
     // for each one. (Done in two stages to minmise how long we have the
     // streams map locked for).
-    std::vector<StreamsMap::mapped_type> valid_streams;
+    std::vector<std::shared_ptr<Stream>> valid_streams;
 
-    streams.for_each(
-        [&valid_streams](const StreamsMap::value_type& element) {
-            valid_streams.push_back(element.second);
-        }
-    );
+    streams.for_each([&valid_streams](const StreamsMap::value_type& element) {
+        valid_streams.push_back(element.second.front());
+    });
     for (const auto& stream : valid_streams) {
         stream->addStats(add_stat, c);
     }
@@ -1115,31 +1125,43 @@ void DcpProducer::addStats(ADD_STAT add_stat, const void *c) {
 
 void DcpProducer::addTakeoverStats(ADD_STAT add_stat, const void* c,
                                    const VBucket& vb) {
+    // Usage of apply2 here yields a 'useless' optional<bool> but that is
+    // only temporary until the bulk of the change uses a more elaborate
+    // container.
+    auto applied = streams.apply2(
+            vb.getId(),
+            [this, add_stat, c, &vb](StreamsMap::value_type& value) {
+                if (!value.second.empty()) {
+                    // Invoke addTakeoverSyays with front of the container
+                    if (value.second.front()->isTypeActive()) {
+                        ActiveStream* as = static_cast<ActiveStream*>(
+                                value.second.front().get());
+                        as->addTakeoverStats(add_stat, c, vb);
+                        return true;
+                    } else {
+                        logger->warn(
+                                "({}) "
+                                "DcpProducer::addTakeoverStats Stream type is "
+                                "and not the "
+                                "expected Active",
+                                vb.getId(),
+                                to_string(value.second.front()->getType()));
+                    }
+                }
+                return false;
+            });
 
-    auto stream = findStream(vb.getId());
-    if (stream) {
-        if (stream->isTypeActive()) {
-            ActiveStream* as = static_cast<ActiveStream*>(stream.get());
-            as->addTakeoverStats(add_stat, c, vb);
-            return;
-        }
-        logger->warn(
-                "({}) "
-                "DcpProducer::addTakeoverStats Stream type is and not the "
-                "expected Active",
-                vb.getId(),
-                to_string(stream->getType()));
-    } else {
+    if (!applied.is_initialized() || !applied.get()) {
         logger->info(
                 "({}) "
                 "DcpProducer::addTakeoverStats Unable to find stream",
                 vb.getId());
+        // Error path - return status of does_not_exist to ensure
+        // rebalance does not hang.
+        add_casted_stat("status", "does_not_exist", add_stat, c);
+        add_casted_stat("estimate", 0, add_stat, c);
+        add_casted_stat("backfillRemaining", 0, add_stat, c);
     }
-    // Error path - return status of does_not_exist to ensure rebalance does not
-    // hang.
-    add_casted_stat("status", "does_not_exist", add_stat, c);
-    add_casted_stat("estimate", 0, add_stat, c);
-    add_casted_stat("backfillRemaining", 0, add_stat, c);
 }
 
 void DcpProducer::aggregateQueueStats(ConnCounter& aggregator) {
@@ -1150,46 +1172,63 @@ void DcpProducer::aggregateQueueStats(ConnCounter& aggregator) {
 }
 
 void DcpProducer::notifySeqnoAvailable(Vbid vbucket, uint64_t seqno) {
-    auto stream = findStream(vbucket);
-    if (stream && stream->isActive()) {
-        stream->notifySeqnoAvailable(seqno);
-    }
+    streams.apply(vbucket, [seqno](StreamsMap::value_type& value) {
+        for (const auto& stream : value.second) {
+            if (stream->isActive()) {
+                stream->notifySeqnoAvailable(seqno);
+            }
+        }
+    });
 }
 
 void DcpProducer::closeStreamDueToVbStateChange(Vbid vbucket,
                                                 vbucket_state_t state) {
-    auto stream = findStream(vbucket);
-    if (stream) {
+    if (setStreamsDeadStatus(vbucket, END_STREAM_STATE)) {
         logger->debug("({}) State changed to {}, closing active stream!",
                       vbucket,
                       VBucket::toString(state));
-        stream->setDead(END_STREAM_STATE);
     }
 }
 
 void DcpProducer::closeStreamDueToRollback(Vbid vbucket) {
-    auto stream = findStream(vbucket);
-    if (stream) {
+    if (setStreamsDeadStatus(vbucket, END_STREAM_ROLLBACK)) {
         logger->debug(
                 "({}) Rollback occurred,"
                 "closing stream (downstream must rollback too)",
-                vbucket,
-                to_string(stream->getType()));
-        stream->setDead(END_STREAM_ROLLBACK);
+                vbucket);
     }
 }
 
 bool DcpProducer::handleSlowStream(Vbid vbid, const CheckpointCursor* cursor) {
     if (supportsCursorDropping) {
-        auto stream = findStream(vbid);
-        if (stream) {
-            if (stream->getCursor().lock().get() == cursor) {
-                ActiveStream* as = static_cast<ActiveStream*>(stream.get());
-                return as->handleSlowStream();
-            }
-        }
+        // Usage of apply2 here yields a 'useless' optional<bool> but that is
+        // only temporary until the bulk of the change uses a more elaborate
+        // container.
+        return streams
+                .apply2(vbid,
+                        [cursor](StreamsMap::value_type& value) {
+                            for (const auto& stream : value.second) {
+                                if (stream->getCursor().lock().get() ==
+                                    cursor) {
+                                    ActiveStream* as =
+                                            static_cast<ActiveStream*>(
+                                                    stream.get());
+                                    return as->handleSlowStream();
+                                }
+                            }
+                            return false;
+                        })
+                .is_initialized();
     }
     return false;
+}
+
+bool DcpProducer::setStreamsDeadStatus(Vbid vbid, end_stream_status_t status) {
+    return streams.apply(vbid, [status](StreamsMap::value_type& value) {
+        for (auto& stream : value.second) {
+            stream->setDead(status);
+        }
+    });
 }
 
 void DcpProducer::closeAllStreams() {
@@ -1203,7 +1242,9 @@ void DcpProducer::closeAllStreams() {
         streams.for_each(
             [&vbvector](StreamsMap::value_type& iter) {
                 vbvector.push_back(iter.first);
-                iter.second->setDead(END_STREAM_DISCONNECTED);
+                for (const auto& stream : iter.second) {
+                    stream->setDead(END_STREAM_DISCONNECTED);
+                }
             },
             guard);
 
@@ -1292,9 +1333,10 @@ std::unique_ptr<DcpResponse> DcpProducer::getNextItem() {
 
 void DcpProducer::setDisconnect() {
     ConnHandler::setDisconnect();
-
     streams.for_each([](StreamsMap::value_type& iter) {
-        iter.second->setDead(END_STREAM_DISCONNECTED);
+        for (auto& s : iter.second) {
+            s->setDead(END_STREAM_DISCONNECTED);
+        }
     });
 }
 
@@ -1370,11 +1412,11 @@ ENGINE_ERROR_CODE DcpProducer::maybeSendNoop(
 }
 
 void DcpProducer::clearQueues() {
-    streams.for_each(
-        [](StreamsMap::value_type& iter) {
-            iter.second->clear();
+    streams.for_each([](StreamsMap::value_type& iter) {
+        for (const auto& s : iter.second) {
+            s->clear();
         }
-    );
+    });
 }
 
 size_t DcpProducer::getItemsSent() {
@@ -1383,14 +1425,15 @@ size_t DcpProducer::getItemsSent() {
 
 size_t DcpProducer::getItemsRemaining() {
     size_t remainingSize = 0;
-    streams.for_each(
-        [&remainingSize](const StreamsMap::value_type& iter) {
-            if (iter.second->isTypeActive()) {
-                ActiveStream *as = static_cast<ActiveStream *>(iter.second.get());
+    streams.for_each([&remainingSize](const StreamsMap::value_type& iter) {
+        for (const auto& s : iter.second) {
+            if (s->isTypeActive()) {
+                ActiveStream* as =
+                        static_cast<ActiveStream*>(iter.second.front().get());
                 remainingSize += as->getItemsRemaining();
             }
         }
-    );
+    });
 
     return remainingSize;
 }
@@ -1405,8 +1448,7 @@ size_t DcpProducer::getTotalUncompressedDataSize() {
 
 std::vector<Vbid> DcpProducer::getVBVector() {
     std::vector<Vbid> vbvector;
-    streams.for_each(
-        [&vbvector](StreamsMap::value_type& iter) {
+    streams.for_each([&vbvector](StreamsMap::value_type& iter) {
         vbvector.push_back(iter.first);
     });
     return vbvector;
@@ -1443,7 +1485,7 @@ void DcpProducer::scheduleCheckpointProcessorTask(
 std::shared_ptr<Stream> DcpProducer::findStream(Vbid vbid) {
     auto it = streams.find(vbid);
     if (it.second) {
-        return std::move(it.first);
+        return std::move(it.first.front());
     } else {
         return nullptr;
     }

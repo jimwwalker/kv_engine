@@ -392,6 +392,11 @@ protected:
                                      dcp_message_producers* producers,
                                      std::unique_ptr<Item> itmCpy,
                                      ENGINE_ERROR_CODE ret);
+    /**
+     * Set the dead-status of the stream(s) associated with the specified
+     * vbucket.
+     */
+    bool setStreamsDeadStatus(Vbid vbid, end_stream_status_t status);
 
     // stash response for retry if E2BIG was hit
     std::unique_ptr<DcpResponse> rejectResp;
@@ -418,8 +423,9 @@ protected:
 
     DcpReadyQueue ready;
 
-    // Map of vbid -> stream. Map itself is atomic (thread-safe).
-    typedef AtomicUnorderedMap<Vbid, std::shared_ptr<Stream>> StreamsMap;
+    // Map of vbid -> streams. Map itself is atomic (thread-safe).
+    using StreamsQueue = std::vector<std::shared_ptr<Stream>>;
+    using StreamsMap = AtomicUnorderedMap<Vbid, StreamsQueue>;
     StreamsMap streams;
 
     std::atomic<size_t> itemsSent;

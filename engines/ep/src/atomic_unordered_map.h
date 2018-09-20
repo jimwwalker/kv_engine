@@ -101,6 +101,7 @@
 
 #include "atomic.h"
 
+#include <boost/optional/optional.hpp>
 #include <platform/rwlock.h>
 
 #include <algorithm>
@@ -224,8 +225,74 @@ public:
      */
     template <class UnaryFunction>
     void for_each(UnaryFunction f) {
-        std::shared_lock<map_type> guard(*this); // internally locked
+        std::shared_lock<map_type> guard(*this);
         for_each(f, guard);
+    }
+
+    /**
+     * for_each2 iterates each key/value and invokes f(value) stopping the
+     * iteration when f(value) returns an object which evaluates to true (using
+     * operator bool). The for_each2 method itself will return either the value
+     * which stopped the iteration or a default initialised object if the
+     * iteration visited all keys.
+     *
+     * The return type of for_each2 is the return type of f.
+     *
+     * E.g if f returns a shared_ptr<T> the for_each2 will return a
+     * shared_ptr<T> pointing at the T of interest or a null shared_ptr<T>.
+     *
+     * @param f Function object to be applied to every element in the map
+     * @returns The value which stopped iteration or a default initialised
+     *          object of the type f returns.
+     */
+    template <class UnaryFunction>
+    auto for_each2(UnaryFunction f) {
+        std::shared_lock<map_type> guard(*this);
+        return for_each2_UNLOCKED(f);
+    }
+
+    /**
+     * apply the function f against the value of the given key (if mapped)
+     * @param key the key to lookup
+     * @param f a function to invoke, f will be passed a reference to the mapped
+     *        value
+     * @return true if the function was executed
+     */
+    template <class UnaryFunction>
+    bool apply(const key_type& key, UnaryFunction f) {
+        std::shared_lock<map_type> guard(*this);
+        auto iter = map.find(key);
+        if (iter != map.end()) {
+            f(*iter);
+        }
+        return iter != map.end();
+    }
+
+    /**
+     * apply2 looks-up the value of key and invokes f(value).
+     *
+     * If key is mapped apply2 returns an optional<return-type-of-f> initialised
+     * with the object f(value) returned.
+     *
+     * If the key is not mapped an uninitialised optional is returned.
+     *
+     * @param key The key to lookup
+     * @param f A function to execute with the value of key
+     * @returns an optional<return-type-of-f> which is uninitialised if key is
+     *          not found, or is initialised to the object from f(value).
+     */
+    template <class UnaryFunction>
+    auto apply2(const key_type& key, UnaryFunction f) {
+        std::shared_lock<map_type> guard(*this);
+        return apply2_UNLOCKED(key, f);
+    }
+
+    // as above but uses external exclusive locking
+    template <class UnaryFunction>
+    auto apply2(const key_type& key,
+                UnaryFunction f,
+                std::lock_guard<map_type>&) {
+        return apply2_UNLOCKED(key, f);
     }
 
     /**
@@ -257,6 +324,7 @@ public:
             return std::make_pair(T(), false);
         }
     }
+
     std::pair<T, bool> erase(const key_type& key) {
         std::lock_guard<map_type> guard(*this); // internally locked
         return erase(key, guard);
@@ -270,6 +338,12 @@ public:
      */
     bool insert(const value_type& value) {
         std::lock_guard<map_type> guard(*this); // internally locked
+        auto result = map.insert(value);
+        return result.second;
+    }
+
+    /// As above but uses external locking
+    bool insert(const value_type& value, std::lock_guard<map_type>&) {
         auto result = map.insert(value);
         return result.second;
     }
@@ -306,6 +380,30 @@ private:
         } else {
             return std::make_pair(T(), false);
         }
+    }
+
+    template <class UnaryFunction>
+    auto apply2_UNLOCKED(const key_type& key, UnaryFunction f) {
+        auto iter = map.find(key);
+        using UnaryFunctionRval = decltype(f(*map.find(key)));
+
+        if (iter != map.end()) {
+            return boost::optional<UnaryFunctionRval>(f(*iter));
+        }
+        return boost::optional<UnaryFunctionRval>{};
+    }
+
+    template <class UnaryFunction>
+    auto for_each2_UNLOCKED(UnaryFunction f) {
+        using UnaryFunctionRval = decltype(f(*map.find({})));
+        for (auto& kv : map) {
+            auto rv = f(kv);
+            if (rv) {
+                return rv;
+            }
+        }
+        // Return default initialised rval
+        return UnaryFunctionRval{};
     }
 
     std::unordered_map<Key, T, Hash, KeyEqual, Allocator> map;

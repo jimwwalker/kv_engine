@@ -44,7 +44,7 @@ std::shared_ptr<MockActiveStream> MockDcpProducer::mockActiveStreamRequest(
             snap_start_seqno,
             snap_end_seqno);
     stream->setActive();
-    if (!streams.insert(std::make_pair(vb.getId(), stream))) {
+    if (!streams.insert(std::make_pair(vb.getId(), StreamsQueue{stream}))) {
         throw std::logic_error(
                 "MockDcpProducer::mockActiveStreamRequest "
                 "failed to insert requested stream");
