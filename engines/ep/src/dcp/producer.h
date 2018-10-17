@@ -395,7 +395,8 @@ protected:
                                      MutationResponse& mutationResponse,
                                      dcp_message_producers* producers,
                                      std::unique_ptr<Item> itmCpy,
-                                     ENGINE_ERROR_CODE ret);
+                                     ENGINE_ERROR_CODE ret,
+                                     DcpStreamId sid);
     /**
      * Set the dead-status of the specified stream associated with the specified
      * vbucket.

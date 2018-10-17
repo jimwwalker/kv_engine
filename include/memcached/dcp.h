@@ -17,6 +17,7 @@
 #pragma once
 
 #include <mcbp/protocol/status.h>
+#include <memcached/dcp_stream_id.h>
 #include <memcached/engine_error.h>
 #include <memcached/types.h>
 #include <memcached/vbucket.h>
@@ -89,7 +90,8 @@ struct dcp_message_producers {
      */
     virtual ENGINE_ERROR_CODE stream_end(uint32_t opaque,
                                          Vbid vbucket,
-                                         uint32_t flags) = 0;
+                                         uint32_t flags,
+                                         DcpStreamId sid) = 0;
 
     /**
      * Send a marker
@@ -104,7 +106,8 @@ struct dcp_message_producers {
                                      Vbid vbucket,
                                      uint64_t start_seqno,
                                      uint64_t end_seqno,
-                                     uint32_t flags) = 0;
+                                     uint32_t flags,
+                                     DcpStreamId sid) = 0;
 
     /**
      * Send a Mutation
@@ -131,7 +134,8 @@ struct dcp_message_producers {
                                        uint32_t lock_time,
                                        const void* meta,
                                        uint16_t nmeta,
-                                       uint8_t nru) = 0;
+                                       uint8_t nru,
+                                       DcpStreamId sid) = 0;
 
     /**
      * Send a deletion
@@ -152,7 +156,8 @@ struct dcp_message_producers {
                                        uint64_t by_seqno,
                                        uint64_t rev_seqno,
                                        const void* meta,
-                                       uint16_t nmeta) = 0;
+                                       uint16_t nmeta,
+                                       DcpStreamId sid) = 0;
 
     /**
      * Send a deletion with delete_time or collections (or both)
@@ -173,7 +178,8 @@ struct dcp_message_producers {
                                           Vbid vbucket,
                                           uint64_t by_seqno,
                                           uint64_t rev_seqno,
-                                          uint32_t delete_time) = 0;
+                                          uint32_t delete_time,
+                                          DcpStreamId sid) = 0;
 
     /**
      * Send an expiration
@@ -194,7 +200,8 @@ struct dcp_message_producers {
                                          Vbid vbucket,
                                          uint64_t by_seqno,
                                          uint64_t rev_seqno,
-                                         uint32_t delete_time) = 0;
+                                         uint32_t delete_time,
+                                         DcpStreamId sid) = 0;
 
     /**
      * Send a state transition for a vbucket
@@ -266,7 +273,8 @@ struct dcp_message_producers {
                                            uint64_t bySeqno,
                                            mcbp::systemevent::version version,
                                            cb::const_byte_buffer key,
-                                           cb::const_byte_buffer eventData) = 0;
+                                           cb::const_byte_buffer eventData,
+                                           DcpStreamId sid) = 0;
 
     /*
      * Send a GetErrorMap message to the other end
@@ -401,11 +409,13 @@ struct MEMCACHED_PUBLIC_CLASS DcpIface {
      *               connection).
      * @param opaque what to use as the opaque for this DCP connection.
      * @param vbucket The vBucket to close.
+     * @param sid The id of the stream to close
      * @return
      */
     virtual ENGINE_ERROR_CODE close_stream(gsl::not_null<const void*> cookie,
                                            uint32_t opaque,
-                                           Vbid vbucket) = 0;
+                                           Vbid vbucket,
+                                           DcpStreamId sid) = 0;
 
     /**
      * Callback to the engine that a Stream Request message was received

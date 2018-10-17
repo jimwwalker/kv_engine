@@ -1559,14 +1559,14 @@ ENGINE_ERROR_CODE Connection::add_packet_to_send_pipe(
     return ret;
 }
 
-ENGINE_ERROR_CODE Connection::deletionOrExpirationV2(
-        uint32_t opaque,
-        gsl::not_null<item*> it,
-        Vbid vbucket,
-        uint64_t by_seqno,
-        uint64_t rev_seqno,
-        uint32_t delete_time,
-        DeleteSource deleteSource) {
+ENGINE_ERROR_CODE Connection::deletionOrExpirationV2(uint32_t opaque,
+                                                     gsl::not_null<item*> it,
+                                                     Vbid vbucket,
+                                                     uint64_t by_seqno,
+                                                     uint64_t rev_seqno,
+                                                     uint32_t delete_time,
+                                                     DeleteSource deleteSource,
+                                                     DcpStreamId sid) {
     std::string log_str;
     if (deleteSource == DeleteSource::TTL) {
         log_str = "expiration";
@@ -1736,7 +1736,8 @@ ENGINE_ERROR_CODE Connection::set_vbucket_state_rsp(uint32_t opaque,
 
 ENGINE_ERROR_CODE Connection::stream_end(uint32_t opaque,
                                          Vbid vbucket,
-                                         uint32_t flags) {
+                                         uint32_t flags,
+                                         DcpStreamId sid) {
     using Framebuilder = cb::mcbp::FrameBuilder<cb::mcbp::Request>;
     using cb::mcbp::Request;
     using cb::mcbp::request::DcpStreamEndPayload;
@@ -1761,7 +1762,8 @@ ENGINE_ERROR_CODE Connection::marker(uint32_t opaque,
                                      Vbid vbucket,
                                      uint64_t start_seqno,
                                      uint64_t end_seqno,
-                                     uint32_t flags) {
+                                     uint32_t flags,
+                                     DcpStreamId sid) {
     using Framebuilder = cb::mcbp::FrameBuilder<cb::mcbp::Request>;
     using cb::mcbp::Request;
     using cb::mcbp::request::DcpSnapshotMarkerPayload;
@@ -1792,7 +1794,8 @@ ENGINE_ERROR_CODE Connection::mutation(uint32_t opaque,
                                        uint32_t lock_time,
                                        const void* meta,
                                        uint16_t nmeta,
-                                       uint8_t nru) {
+                                       uint8_t nru,
+                                       DcpStreamId sid) {
     // Use a unique_ptr to make sure we release the item in all error paths
     cb::unique_item_ptr item(it, cb::ItemDeleter{getBucketEngine()});
 
@@ -1933,7 +1936,8 @@ ENGINE_ERROR_CODE Connection::deletion(uint32_t opaque,
                                        uint64_t by_seqno,
                                        uint64_t rev_seqno,
                                        const void* meta,
-                                       uint16_t nmeta) {
+                                       uint16_t nmeta,
+                                       DcpStreamId sid) {
     // Use a unique_ptr to make sure we release the item in all error paths
     cb::unique_item_ptr item(it, cb::ItemDeleter{getBucketEngine()});
     item_info info;
@@ -1984,14 +1988,16 @@ ENGINE_ERROR_CODE Connection::deletion_v2(uint32_t opaque,
                                           Vbid vbucket,
                                           uint64_t by_seqno,
                                           uint64_t rev_seqno,
-                                          uint32_t delete_time) {
+                                          uint32_t delete_time,
+                                          DcpStreamId sid) {
     return deletionOrExpirationV2(opaque,
                                   it,
                                   vbucket,
                                   by_seqno,
                                   rev_seqno,
                                   delete_time,
-                                  DeleteSource::Explicit);
+                                  DeleteSource::Explicit,
+                                  sid);
 }
 
 ENGINE_ERROR_CODE Connection::expiration(uint32_t opaque,
@@ -1999,14 +2005,16 @@ ENGINE_ERROR_CODE Connection::expiration(uint32_t opaque,
                                          Vbid vbucket,
                                          uint64_t by_seqno,
                                          uint64_t rev_seqno,
-                                         uint32_t delete_time) {
+                                         uint32_t delete_time,
+                                         DcpStreamId sid) {
     return deletionOrExpirationV2(opaque,
                                   it,
                                   vbucket,
                                   by_seqno,
                                   rev_seqno,
                                   delete_time,
-                                  DeleteSource::TTL);
+                                  DeleteSource::TTL,
+                                  sid);
 }
 
 ENGINE_ERROR_CODE Connection::set_vbucket_state(uint32_t opaque,
@@ -2077,7 +2085,8 @@ ENGINE_ERROR_CODE Connection::system_event(uint32_t opaque,
                                            uint64_t bySeqno,
                                            mcbp::systemevent::version version,
                                            cb::const_byte_buffer key,
-                                           cb::const_byte_buffer eventData) {
+                                           cb::const_byte_buffer eventData,
+                                           DcpStreamId sid) {
     cb::mcbp::request::DcpSystemEventPayload extras(bySeqno, event, version);
     std::vector<uint8_t> buffer;
     buffer.resize(sizeof(cb::mcbp::Request) + sizeof(extras) + key.size() +

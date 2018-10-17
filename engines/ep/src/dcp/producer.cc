@@ -595,7 +595,8 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
             ret = producers->stream_end(
                     se->getOpaque(),
                     se->getVbucket(),
-                    mapEndStreamStatus(getCookie(), se->getFlags()));
+                    mapEndStreamStatus(getCookie(), se->getFlags()),
+                    resp->getStreamId());
             break;
         }
         case DcpResponse::Event::Mutation:
@@ -634,7 +635,8 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                                       0 /* lock time */,
                                       nullptr,
                                       0,
-                                      hotness);
+                                      hotness,
+                                      mutationResponse->getStreamId());
             break;
         }
         case DcpResponse::Event::Deletion:
@@ -647,7 +649,8 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                                  *mutationResponse,
                                  producers,
                                  std::move(itmCpy),
-                                 ret);
+                                 ret,
+                                 mutationResponse->getStreamId());
             break;
         }
         case DcpResponse::Event::Expiration: {
@@ -668,13 +671,15 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                         mutationResponse->getVBucket(),
                         *mutationResponse->getBySeqno(),
                         mutationResponse->getRevSeqno(),
-                        mutationResponse->getItem()->getExptime());
+                        mutationResponse->getItem()->getExptime(),
+                        resp->getStreamId());
             } else {
                 ret = deletionV1OrV2(includeDeleteTime,
                                      *mutationResponse,
                                      producers,
                                      std::move(itmCpy),
-                                     ret);
+                                     ret,
+                                     resp->getStreamId());
             }
             break;
         }
@@ -685,7 +690,8 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                                     s->getVBucket(),
                                     s->getStartSeqno(),
                                     s->getEndSeqno(),
-                                    s->getFlags());
+                                    s->getFlags(),
+                                    resp->getStreamId());
             break;
         }
         case DcpResponse::Event::SetVbucket:
@@ -706,7 +712,8 @@ ENGINE_ERROR_CODE DcpProducer::step(struct dcp_message_producers* producers) {
                     s->getVersion(),
                     {reinterpret_cast<const uint8_t*>(s->getKey().data()),
                      s->getKey().size()},
-                    s->getEventData());
+                    s->getEventData(),
+                    resp->getStreamId());
             break;
         }
         default:
@@ -754,7 +761,8 @@ ENGINE_ERROR_CODE DcpProducer::deletionV1OrV2(
         MutationResponse& mutationResponse,
         dcp_message_producers* producers,
         std::unique_ptr<Item> itmCpy,
-        ENGINE_ERROR_CODE ret) {
+        ENGINE_ERROR_CODE ret,
+        DcpStreamId sid) {
     if (includeDeleteTime == IncludeDeleteTime::Yes) {
         ret = producers->deletion_v2(
                 mutationResponse.getOpaque(),
@@ -762,7 +770,8 @@ ENGINE_ERROR_CODE DcpProducer::deletionV1OrV2(
                 mutationResponse.getVBucket(),
                 *mutationResponse.getBySeqno(),
                 mutationResponse.getRevSeqno(),
-                mutationResponse.getItem()->getDeleteTime());
+                mutationResponse.getItem()->getDeleteTime(),
+                sid);
     } else {
         ret = producers->deletion(mutationResponse.getOpaque(),
                                   itmCpy.release(),
@@ -770,7 +779,8 @@ ENGINE_ERROR_CODE DcpProducer::deletionV1OrV2(
                                   *mutationResponse.getBySeqno(),
                                   mutationResponse.getRevSeqno(),
                                   nullptr,
-                                  0);
+                                  0,
+                                  sid);
     }
     return ret;
 }
