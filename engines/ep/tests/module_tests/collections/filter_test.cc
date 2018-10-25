@@ -457,6 +457,7 @@ TEST_F(CollectionsVBFilterTest, remove1) {
     EXPECT_TRUE(vbf.checkAndUpdate(*vbm.createSystemEvent(
             SystemEvent::Collection,
             {ScopeEntry::defaultS, CollectionEntry::fruit},
+            {},
             true /*delete*/,
             {})));
 
@@ -478,6 +479,7 @@ TEST_F(CollectionsVBFilterTest, remove1) {
     auto deleteMeat =
             vbm.createSystemEvent(SystemEvent::Collection,
                                   {ScopeEntry::defaultS, CollectionEntry::meat},
+                                  {},
                                   true /*delete*/,
                                   {});
     EXPECT_TRUE(vbf.checkAndUpdate(*deleteMeat));
@@ -512,6 +514,7 @@ TEST_F(CollectionsVBFilterTest, remove2) {
     EXPECT_TRUE(vbf.checkAndUpdate(*vbm.createSystemEvent(
             SystemEvent::Collection,
             {ScopeEntry::defaultS, CollectionEntry::defaultC},
+            {},
             true /*delete*/,
             {})));
     EXPECT_FALSE(vbf.checkAndUpdate(
@@ -531,6 +534,7 @@ TEST_F(CollectionsVBFilterTest, remove2) {
     auto deleteMeat =
             vbm.createSystemEvent(SystemEvent::Collection,
                                   {ScopeEntry::defaultS, CollectionEntry::meat},
+                                  {},
                                   true /*delete*/,
                                   {});
     EXPECT_TRUE(vbf.checkAndUpdate(*deleteMeat));
@@ -601,6 +605,7 @@ TEST_F(CollectionsVBFilterTest, system_events2) {
     EXPECT_TRUE(vbf.checkAndUpdate(*vbm.createSystemEvent(
             SystemEvent::Collection,
             {ScopeEntry::defaultS, CollectionEntry::meat},
+            {},
             false,
             {})));
 
@@ -608,7 +613,7 @@ TEST_F(CollectionsVBFilterTest, system_events2) {
     EXPECT_TRUE(vbf.checkAndUpdate(*vbm.createSystemEvent(
             SystemEvent::Collection,
             {ScopeEntry::defaultS, CollectionEntry::defaultC},
-
+            {},
             false,
             {})));
 
@@ -616,6 +621,7 @@ TEST_F(CollectionsVBFilterTest, system_events2) {
     EXPECT_FALSE(vbf.checkAndUpdate(*vbm.createSystemEvent(
             SystemEvent::Collection,
             {ScopeEntry::defaultS, CollectionEntry::dairy},
+            {},
             false,
             {})));
 }

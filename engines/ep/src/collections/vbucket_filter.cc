@@ -188,10 +188,18 @@ bool Filter::allowSystemEvent(const Item& item) const {
     case SystemEvent::Collection: {
         CollectionID collection =
                 VB::Manifest::getCollectionIDFromKey(item.getKey());
-        auto dcpData = VB::Manifest::getSystemEventData(
-                {item.getData(), item.getNBytes()});
+        ManifestUid manifestUid = 0;
+        if (!item.isDeleted()) {
+            auto dcpData = VB::Manifest::getCreateEventData(
+                    {item.getData(), item.getNBytes()});
+            manifestUid = dcpData.manifestUid;
+        } else {
+            auto dcpData = VB::Manifest::getDropEventData(
+                    {item.getData(), item.getNBytes()});
+            manifestUid = dcpData.manifestUid;
+        }
         // Only consider this if it is an event the client hasn't observed
-        if (!uid || (dcpData.manifestUid > *uid)) {
+        if (!uid || (manifestUid > *uid)) {
             if ((collection.isDefaultCollection() && defaultAllowed) ||
                 passthrough) {
                 return true;

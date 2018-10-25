@@ -365,14 +365,22 @@ public:
          * @param vb The vbucket to add the collection to.
          * @param manifestUid the uid of the manifest which made the change
          * @param identifiers ScopeID and CollectionID pair
+         * @param collectionName name of the added collection
+         * @param maxTtl An optional maxTtl for the collection
          * @param startSeqno The start-seqno assigned to the collection.
          */
         void replicaAdd(::VBucket& vb,
                         ManifestUid manifestUid,
                         ScopeCollectionPair identifiers,
+                        cb::const_char_buffer collectionName,
+                        cb::ExpiryLimit maxTtl,
                         int64_t startSeqno) {
-            manifest.addCollection(
-                    vb, manifestUid, identifiers, OptionalSeqno{startSeqno});
+            manifest.addCollection(vb,
+                                   manifestUid,
+                                   identifiers,
+                                   collectionName,
+                                   maxTtl,
+                                   OptionalSeqno{startSeqno});
         }
 
         /**
@@ -382,15 +390,15 @@ public:
          *
          * @param vb The vbucket to begin collection deletion on.
          * @param manifestUid the uid of the manifest which made the change
-         * @param identifiers ScopeID and CollectionID pair
+         * @param cid CollectionID to delete
          * @param endSeqno The end-seqno assigned to the end collection.
          */
         void replicaBeginDelete(::VBucket& vb,
                                 ManifestUid manifestUid,
-                                ScopeCollectionPair identifiers,
+                                CollectionID cid,
                                 int64_t endSeqno) {
             manifest.beginCollectionDelete(
-                    vb, manifestUid, identifiers, OptionalSeqno{endSeqno});
+                    vb, manifestUid, cid, OptionalSeqno{endSeqno});
         }
 
         /// @return iterator to the beginning of the underlying collection map
@@ -473,7 +481,7 @@ public:
             const Item& collectionsEventItem);
 
     /**
-     * Get the system event collection create/delete data from a SystemEvent
+     * Get the system event collection create data from a SystemEvent
      * Item's value.
      *
      * @param serialisedManifest Serialised manifest data created by
@@ -483,7 +491,21 @@ public:
      *          object maybe sized_buffer objects which point into
      *          serialisedManifest.
      */
-    static SystemEventData getSystemEventData(
+    static CreateEventData getCreateEventData(
+            cb::const_char_buffer serialisedManifest);
+
+    /**
+     * Get the system event collection drop data from a SystemEvent
+     * Item's value.
+     *
+     * @param serialisedManifest Serialised manifest data created by
+     *        ::populateWithSerialisedData
+     * @returns SystemEventData which carries all of the data which needs to be
+     *          marshalled into a DCP system event message. Inside the returned
+     *          object maybe sized_buffer objects which point into
+     *          serialisedManifest.
+     */
+    static DropEventData getDropEventData(
             cb::const_char_buffer serialisedManifest);
 
     /**
@@ -511,10 +533,19 @@ public:
      * @returns unique_ptr to a new Item that represents the requested
      *          SystemEvent.
      */
-    std::unique_ptr<Item> createSystemEvent(SystemEvent se,
-                                            ScopeCollectionPair identifiers,
-                                            bool deleted,
-                                            OptionalSeqno seqno) const;
+    std::unique_ptr<Item> createSystemEvent(
+            SystemEvent se,
+            ScopeCollectionPair identifiers,
+            cb::const_char_buffer collectionName,
+            bool deleted,
+            OptionalSeqno seqno) const;
+
+    // local struct for managing collection addition
+    struct Addition {
+        ScopeCollectionPair identifiers;
+        std::string name;
+        cb::ExpiryLimit maxTtl;
+    };
 
 protected:
 
@@ -534,7 +565,7 @@ protected:
     bool update(::VBucket& vb, const Collections::Manifest& manifest);
 
     /**
-     * Sub-function used by update
+     * Sub-functions used by update
      * Removes the last ID of the changes vector and then calls 'update' on
      * every remaining ID (using the current manifest ManifestUid).
      * So if the vector has 1 element, it returns that element and does nothing.
@@ -544,10 +575,11 @@ protected:
      * @param changes a vector of CollectionIDs to add/delete (based on update)
      * @return the last element of the changes vector
      */
-    boost::optional<ScopeCollectionPair> applyChanges(
-            std::function<void(ManifestUid, ScopeCollectionPair, OptionalSeqno)>
-                    update,
-            std::vector<ScopeCollectionPair>& changes);
+    boost::optional<Addition> applyCreates(::VBucket& vb,
+                                           std::vector<Addition>& changes);
+
+    boost::optional<CollectionID> applyDeletions(
+            ::VBucket& vb, std::vector<CollectionID>& changes);
 
     /**
      * Add a collection to the manifest.
@@ -555,12 +587,16 @@ protected:
      * @param vb The vbucket to add the collection to.
      * @param manifestUid the uid of the manifest which made the change
      * @param identifiers ScopeID and CollectionID pair
+     * @param collectionName Name of the added collection
+     * @param maxTtl An optional max_ttl for the collection
      * @param optionalSeqno Either a seqno to assign to the new collection or
      *        none (none means the checkpoint will assign a seqno).
      */
     void addCollection(::VBucket& vb,
                        ManifestUid manifestUid,
                        ScopeCollectionPair identifiers,
+                       cb::const_char_buffer collectionName,
+                       cb::ExpiryLimit maxTtl,
                        OptionalSeqno optionalSeqno);
 
     /**
@@ -568,14 +604,14 @@ protected:
      *
      * @param vb The vbucket to begin collection deletion on.
      * @param manifestUid the uid of the manifest which made the change
-     * @param identifiers ScopeID and CollectionID pair
+     * @param cid CollectionID to begin delete
      * @param revision manifest revision which started the deletion.
      * @param optionalSeqno Either a seqno to assign to the delete of the
      *        collection or none (none means the checkpoint assigns the seqno).
      */
     void beginCollectionDelete(::VBucket& vb,
                                ManifestUid manifestUid,
-                               ScopeCollectionPair identifiers,
+                               CollectionID cid,
                                OptionalSeqno optionalSeqno);
 
     /**
@@ -736,6 +772,8 @@ protected:
      * Add a collection entry to the manifest specifing the revision that it was
      * seen in and the sequence number span covering it.
      * @param identifiers ScopeID and CollectionID pair
+     * @param maxTtl The max_ttl that if defined will be applied to new items of
+     *        the collection (overriding bucket max_ttl)
      * @param startSeqno The seqno where the collection begins. Defaults to 0.
      * @param endSeqno The seqno where it ends (can be the special open
      * marker). Defaults to the collection open state (-6).
@@ -744,6 +782,7 @@ protected:
      */
     ManifestEntry& addNewCollectionEntry(
             ScopeCollectionPair identifiers,
+            cb::ExpiryLimit maxTtl,
             int64_t startSeqno = 0,
             int64_t endSeqno = StoredValue::state_collection_open);
 
@@ -760,20 +799,19 @@ protected:
      * Process a Collections::Manifest to determine if collections need adding
      * or removing.
      *
-     * This function returns two sets of collections. Those which are being
-     * added and those which are being deleted.
+     * This function returns two vectors. Those which are being added and those
+     * which are being deleted.
      *
      * @param manifest The Manifest to compare with.
      * @returns An optional containing a std::pair of vectors, if successful
-     *          first contains ScopeCollectionPairs that need adding whilst
-     *          second contains those which should be deleted. If the
-     *          optional is uninitialised than the manifest could
+     *          first contains data for collections that need adding whilst
+     *          second contains CollectionIDs of those which should be deleted.
+     *          If the optional is uninitialised than the manifest could
      *          not be processed against this, the only error is trying to
      *          add a deleting collection-ID.
      */
-    using processResult =
-            boost::optional<std::pair<std::vector<ScopeCollectionPair>,
-                                      std::vector<ScopeCollectionPair>>>;
+    using processResult = boost::optional<
+            std::pair<std::vector<Addition>, std::vector<CollectionID>>>;
     processResult processManifest(const Collections::Manifest& manifest) const;
 
     /**
@@ -792,6 +830,7 @@ protected:
     int64_t queueSystemEvent(::VBucket& vb,
                              SystemEvent se,
                              ScopeCollectionPair identifiers,
+                             cb::const_char_buffer collectionName,
                              bool deleted,
                              OptionalSeqno seqno) const;
 
@@ -803,9 +842,12 @@ protected:
      *
      * @param builder FlatBuffer builder for serialisation.
      * @param identifiers ScopeID/CollectionID pair of the mutated collection
+     * @param collectionName The name of the collection, valid for create
+     * collection only
      */
     void populateWithSerialisedData(flatbuffers::FlatBufferBuilder& builder,
-                                    ScopeCollectionPair identifiers) const;
+                                    ScopeCollectionPair identifiers,
+                                    cb::const_char_buffer collectionName) const;
 
     /**
      * Update greatestEndSeqno if the seqno is larger
