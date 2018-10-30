@@ -49,7 +49,9 @@ time_t mc_time_convert_to_abs_time(const rel_time_t rel_time);
  * @param t a protocol expiry time-stamp
  * @oaram limit an optional limit, see server_api.h 'realtime' description
  */
-rel_time_t mc_time_convert_to_real_time(rel_time_t t, cb::ExpiryLimit limit);
+rel_time_t mc_time_convert_to_real_time(rel_time_t t);
+
+time_t mc_time_limit_abstime(time_t t, std::chrono::seconds limit);
 
 #ifdef __cplusplus
 }

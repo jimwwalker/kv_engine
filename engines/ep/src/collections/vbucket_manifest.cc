@@ -21,6 +21,7 @@
 #include "checkpoint_manager.h"
 #include "collections/manifest.h"
 #include "collections/vbucket_serialised_manifest_entry_generated.h"
+#include "ep_time.h"
 #include "item.h"
 #include "statwriter.h"
 #include "vbucket.h"
@@ -37,7 +38,7 @@ Manifest::Manifest(const PersistedManifest& data)
     if (data.empty()) {
         // Empty manifest, initialise the manifest with the default collection
         addNewCollectionEntry({ScopeID::Default, CollectionID::Default},
-                              {/*no max_ttl*/},
+                              {} /*no max_ttl*/,
                               0,
                               StoredValue::state_collection_open);
         defaultCollectionExists = true;
@@ -414,6 +415,37 @@ boost::optional<CollectionID> Manifest::shouldCompleteDeletion(
         }
     }
     return {};
+}
+
+time_t Manifest::processExpiryTime(const container::const_iterator entry,
+                                   time_t t,
+                                   std::chrono::seconds bucketTtl) const {
+    /// This might be wrong, note if collectionTTL is 0, then bucketTTL is off
+    std::chrono::seconds enforcedTtl{0};
+
+    if (bucketTtl.count()) {
+        enforcedTtl = bucketTtl;
+    }
+
+    if (entry->second.getMaxTtl()) {
+        // Even if collection ttl is zero, it wins when defined
+        enforcedTtl = entry->second.getMaxTtl().get();
+    }
+
+    if (enforcedTtl.count()) {
+        std::cout << "Enforcing " << enforcedTtl.count() << " " << t << "\n";
+        t = ep_limit_abstime(t, enforcedTtl);
+        std::cout << "now " << t << std::endl;
+    }
+    return t;
+}
+
+void Manifest::checkAndMaybeUpdateExpiry(
+        Item& itm,
+        std::chrono::seconds bucketTtl,
+        const container::const_iterator entry) const {
+    std::cout << "CHECK \n";
+    itm.setExpTime(processExpiryTime(entry, itm.getExptime(), bucketTtl));
 }
 
 std::string Manifest::makeCollectionIdIntoString(CollectionID collection) {

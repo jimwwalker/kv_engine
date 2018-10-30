@@ -2118,40 +2118,6 @@ void EventuallyPersistentEngine::destroyInner(bool force) {
     }
 }
 
-std::pair<cb::ExpiryLimit, rel_time_t>
-EventuallyPersistentEngine::getExpiryParameters(rel_time_t exptime) const {
-    cb::ExpiryLimit expiryLimit;
-    auto limit = kvBucket->getMaxTtl();
-    if (limit.count()) {
-        expiryLimit = limit;
-        // If max_ttl is more than 30 days we need to convert it to absolute so
-        // it makes sense as an expiry time.
-        if (exptime == 0) {
-            if (limit.count() > (60 * 60 * 24 * 30)) {
-                exptime = ep_abs_time(limit.count());
-            } else {
-                exptime = limit.count();
-            }
-        }
-    }
-
-    return {expiryLimit, exptime};
-}
-
-time_t EventuallyPersistentEngine::processExpiryTime(time_t in) const {
-    auto limit = kvBucket->getMaxTtl();
-    time_t out = in;
-    if (limit.count()) {
-        auto currentTime = ep_real_time();
-        if (in == 0 || in > (currentTime + limit.count())) {
-            // must expire in now + MaxTTL seconds
-            out = currentTime + limit.count();
-        }
-    }
-
-    return out;
-}
-
 void EventuallyPersistentEngine::operator delete(void* ptr) {
     // Already destructed EventuallyPersistentEngine object; about to
     // deallocate its memory. As such; it is not valid to update the
@@ -2184,10 +2150,7 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::itemAllocate(
         return memoryCondition();
     }
 
-    cb::ExpiryLimit expiryLimit;
-    std::tie(expiryLimit, exptime) = getExpiryParameters(exptime);
-    time_t expiretime =
-            (exptime == 0) ? 0 : ep_abs_time(ep_reltime(exptime, expiryLimit));
+    time_t expiretime = (exptime == 0) ? 0 : ep_abs_time(ep_reltime(exptime));
 
     *itm = new Item(key,
                     flags,
@@ -2264,11 +2227,10 @@ cb::EngineErrorItemPair EventuallyPersistentEngine::getAndTouchInner(
         const void* cookie, const DocKey& key, Vbid vbucket, uint32_t exptime) {
     auto* handle = reinterpret_cast<EngineIface*>(this);
 
-    cb::ExpiryLimit expiryLimit;
-    std::tie(expiryLimit, exptime) = getExpiryParameters(exptime);
+    time_t expiry_time = (exptime == 0) ? 0 : ep_abs_time(ep_reltime(exptime));
 
-    time_t expiry_time =
-            (exptime == 0) ? 0 : ep_abs_time(ep_reltime(exptime, expiryLimit));
+    std::cout << "exptime:" << exptime << " expiry_time:" << expiry_time
+              << std::endl;
 
     GetValue gv(kvBucket->getAndUpdateTtl(key, vbucket, cookie, expiry_time));
 
@@ -5023,7 +4985,7 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::setWithMeta(
                         uncompressedValue : payload);
 
     // exptime may exceed this buckets max, so process it
-    itemMeta.exptime = processExpiryTime(itemMeta.exptime);
+    // itemMeta.exptime = processExpiryTime(itemMeta.exptime);
 
     auto item = std::make_unique<Item>(key,
                                        itemMeta.flags,
@@ -5428,7 +5390,7 @@ EventuallyPersistentEngine::returnMeta(
     uint32_t mutate_type = ntohl(request->message.body.mutation_type);
     uint32_t flags = ntohl(request->message.body.flags);
     uint32_t exp = ntohl(request->message.body.expiration);
-    exp = exp == 0 ? 0 : ep_abs_time(ep_reltime(exp, cb::NoExpiryLimit));
+    exp = exp == 0 ? 0 : ep_abs_time(ep_reltime(exp));
     size_t vallen = bodylen - keylen - extlen;
     uint64_t seqno;
 

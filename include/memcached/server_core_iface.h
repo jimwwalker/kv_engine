@@ -40,12 +40,14 @@ struct ServerCoreIface {
      *        with abstime.
      * @return The relative time since memcached's epoch.
      */
-    virtual rel_time_t realtime(rel_time_t exptime, cb::ExpiryLimit limit) = 0;
+    virtual rel_time_t realtime(rel_time_t exptime) = 0;
 
     /**
      * Get the absolute time for the given rel_time_t value.
      */
     virtual time_t abstime(rel_time_t exptime) = 0;
+
+    virtual time_t limit_abstime(time_t t, std::chrono::seconds limit) = 0;
 
     /**
      * parser config options

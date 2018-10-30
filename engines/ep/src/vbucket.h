@@ -629,6 +629,24 @@ public:
         return manifest.lock(key, allowSystem);
     }
 
+    /**
+     * As above, however the input is an Item to which we will check its expiry
+     * time against the collection's max_ttl value.
+     *
+     * @param item The Item whose key is used to obtain the collection handle
+     *        and may have expiry time set/capped to the collection's max_ttl.
+     * @return a CachingReadHandle which the caller should test is valid with
+     *         CachingReadHandle::valid
+     */
+    Collections::VB::Manifest::CachingReadHandle lockCollectionsAndCheckItem(
+            Item& item, std::chrono::seconds bucketTtl) const {
+        auto handle = manifest.lock(item.getKey(), false);
+        if (handle.valid()) {
+            handle.checkAndMaybeUpdateExpiry(item, bucketTtl);
+        }
+        return handle;
+    }
+
     Collections::VB::Manifest& getManifest() {
         return manifest;
     }

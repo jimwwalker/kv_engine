@@ -114,7 +114,7 @@ static bool would_overflow(int64_t a, int64_t b) {
 static_assert(std::is_unsigned<rel_time_t>::value,
               "would_overflow assumes rel_time_t is unsigned");
 
-rel_time_t mc_time_convert_to_real_time(rel_time_t t, cb::ExpiryLimit limit) {
+rel_time_t mc_time_convert_to_real_time(rel_time_t t) {
     rel_time_t rv = 0;
 
     int64_t epoch{memcached_epoch.load()};
@@ -125,21 +125,6 @@ rel_time_t mc_time_convert_to_real_time(rel_time_t t, cb::ExpiryLimit limit) {
         // Ensure overflow is predictable (we stay at max rel_time_t)
         if (would_overflow(epoch, uptime)) {
             return std::numeric_limits<rel_time_t>::max();
-        }
-        if (limit &&
-            would_overflow(gsl::narrow_cast<rel_time_t>(epoch + uptime),
-                           limit.get())) {
-            return std::numeric_limits<rel_time_t>::max();
-        }
-
-        if (limit && t > (epoch + uptime + limit.get().count())) {
-            if (would_overflow(gsl::narrow_cast<int64_t>(epoch + uptime),
-                               limit.get().count())) {
-                t = std::numeric_limits<rel_time_t>::max();
-            } else {
-                t = gsl::narrow<rel_time_t>((epoch + uptime) +
-                                            limit.get().count());
-            }
         }
 
         /* if item expiration is at/before the server started, give it an
@@ -154,25 +139,31 @@ rel_time_t mc_time_convert_to_real_time(rel_time_t t, cb::ExpiryLimit limit) {
             rv = (rel_time_t)(t - epoch);
         }
     } else if (t != 0) { // t is relative
-        if (limit && t > limit.get().count()) {
-            t = gsl::narrow<rel_time_t>(limit.get().count());
-        }
-
         // Ensure overflow is predictable (we stay at max rel_time_t)
         if (would_overflow(t, uptime)) {
             rv = std::numeric_limits<rel_time_t>::max();
         } else {
-            if (limit &&
-                would_overflow(gsl::narrow_cast<rel_time_t>(t + uptime),
-                               limit.get())) {
-                rv = std::numeric_limits<rel_time_t>::max();
-            } else {
-                rv = (rel_time_t)(t + uptime);
-            }
+            rv = (rel_time_t)(t + uptime);
         }
     }
 
     return rv;
+}
+
+time_t mc_time_limit_abstime(time_t t, std::chrono::seconds limit) {
+    auto upperbound = mc_time_convert_to_abs_time(mc_time_get_current_time());
+
+    if (would_overflow(upperbound, limit)) {
+        upperbound = std::numeric_limits<time_t>::max();
+    } else {
+        upperbound = upperbound + limit.count();
+    }
+
+    if (t == 0 || t > upperbound) {
+        t = upperbound;
+    }
+
+    return t;
 }
 
 /*

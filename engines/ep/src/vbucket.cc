@@ -779,7 +779,10 @@ StoredValue* VBucket::fetchValidValue(
             key, hbl.getBucketNum(), wantsDeleted, trackReference);
     if (v && !v->isDeleted() && !v->isTempItem()) {
         // In the deleted case, we ignore expiration time.
-        if (v->isExpired(ep_real_time())) {
+        auto vq = ep_real_time();
+        if (v->isExpired(vq)) {
+            std::cout << "Expired rt:" << vq << " v:" << v->getExptime()
+                      << std::endl;
             if (getState() != vbucket_state_active) {
                 return wantsDeleted == WantsDeleted::Yes ? v : NULL;
             }

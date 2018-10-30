@@ -655,11 +655,11 @@ ENGINE_ERROR_CODE KVBucket::set(Item& itm,
     }
 
     { // collections read-lock scope
-        auto collectionsRHandle = vb->lockCollections();
-        if (!collectionsRHandle.doesKeyContainValidCollection(itm.getKey())) {
+        auto collectionsRHandle =
+                vb->lockCollectionsAndCheckItem(itm, getMaxTtl());
+        if (!collectionsRHandle.valid()) {
             return ENGINE_UNKNOWN_COLLECTION;
         } // now hold collections read access for the duration of the set
-
         return vb->set(itm, cookie, engine, bgFetchDelay, predicate);
     }
 }
@@ -697,7 +697,8 @@ ENGINE_ERROR_CODE KVBucket::add(Item &itm, const void *cookie)
     }
 
     { // collections read-lock scope
-        auto collectionsRHandle = vb->lockCollections(itm.getKey());
+        auto collectionsRHandle =
+                vb->lockCollectionsAndCheckItem(itm, getMaxTtl());
         if (!collectionsRHandle.valid()) {
             return ENGINE_UNKNOWN_COLLECTION;
         } // now hold collections read access for the duration of the add
@@ -729,7 +730,8 @@ ENGINE_ERROR_CODE KVBucket::replace(Item& itm,
     }
 
     { // collections read-lock scope
-        auto collectionsRHandle = vb->lockCollections(itm.getKey());
+        auto collectionsRHandle =
+                vb->lockCollectionsAndCheckItem(itm, getMaxTtl());
         if (!collectionsRHandle.valid()) {
             return ENGINE_UNKNOWN_COLLECTION;
         } // now hold collections read access for the duration of the set
@@ -1511,7 +1513,8 @@ ENGINE_ERROR_CODE KVBucket::setWithMeta(Item& itm,
 
     ENGINE_ERROR_CODE rv = ENGINE_SUCCESS;
     { // collections read scope
-        auto collectionsRHandle = vb->lockCollections(itm.getKey());
+        auto collectionsRHandle =
+                vb->lockCollectionsAndCheckItem(itm, getMaxTtl());
         if (!collectionsRHandle.valid()) {
             rv = ENGINE_UNKNOWN_COLLECTION;
         } else {
@@ -1566,7 +1569,11 @@ GetValue KVBucket::getAndUpdateTtl(const DocKey& key,
         }
 
         return vb->getAndUpdateTtl(
-                cookie, engine, bgFetchDelay, exptime, collectionsRHandle);
+                cookie,
+                engine,
+                bgFetchDelay,
+                collectionsRHandle.processExpiryTime(exptime, getMaxTtl()),
+                collectionsRHandle);
     }
 }
 

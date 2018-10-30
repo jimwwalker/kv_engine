@@ -289,6 +289,30 @@ public:
         }
 
         /**
+         * Check the Item's exptime against its collection config.
+         * If the collection defines a max_ttl and the Item has no expiry or
+         * an exptime which exceeds the max_ttl, set the expiry of the Item
+         * based on the collection max_ttl.
+         *
+         * @param it The reference to the Item to check and possible change
+         */
+        void checkAndMaybeUpdateExpiry(Item& itm,
+                                       std::chrono::seconds bucketTtl) const {
+            manifest.checkAndMaybeUpdateExpiry(itm, bucketTtl, itr);
+        }
+
+        /// comment me
+        time_t processExpiryTime(time_t t,
+                                 std::chrono::seconds bucketTtl) const {
+            return manifest.processExpiryTime(itr, t, bucketTtl);
+        }
+
+        boost::optional<std::chrono::seconds> getMaxTtl() const {
+            return valid() ? itr->second.getMaxTtl()
+                           : boost::optional<std::chrono::seconds>{};
+        }
+
+        /**
          * Dump this VB::Manifest to std::cerr
          */
         void dump() {
@@ -699,6 +723,16 @@ protected:
             const DocKey& key,
             int64_t bySeqno,
             const container::const_iterator entry) const;
+
+    /// see comment on CachingReadHandle
+    time_t processExpiryTime(const container::const_iterator entry,
+                             time_t t,
+                             std::chrono::seconds bucketTtl) const;
+
+    /// see comment on CachingReadHandle
+    void checkAndMaybeUpdateExpiry(Item& item,
+                                   std::chrono::seconds bucketTtl,
+                                   const container::const_iterator entry) const;
 
     /**
      * @returns true/false if $default exists
