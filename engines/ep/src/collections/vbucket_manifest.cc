@@ -57,6 +57,10 @@ Manifest::Manifest(const PersistedManifest& data)
 
     manifestUid = manifest->uid();
 
+    for (const auto& sid : *manifest->scopes()) {
+        scopes.emplace(sid);
+    }
+
     for (const auto& entry : *manifest->entries()) {
         cb::ExpiryLimit maxTtl;
         if (entry->ttlValid()) {
@@ -83,9 +87,9 @@ boost::optional<CollectionID> Manifest::applyDeletions(
     return rv;
 }
 
-boost::optional<Manifest::Addition> Manifest::applyCreates(
-        ::VBucket& vb, std::vector<Addition>& changes) {
-    boost::optional<Addition> rv;
+boost::optional<Manifest::CollectionAddition> Manifest::applyCreates(
+        ::VBucket& vb, std::vector<CollectionAddition>& changes) {
+    boost::optional<CollectionAddition> rv;
     if (!changes.empty()) {
         rv = changes.back();
         changes.pop_back();
@@ -102,18 +106,51 @@ boost::optional<Manifest::Addition> Manifest::applyCreates(
     return rv;
 }
 
+boost::optional<ScopeID> Manifest::applyScopeDrops(
+        ::VBucket& vb, std::vector<ScopeID>& changes) {
+    boost::optional<ScopeID> rv;
+    if (!changes.empty()) {
+        rv = changes.back();
+        changes.pop_back();
+    }
+    for (const auto id : changes) {
+        dropScope(vb, manifestUid, id, OptionalSeqno{/*no-seqno*/});
+    }
+
+    return rv;
+}
+
+boost::optional<Manifest::ScopeAddition> Manifest::applyScopeCreates(
+        ::VBucket& vb, std::vector<ScopeAddition>& changes) {
+    boost::optional<ScopeAddition> rv;
+    if (!changes.empty()) {
+        rv = changes.back();
+        changes.pop_back();
+    }
+    for (const auto& addition : changes) {
+        addScope(vb,
+                 manifestUid,
+                 addition.sid,
+                 addition.name,
+                 OptionalSeqno{/*no-seqno*/});
+    }
+
+    return rv;
+}
+
 bool Manifest::update(::VBucket& vb, const Collections::Manifest& manifest) {
     auto rv = processManifest(manifest);
     if (!rv.is_initialized()) {
         EP_LOG_WARN("VB::Manifest::update cannot update {}", vb.getId());
         return false;
     } else {
-        for (auto scope : rv->scopesToAdd) {
-            scopes.emplace(scope);
-        }
-
-        for (auto scope : rv->scopesToRemove) {
-            scopes.erase(scope);
+        auto finalScopeCreate = applyScopeCreates(vb, rv->scopesToAdd);
+        if (finalScopeCreate) {
+            addScope(vb,
+                     manifest.getUid(),
+                     finalScopeCreate.get().sid,
+                     finalScopeCreate.get().name,
+                     OptionalSeqno{/*no-seqno*/});
         }
 
         auto finalDeletion = applyDeletions(vb, rv->collectionsToRemove);
@@ -141,6 +178,16 @@ bool Manifest::update(::VBucket& vb, const Collections::Manifest& manifest) {
                           finalAddition.get().name,
                           finalAddition.get().maxTtl,
                           OptionalSeqno{/*no-seqno*/});
+        }
+
+        // This is done last so the scope deletion follows any collection
+        // deletions
+        auto finalScopeDrop = applyScopeDrops(vb, rv->scopesToRemove);
+        if (finalScopeDrop) {
+            dropScope(vb,
+                      manifest.getUid(),
+                      *finalScopeDrop,
+                      OptionalSeqno{/*no-seqno*/});
         }
     }
     return true;
@@ -295,6 +342,77 @@ void Manifest::completeDeletion(::VBucket& vb, CollectionID collectionID) {
     }
 }
 
+void Manifest::addScope(::VBucket& vb,
+                        ManifestUid manifestUid,
+                        ScopeID sid,
+                        cb::const_char_buffer scopeName,
+                        OptionalSeqno optionalSeqno) {
+    if (scopes.count(sid) > 0) {
+        throwException<std::logic_error>(
+                __FUNCTION__, "scope already exists, scope:" + sid.to_string());
+    }
+
+    scopes.emplace(sid);
+
+    flatbuffers::FlatBufferBuilder builder;
+    populateWithSerialisedData(builder, scopeName);
+
+    auto item = SystemEventFactory::make(
+            SystemEvent::Scope,
+            makeScopeIdIntoString(sid),
+            {builder.GetBufferPointer(), builder.GetSize()},
+            optionalSeqno);
+
+    auto seqno = vb.queueItem(item.release(), optionalSeqno);
+
+    EP_LOG_INFO(
+            "collections: {} added scope:name:{},id:{:x} "
+            "replica:{}, backfill:{}, seqno:{}, manifest:{:x}",
+            vb.getId(),
+            cb::to_string(scopeName),
+            sid,
+            optionalSeqno.is_initialized(),
+            vb.isBackfillPhase(),
+            seqno,
+            manifestUid);
+}
+
+void Manifest::dropScope(::VBucket& vb,
+                         ManifestUid manifestUid,
+                         ScopeID sid,
+                         OptionalSeqno optionalSeqno) {
+    if (scopes.count(sid) == 0) {
+        throwException<std::logic_error>(
+                __FUNCTION__, "scope doesn't exist, scope:" + sid.to_string());
+    }
+
+    // Remove from the set of scopes we know about
+    scopes.erase(sid);
+
+    flatbuffers::FlatBufferBuilder builder;
+    populateWithSerialisedData(builder, {});
+
+    auto item = SystemEventFactory::make(
+            SystemEvent::Scope,
+            makeScopeIdIntoString(sid),
+            {builder.GetBufferPointer(), builder.GetSize()},
+            optionalSeqno);
+
+    item->setDeleted();
+
+    auto seqno = vb.queueItem(item.release(), optionalSeqno);
+
+    EP_LOG_INFO(
+            "collections: {} dropped scope:id:{:x} "
+            "replica:{}, backfill:{}, seqno:{}, manifest:{:x}",
+            vb.getId(),
+            sid,
+            optionalSeqno.is_initialized(),
+            vb.isBackfillPhase(),
+            seqno,
+            manifestUid);
+}
+
 Manifest::ProcessResult Manifest::processManifest(
         const Collections::Manifest& manifest) const {
     ProcessResult rv = ManifestChanges();
@@ -320,7 +438,7 @@ Manifest::ProcessResult Manifest::processManifest(
          scopeItr != manifest.endScopes();
          scopeItr++) {
         if (scopes.find(scopeItr->first) == scopes.end()) {
-            rv->scopesToAdd.push_back(scopeItr->first);
+            rv->scopesToAdd.push_back({scopeItr->first, scopeItr->second.name});
         }
 
         for (const auto& m : scopeItr->second.collections) {
@@ -422,6 +540,10 @@ boost::optional<CollectionID> Manifest::shouldCompleteDeletion(
 std::string Manifest::makeCollectionIdIntoString(CollectionID collection) {
     return std::string(reinterpret_cast<const char*>(&collection),
                        sizeof(CollectionID));
+}
+
+std::string Manifest::makeScopeIdIntoString(ScopeID sid) {
+    return std::string(reinterpret_cast<const char*>(&sid), sizeof(ScopeID));
 }
 
 CollectionID Manifest::getCollectionIDFromKey(const DocKey& key) {
@@ -539,20 +661,37 @@ void Manifest::populateWithSerialisedData(
 
     entriesVector.push_back(newEntry);
     auto entries = builder.CreateVector(entriesVector);
-    flatbuffers::Offset<flatbuffers::String> name;
-    if (collectionName.data()) {
-        name = builder.CreateString(collectionName.data(),
-                                    collectionName.size());
-    } else {
-        name = builder.CreateString("");
+
+    std::vector<uint32_t> scopeVector;
+    for (auto sid : scopes) {
+        scopeVector.push_back(uint32_t(sid));
     }
-    auto manifest =
-            CreateSerialisedManifest(builder, getManifestUid(), entries, name);
-    builder.Finish(manifest);
+
+    auto scopeEntries = builder.CreateVector(scopeVector);
+
+    if (collectionName.data()) {
+        auto manifest = CreateSerialisedManifest(
+                builder,
+                getManifestUid(),
+                entries,
+                scopeEntries,
+                builder.CreateString(collectionName.data(),
+                                     collectionName.size()));
+        builder.Finish(manifest);
+    } else {
+        auto manifest = CreateSerialisedManifest(builder,
+                                                 getManifestUid(),
+                                                 entries,
+                                                 scopeEntries,
+                                                 builder.CreateString(""));
+
+        builder.Finish(manifest);
+    }
 }
 
 void Manifest::populateWithSerialisedData(
-        flatbuffers::FlatBufferBuilder& builder) const {
+        flatbuffers::FlatBufferBuilder& builder,
+        cb::const_char_buffer mutatedName) const {
     std::vector<flatbuffers::Offset<SerialisedManifestEntry>> entriesVector;
 
     for (const auto& collectionEntry : map) {
@@ -566,9 +705,31 @@ void Manifest::populateWithSerialisedData(
     }
 
     auto entries = builder.CreateVector(entriesVector);
-    auto manifest =
-            CreateSerialisedManifest(builder, getManifestUid(), entries);
-    builder.Finish(manifest);
+
+    std::vector<uint32_t> scopeVector;
+    for (auto sid : scopes) {
+        scopeVector.push_back(sid);
+    }
+
+    auto scopeEntries = builder.CreateVector(scopeVector);
+
+    if (mutatedName.data()) {
+        auto manifest = CreateSerialisedManifest(
+                builder,
+                getManifestUid(),
+                entries,
+                scopeEntries,
+                builder.CreateString(mutatedName.data(), mutatedName.size()));
+        builder.Finish(manifest);
+    } else {
+        auto manifest = CreateSerialisedManifest(builder,
+                                                 getManifestUid(),
+                                                 entries,
+                                                 scopeEntries,
+                                                 builder.CreateString(""));
+
+        builder.Finish(manifest);
+    }
 }
 
 PersistedManifest Manifest::patchSerialisedData(

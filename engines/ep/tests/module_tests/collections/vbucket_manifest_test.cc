@@ -122,8 +122,8 @@ public:
     }
 
     // Wire through to private method
-    boost::optional<Manifest::Addition> public_applyCreates(
-            ::VBucket& vb, std::vector<Addition>& changes) {
+    boost::optional<Manifest::CollectionAddition> public_applyCreates(
+            ::VBucket& vb, std::vector<CollectionAddition>& changes) {
         return applyCreates(vb, changes);
     }
 
@@ -411,7 +411,7 @@ public:
                 }
                 case SystemEvent::Scope: {
                     // @todo: coming soon
-                    ASSERT_TRUE(false) << "Scope not implemented";
+                    // ASSERT_TRUE(false) << "Scope not implemented";
                     break;
                 }
                 }
@@ -935,7 +935,8 @@ TEST_F(VBucketManifestTest, replica_add_remove_completeDelete) {
 }
 
 TEST_F(VBucketManifestTest, check_applyChanges) {
-    std::vector<Collections::VB::Manifest::Addition> changes; // start out empty
+    std::vector<Collections::VB::Manifest::CollectionAddition>
+            changes; // start out empty
     auto value = manifest.getActiveManifest().public_applyCreates(
             manifest.getActiveVB(), changes);
     EXPECT_FALSE(value.is_initialized());

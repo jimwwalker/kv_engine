@@ -278,6 +278,11 @@ bool Filter::checkAndUpdateSystemEvent(const Item& item) {
         }
         return false;
     }
+    case SystemEvent::Scope:
+#warning "Fixup when scope filter is added"
+        // a scope filter which matches should probably broadcast or will the
+        // stream be empty?
+        return passthrough;
     default: {
         throw std::invalid_argument(
                 "Filter::allowSystemEvent:: event unknown:" +

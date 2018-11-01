@@ -169,7 +169,7 @@ public:
 
         void populateWithSerialisedData(
                 flatbuffers::FlatBufferBuilder& builder) const {
-            manifest.populateWithSerialisedData(builder);
+            manifest.populateWithSerialisedData(builder, {});
         }
 
         /**
@@ -562,10 +562,16 @@ public:
             OptionalSeqno seqno) const;
 
     // local struct for managing collection addition
-    struct Addition {
+    struct CollectionAddition {
         ScopeCollectionPair identifiers;
         std::string name;
         cb::ExpiryLimit maxTtl;
+    };
+
+    // local struct for managing scope addition
+    struct ScopeAddition {
+        ScopeID sid;
+        std::string name;
     };
 
 protected:
@@ -596,11 +602,17 @@ protected:
      * @param changes a vector of CollectionIDs to add/delete (based on update)
      * @return the last element of the changes vector
      */
-    boost::optional<Addition> applyCreates(::VBucket& vb,
-                                           std::vector<Addition>& changes);
+    boost::optional<CollectionAddition> applyCreates(
+            ::VBucket& vb, std::vector<CollectionAddition>& changes);
 
     boost::optional<CollectionID> applyDeletions(
             ::VBucket& vb, std::vector<CollectionID>& changes);
+
+    boost::optional<ScopeAddition> applyScopeCreates(
+            ::VBucket& vb, std::vector<ScopeAddition>& changes);
+
+    boost::optional<ScopeID> applyScopeDrops(::VBucket& vb,
+                                             std::vector<ScopeID>& changes);
 
     /**
      * Add a collection to the manifest.
@@ -626,7 +638,6 @@ protected:
      * @param vb The vbucket to begin collection deletion on.
      * @param manifestUid the uid of the manifest which made the change
      * @param cid CollectionID to begin delete
-     * @param revision manifest revision which started the deletion.
      * @param optionalSeqno Either a seqno to assign to the delete of the
      *        collection or none (none means the checkpoint assigns the seqno).
      */
@@ -643,6 +654,36 @@ protected:
      * @param identifier The collection that has finished being deleted.
      */
     void completeDeletion(::VBucket& vb, CollectionID identifier);
+
+    /**
+     * Add a scope to the manifest.
+     *
+     * @param vb The vbucket to add the collection to.
+     * @param manifestUid the uid of the manifest which made the change
+     * @param sid ScopeID
+     * @param scopeName Name of the added scope
+     * @param optionalSeqno Either a seqno to assign to the new collection or
+     *        none (none means the checkpoint will assign a seqno).
+     */
+    void addScope(::VBucket& vb,
+                  ManifestUid manifestUid,
+                  ScopeID sid,
+                  cb::const_char_buffer scopeName,
+                  OptionalSeqno optionalSeqno);
+
+    /**
+     * Drop a scope
+     *
+     * @param vb The vbucket to drop the scope from
+     * @param manifestUid the uid of the manifest which made the change
+     * @param sid ScopeID to drop
+     * @param optionalSeqno Either a seqno to assign to the drop of the
+     *        scope or none (none means the checkpoint will assign the seqno)
+     */
+    void dropScope(::VBucket& vb,
+                   ManifestUid manifestUid,
+                   ScopeID sid,
+                   OptionalSeqno optionalSeqno);
 
     /**
      * Does the key contain a valid collection?
@@ -830,9 +871,9 @@ protected:
      * the bucket manifest.
      */
     struct ManifestChanges {
-        std::vector<ScopeID> scopesToAdd;
+        std::vector<ScopeAddition> scopesToAdd;
         std::vector<ScopeID> scopesToRemove;
-        std::vector<Addition> collectionsToAdd;
+        std::vector<CollectionAddition> collectionsToAdd;
         std::vector<CollectionID> collectionsToRemove;
     };
 
@@ -880,7 +921,7 @@ protected:
      * @param builder FlatBuffer builder for serialisation.
      * @param identifiers ScopeID/CollectionID pair of the mutated collection
      * @param collectionName The name of the collection, valid for create
-     * collection only
+     *        collection only
      */
     void populateWithSerialisedData(flatbuffers::FlatBufferBuilder& builder,
                                     ScopeCollectionPair identifiers,
@@ -891,9 +932,11 @@ protected:
      * iterate of the map and copy into the builder
      *
      * @param builder FlatBuffer builder for serialisation.
+     * @param mutatedName A string to serialise into the flatbuffer mutatedName
+     *        field(can be empty)
      */
-    void populateWithSerialisedData(
-            flatbuffers::FlatBufferBuilder& builder) const;
+    void populateWithSerialisedData(flatbuffers::FlatBufferBuilder& builder,
+                                    cb::const_char_buffer mutatedName) const;
 
     /**
      * Update greatestEndSeqno if the seqno is larger
@@ -910,6 +953,16 @@ protected:
      * @return the keyExtra parameter to be passed to SystemEventFactory
      */
     static std::string makeCollectionIdIntoString(CollectionID collection);
+
+    /**
+     * For creation of scope SystemEvents - The SystemEventFactory
+     * glues the ScopeID into the event key (so create of x doesn't
+     * collide with create of y). This method yields the 'keyExtra' parameter
+     *
+     * @param sid The ScopeId to turn into a string
+     * @return the keyExtra parameter to be passed to SystemEventFactory
+     */
+    static std::string makeScopeIdIntoString(ScopeID sid);
 
     /**
      * Return a string for use in throwException, returns:
