@@ -409,6 +409,11 @@ public:
                     }
                     break;
                 }
+                case SystemEvent::Scope: {
+                    // @todo: coming soon
+                    ASSERT_TRUE(false) << "Scope not implemented";
+                    break;
+                }
                 }
             }
         }
