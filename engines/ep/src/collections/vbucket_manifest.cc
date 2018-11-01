@@ -57,11 +57,7 @@ Manifest::Manifest(const PersistedManifest& data)
 
     manifestUid = manifest->uid();
 
-    auto entries = manifest->entries();
-    // Use our defined entryCount so we skip any fully dropped collection which
-    // maybe at the end
-    for (uint32_t ii = 0; ii < manifest->entryCount(); ii++) {
-        auto entry = entries->Get(ii);
+    for (const auto& entry : *manifest->entries()) {
         cb::ExpiryLimit maxTtl;
         if (entry->ttlValid()) {
             maxTtl = std::chrono::seconds(entry->maxTtl());
@@ -228,6 +224,13 @@ void Manifest::beginCollectionDelete(::VBucket& vb,
                                      ManifestUid manifestUid,
                                      CollectionID cid,
                                      OptionalSeqno optionalSeqno) {
+    // Replica usage of this method ignores collection delete of an unknown
+    // collection - the active VB maybe replaying a delete tombstone and never
+    // gave the replica a create event
+    if (optionalSeqno.is_initialized() && map.count(cid) == 0) {
+        return;
+    }
+
     auto& entry = getManifestEntry(cid);
 
     // record the uid of the manifest which removed the collection
@@ -277,33 +280,19 @@ void Manifest::completeDeletion(::VBucket& vb, CollectionID collectionID) {
     EP_LOG_INFO("collections: {} complete delete of collection:{:x}",
                 vb.getId(),
                 collectionID);
-
+    // Caller should not be calling in if the collection doesn't exist
     if (itr == map.end()) {
         throwException<std::logic_error>(
                 __FUNCTION__,
                 "could not find collection:" + collectionID.to_string());
     }
 
-    auto se = itr->second.completeDeletion();
-
-    // Grab the scopeID before we erase the object
-    auto scopeID = itr->second.getScopeID();
-
-    if (se == SystemEvent::DeleteCollectionHard) {
-        map.erase(itr); // wipe out
-    }
+    map.erase(itr);
 
     nDeletingCollections--;
     if (nDeletingCollections == 0) {
         greatestEndSeqno = StoredValue::state_collection_open;
     }
-
-    queueSystemEvent(vb,
-                     se,
-                     {scopeID, collectionID},
-                     {/*no name*/},
-                     false /*delete*/,
-                     OptionalSeqno{/*none*/});
 }
 
 Manifest::ProcessResult Manifest::processManifest(
@@ -557,8 +546,28 @@ void Manifest::populateWithSerialisedData(
     } else {
         name = builder.CreateString("");
     }
-    auto manifest = CreateSerialisedManifest(
-            builder, getManifestUid(), entriesVector.size(), entries, name);
+    auto manifest =
+            CreateSerialisedManifest(builder, getManifestUid(), entries, name);
+    builder.Finish(manifest);
+}
+
+void Manifest::populateWithSerialisedData(
+        flatbuffers::FlatBufferBuilder& builder) const {
+    std::vector<flatbuffers::Offset<SerialisedManifestEntry>> entriesVector;
+
+    for (const auto& collectionEntry : map) {
+        auto newEntry = CreateSerialisedManifestEntry(
+                builder,
+                collectionEntry.second.getStartSeqno(),
+                collectionEntry.second.getEndSeqno(),
+                collectionEntry.second.getScopeID(),
+                collectionEntry.first);
+        entriesVector.push_back(newEntry);
+    }
+
+    auto entries = builder.CreateVector(entriesVector);
+    auto manifest =
+            CreateSerialisedManifest(builder, getManifestUid(), entries);
     builder.Finish(manifest);
 }
 
@@ -570,38 +579,26 @@ PersistedManifest Manifest::patchSerialisedData(
     auto manifest =
             flatbuffers::GetMutableRoot<SerialisedManifest>(mutableData.data());
 
-    const auto se = SystemEvent(collectionsEventItem.getFlags());
-    if (se == SystemEvent::Collection) {
-        auto mutatedEntry = manifest->mutable_entries()->GetMutableObject(
-                manifest->entries()->size() - 1);
+    // Get the last entry from entries, that is the entry to patch
+    auto mutatedEntry = manifest->mutable_entries()->GetMutableObject(
+            manifest->entries()->size() - 1);
 
-        bool failed = false;
-        if (collectionsEventItem.isDeleted()) {
-            failed = !mutatedEntry->mutate_endSeqno(
-                    collectionsEventItem.getBySeqno());
-        } else {
-            failed = !mutatedEntry->mutate_startSeqno(
-                    collectionsEventItem.getBySeqno());
-        }
+    bool failed = false;
+    if (collectionsEventItem.isDeleted()) {
+        failed = !mutatedEntry->mutate_endSeqno(
+                collectionsEventItem.getBySeqno());
+    } else {
+        failed = !mutatedEntry->mutate_startSeqno(
+                collectionsEventItem.getBySeqno());
+    }
 
-        if (failed) {
-            throw std::logic_error(
-                    "Manifest::patchSerialisedData failed to mutate, "
-                    "new seqno: " +
-                    std::to_string(collectionsEventItem.getBySeqno()) +
-                    " isDeleted:" +
-                    std::to_string(collectionsEventItem.isDeleted()));
-        }
-    } else if (se == SystemEvent::DeleteCollectionHard) {
-        // DeleteHard is removing the mutated collection, we achieve this by
-        // trimming the counter we maintain, the mutated entry still exists but#
-        // will be ignored if used in the VB::Manifest constructor
-        if (!manifest->mutate_entryCount(manifest->entryCount() - 1)) {
-            throw std::logic_error(
-                    "Manifest::patchSerialisedData failed to mutate entryCount "
-                    "to newvalue:" +
-                    std::to_string(manifest->entryCount() - 1));
-        }
+    if (failed) {
+        throw std::logic_error(
+                "Manifest::patchSerialisedData failed to mutate, "
+                "new seqno: " +
+                std::to_string(collectionsEventItem.getBySeqno()) +
+                " isDeleted:" +
+                std::to_string(collectionsEventItem.isDeleted()));
     }
 
     return mutableData;

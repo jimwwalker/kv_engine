@@ -130,7 +130,7 @@ public:
      * @return the correct SystemEvent for vbucket manifest management. If the
      *         collection has been reopened, a soft delete, else hard.
      */
-    SystemEvent completeDeletion();
+    //    SystemEvent completeDeletion();
 
     /// increment how many items are stored on disk for this collection
     void incrementDiskCount() const {

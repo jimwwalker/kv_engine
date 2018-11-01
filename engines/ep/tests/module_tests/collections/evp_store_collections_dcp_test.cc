@@ -574,6 +574,51 @@ TEST_F(CollectionsDcpTest, collections_manifest_is_ahead) {
     createDcpStream({{R"({"uid":"3"})"}});
 }
 
+// Test that create and delete (full deletion) keeps the collection drop marker
+// as a tombstone
+TEST_F(CollectionsDcpTest, test_dcp_create_delete_erase) {
+    {
+        VBucketPtr vb = store->getVBucket(vbid);
+        // Create dairy
+        CollectionsManifest cm(CollectionEntry::dairy);
+        vb->updateFromManifest({cm});
+
+        // Mutate dairy
+        const int items = 3;
+        for (int ii = 0; ii < items; ii++) {
+            std::string key = "dairy:" + std::to_string(ii);
+            store_item(
+                    vbid, StoredDocKey{key, CollectionEntry::dairy}, "value");
+        }
+
+        // Delete dairy/create dairy in *one* update
+        vb->updateFromManifest({cm.remove(CollectionEntry::dairy)
+                                        .add(CollectionEntry::dairy2)});
+
+        // Persist everything ready for warmup and check.
+        // Flush the items + 1 delete (dairy) and 1 create (dairy2)
+        flush_vbucket_to_disk(Vbid(0), items + 2);
+
+        // However DCP - Should see 2x create dairy and 1x delete dairy
+        testDcpCreateDelete({CollectionEntry::dairy, CollectionEntry::dairy2},
+                            {CollectionEntry::dairy},
+                            items);
+
+        runCompaction();
+    }
+
+    resetEngineAndWarmup();
+
+    createDcpObjects({{nullptr, 0}});
+
+    // Streamed from disk, we won't see the first create or delete
+    testDcpCreateDelete(
+            {CollectionEntry::dairy2}, {CollectionEntry::dairy}, 0, false);
+
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+            CollectionEntry::dairy2.getId()));
+}
+
 class CollectionsFilteredDcpErrorTest : public SingleThreadedKVBucketTest {
 public:
     CollectionsFilteredDcpErrorTest() : cookieP(create_mock_cookie()) {

@@ -55,6 +55,20 @@ CacheCallback::CacheCallback(EventuallyPersistentEngine& e,
 boost::optional<GetValue> CacheCallback::get(VBucket& vb,
                                              CacheLookup& lookup,
                                              ActiveStream& stream) {
+    // If the manifest does not store the collection this is only ok for
+    // system events, tombstones of dropped collections
+    if (!lookup.getCollectionsHandle().found()) {
+        const auto& key = lookup.getCollectionsHandle().getKey();
+        if (key.getCollectionID() != CollectionID::System) {
+            throw std::logic_error(
+                    "CacheCallback::get: given a key with an "
+                    "unknown collection id:" +
+                    key.getCollectionID().to_string() +
+                    " seqno:" + std::to_string(lookup.getBySeqno()));
+        }
+        return GetValue{};
+    }
+
     // Check with collections if this key should be loaded, status EEXISTS is
     // the only way to inform the scan to not continue with this key.
     if (!lookup.getCollectionsHandle().valid() ||
