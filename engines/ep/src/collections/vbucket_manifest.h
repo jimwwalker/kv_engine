@@ -28,8 +28,8 @@
 
 #include <functional>
 #include <mutex>
+#include <set>
 #include <unordered_map>
-#include <unordered_set>
 
 class VBucket;
 
@@ -422,6 +422,39 @@ public:
                     vb, manifestUid, cid, OptionalSeqno{endSeqno});
         }
 
+        /**
+         * Add a scope for a replica VB
+         *
+         * @param vb The vbucket to add the scope to
+         * @param manifestUid the uid of the manifest which made the change
+         * @param sid ScopeID of the new scope
+         * @param scopeName name of the added scope
+         * @param startSeqno The start-seqno assigned to the scope
+         */
+        void replicaAddScope(::VBucket& vb,
+                             ManifestUid manifestUid,
+                             ScopeID sid,
+                             cb::const_char_buffer scopeName,
+                             int64_t startSeqno) {
+            manifest.addScope(
+                    vb, manifestUid, sid, scopeName, OptionalSeqno{startSeqno});
+        }
+
+        /**
+         * Drop a scope for a replica VB
+         *
+         * @param vb The vbucket to drop the scope from
+         * @param manifestUid the uid of the manifest which made the change
+         * @param sid ScopeID to drop
+         * @param endSeqno The end-seqno assigned to the scope drop
+         */
+        void replicaDropScope(::VBucket& vb,
+                              ManifestUid manifestUid,
+                              ScopeID sid,
+                              int64_t endSeqno) {
+            manifest.dropScope(vb, manifestUid, sid, OptionalSeqno{endSeqno});
+        }
+
         /// @return iterator to the beginning of the underlying collection map
         container::iterator begin() {
             return manifest.begin();
@@ -527,6 +560,32 @@ public:
      *          serialisedManifest.
      */
     static DropEventData getDropEventData(
+            cb::const_char_buffer serialisedManifest);
+
+    /**
+     * Get the system event scope create data from a SystemEvent Item's value.
+     *
+     * @param serialisedManifest Serialised manifest data created by
+     *        ::populateWithSerialisedData
+     * @returns SystemEventData which carries all of the data which needs to be
+     *          marshalled into a DCP system event message. Inside the returned
+     *          object maybe sized_buffer objects which point into
+     *          serialisedManifest.
+     */
+    static CreateScopeEventData getCreateScopeEventData(
+            cb::const_char_buffer serialisedManifest);
+
+    /**
+     * Get the system event scope drop data from a SystemEvent Item's value.
+     *
+     * @param serialisedManifest Serialised manifest data created by
+     *        ::populateWithSerialisedData
+     * @returns SystemEventData which carries all of the data which needs to be
+     *          marshalled into a DCP system event message. Inside the returned
+     *          object maybe sized_buffer objects which point into
+     *          serialisedManifest.
+     */
+    static DropScopeEventData getDropScopeEventData(
             cb::const_char_buffer serialisedManifest);
 
     /**
@@ -995,9 +1054,11 @@ protected:
     container map;
 
     /**
-     * The current set of scopes
+     * The current set of scopes, the insertion order is required by
+     * populateWithSerialisedData so that the newest scope is at the end
+     * when iterating.
      */
-    std::unordered_set<ScopeID> scopes;
+    std::set<ScopeID> scopes;
 
     /**
      * Does the current set contain the default collection?

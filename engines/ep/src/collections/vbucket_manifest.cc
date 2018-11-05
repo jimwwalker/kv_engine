@@ -41,6 +41,9 @@ Manifest::Manifest(const PersistedManifest& data)
                               0,
                               StoredValue::state_collection_open);
         defaultCollectionExists = true;
+
+        // The default scope always exists
+        scopes.emplace(ScopeID::Default);
         return;
     }
 
@@ -778,8 +781,8 @@ CreateEventData Manifest::getCreateEventData(
     auto manifest = flatbuffers::GetRoot<SerialisedManifest>(
             (const uint8_t*)serialisedManifest.data());
 
-    auto mutatedEntry = manifest->entries()->GetMutableObject(
-            manifest->entries()->size() - 1);
+    auto mutatedEntry =
+            manifest->entries()->Get(manifest->entries()->size() - 1);
 
     // if maxTtlValid needs considering
     cb::ExpiryLimit maxTtl;
@@ -798,10 +801,32 @@ DropEventData Manifest::getDropEventData(
     auto manifest = flatbuffers::GetRoot<SerialisedManifest>(
             (const uint8_t*)serialisedManifest.data());
 
-    auto mutatedEntry = manifest->entries()->GetMutableObject(
-            manifest->entries()->size() - 1);
+    auto mutatedEntry =
+            manifest->entries()->Get(manifest->entries()->size() - 1);
 
     return {manifest->uid(), mutatedEntry->collectionId()};
+}
+
+CreateScopeEventData Manifest::getCreateScopeEventData(
+        cb::const_char_buffer serialisedManifest) {
+    auto manifest = flatbuffers::GetRoot<SerialisedManifest>(
+            (const uint8_t*)serialisedManifest.data());
+
+    // The last entry in scopes is the ID added
+    auto scopeId = manifest->scopes()->Get(manifest->scopes()->size() - 1);
+
+    return {manifest->uid(), scopeId, manifest->mutatedName()->str()};
+}
+
+DropScopeEventData Manifest::getDropScopeEventData(
+        cb::const_char_buffer serialisedManifest) {
+    auto manifest = flatbuffers::GetRoot<SerialisedManifest>(
+            (const uint8_t*)serialisedManifest.data());
+
+    // The last entry in scopes is the ID dropped
+    auto scopeId = manifest->scopes()->Get(manifest->scopes()->size() - 1);
+
+    return {manifest->uid(), scopeId};
 }
 
 std::string Manifest::getExceptionString(const std::string& thrower,

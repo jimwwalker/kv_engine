@@ -40,6 +40,7 @@ extern cb::mcbp::ClientOpcode dcp_last_op;
 extern std::string dcp_last_key;
 extern uint32_t dcp_last_flags;
 extern CollectionID dcp_last_collection_id;
+extern ScopeID dcp_last_scope_id;
 extern mcbp::systemevent::id dcp_last_system_event;
 
 TEST_F(CollectionsDcpTest, test_dcp_consumer) {
@@ -179,6 +180,14 @@ TEST_F(CollectionsDcpTest, test_dcp_non_default_scope) {
             StoredDocKey{"meat:bacon", CollectionEntry::meat}));
 
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(dcp_last_system_event, mcbp::systemevent::id::CreateScope);
+    EXPECT_EQ(dcp_last_scope_id, ScopeEntry::shop1.uid);
+    EXPECT_EQ(dcp_last_key, ScopeEntry::shop1.name);
+
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(dcp_last_system_event, mcbp::systemevent::id::CreateCollection);
+    EXPECT_EQ(dcp_last_collection_id, CollectionEntry::meat.uid);
+    EXPECT_EQ(dcp_last_key, CollectionEntry::meat.name);
 
     // 2. Replica now knows the collection
     EXPECT_TRUE(replica->lockCollections().doesKeyContainValidCollection(
@@ -736,10 +745,18 @@ TEST_F(CollectionsFilteredDcpTest, filtering_scope) {
     createDcpObjects({{R"({"scope":"8"})"}});
     notifyAndStepToCheckpoint();
 
-    // SystemEvent createCollection
+    // SystemEvent createScope
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
-    EXPECT_EQ(cb::mcbp::ClientOpcode::DcpSystemEvent, dcp_last_op);
+    EXPECT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
+    EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
+    EXPECT_EQ(ScopeEntry::shop1.name, dcp_last_key);
+
+    // SystemEvent createCollection dairy in shop1
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection, dcp_last_system_event);
     EXPECT_EQ(CollectionEntry::dairy.getId(), dcp_last_collection_id);
+    EXPECT_EQ(CollectionEntry::dairy.name, dcp_last_key);
+    EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
 
     // Store collection documents
     std::array<std::string, 2> expectedKeys = {{"dairy:one", "dairy:two"}};
@@ -770,7 +787,7 @@ TEST_F(CollectionsFilteredDcpTest, filtering_scope) {
     // And no more
     EXPECT_EQ(ENGINE_EWOULDBLOCK, producer->step(producers.get()));
 
-    flush_vbucket_to_disk(vbid, 7);
+    flush_vbucket_to_disk(vbid, 8);
 
     vb.reset();
 
@@ -785,7 +802,8 @@ TEST_F(CollectionsFilteredDcpTest, filtering_scope) {
     // Streamed from disk
     // 1x create - create of dairy
     // 2x mutations in the dairy collection
-    testDcpCreateDelete({CollectionEntry::dairy}, {}, 2, false);
+    testDcpCreateDelete(
+            {CollectionEntry::dairy}, {}, 2, false, {ScopeEntry::shop1});
 }
 
 TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope_from_empty) {
@@ -809,10 +827,15 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope_from_empty) {
 
     notifyAndStepToCheckpoint();
 
-    // Check that we got the system event
-    ASSERT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
-    ASSERT_EQ(cb::mcbp::ClientOpcode::DcpSystemEvent, dcp_last_op);
-    ASSERT_EQ(CollectionEntry::dairy.getId(), dcp_last_collection_id);
+    // SystemEvent createScope
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
+    EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
+
+    // SystemEvent createCollection
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection, dcp_last_system_event);
+    EXPECT_EQ(CollectionEntry::dairy.getId(), dcp_last_collection_id);
 
     // And no more
     ASSERT_EQ(ENGINE_EWOULDBLOCK, producer->step(producers.get()));
@@ -837,7 +860,7 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope_from_empty) {
     }
 
     // We flush a collection create + 2 mutations
-    flush_vbucket_to_disk(vbid, 3);
+    flush_vbucket_to_disk(vbid, 4);
 
     vb.reset();
 
@@ -852,7 +875,8 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope_from_empty) {
     // Streamed from disk
     // 1x create - create of dairy
     // 2x mutations - 2x in dairy
-    testDcpCreateDelete({CollectionEntry::dairy}, {}, 2, false);
+    testDcpCreateDelete(
+            {CollectionEntry::dairy}, {}, 2, false, {ScopeEntry::shop1});
 }
 
 TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope) {
@@ -869,10 +893,15 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope) {
     createDcpObjects({{R"({"scope":"8"})"}});
     notifyAndStepToCheckpoint();
 
+    // SystemEvent createScope
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
+    EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
+
     // SystemEvent createCollection
-    ASSERT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
-    ASSERT_EQ(cb::mcbp::ClientOpcode::DcpSystemEvent, dcp_last_op);
-    ASSERT_EQ(CollectionEntry::dairy.getId(), dcp_last_collection_id);
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection, dcp_last_system_event);
+    EXPECT_EQ(CollectionEntry::dairy.getId(), dcp_last_collection_id);
 
     auto vb0Stream = producer->findStream(Vbid(0));
     ASSERT_NE(nullptr, vb0Stream.get());
@@ -913,7 +942,7 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope) {
     // And no more
     EXPECT_EQ(ENGINE_EWOULDBLOCK, producer->step(producers.get()));
 
-    flush_vbucket_to_disk(vbid, 8);
+    flush_vbucket_to_disk(vbid, 9);
 
     vb.reset();
 
@@ -928,8 +957,11 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope) {
     // Streamed from disk
     // 2x create - create of dairy, create of vegetable
     // 2x mutations - 2x in vegetable
-    testDcpCreateDelete(
-            {CollectionEntry::dairy, CollectionEntry::vegetable}, {}, 2, false);
+    testDcpCreateDelete({CollectionEntry::dairy, CollectionEntry::vegetable},
+                        {},
+                        2,
+                        false,
+                        {ScopeEntry::shop1});
 }
 
 TEST_F(CollectionsFilteredDcpTest, filtering_shrink_scope) {
@@ -946,6 +978,11 @@ TEST_F(CollectionsFilteredDcpTest, filtering_shrink_scope) {
     // Setup filtered DCP for SID 8 (shop1)
     createDcpObjects({{R"({"scope":"8"})"}});
     notifyAndStepToCheckpoint();
+
+    // SystemEvent createScope
+    ASSERT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    ASSERT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
+    ASSERT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
 
     // Check the collection create events are correct
     ASSERT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
@@ -1018,7 +1055,7 @@ TEST_F(CollectionsFilteredDcpTest, filtering_shrink_scope) {
     // No new items (dairy is now filtered)
     EXPECT_EQ(ENGINE_EWOULDBLOCK, producer->step(producers.get()));
 
-    flush_vbucket_to_disk(vbid, 13);
+    flush_vbucket_to_disk(vbid, 14);
 
     vb.reset();
 
@@ -1033,7 +1070,8 @@ TEST_F(CollectionsFilteredDcpTest, filtering_shrink_scope) {
     // Streamed from disk
     // 1x create - create of vegetable
     // 2x mutations - 2x mutations in vegetable
-    testDcpCreateDelete({CollectionEntry::vegetable}, {}, 2, false);
+    testDcpCreateDelete(
+            {CollectionEntry::vegetable}, {}, 2, false, {ScopeEntry::shop1});
 }
 
 // Check that when filtering is on, we don't send snapshots for fully filtered
@@ -1175,7 +1213,10 @@ TEST_F(CollectionsFilteredDcpTest, stream_closes_scope) {
     notifyAndStepToCheckpoint();
 
     // Now step DCP to transfer system events. We expect that the stream will
-    // close once we transfer DeleteCollection
+    // close once we transfer DeleteScope
+
+    // Now step the producer to transfer the scope creation
+    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
 
     // Now step the producer to transfer the collection creation
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
@@ -1183,8 +1224,7 @@ TEST_F(CollectionsFilteredDcpTest, stream_closes_scope) {
     // Not dead yet...
     EXPECT_TRUE(vb0Stream->isActive());
 
-    // Perform a delete of meat via the bucket level (filters are worked out
-    // from the bucket manifest)
+    // Perform a delete of meat via the bucket level
     store->setCollections(
             {cm.remove(CollectionEntry::meat, ScopeEntry::shop1)});
 

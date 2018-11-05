@@ -278,11 +278,34 @@ bool Filter::checkAndUpdateSystemEvent(const Item& item) {
         }
         return false;
     }
-    case SystemEvent::Scope:
-#warning "Fixup when scope filter is added"
+    case SystemEvent::Scope: {
         // a scope filter which matches should probably broadcast or will the
         // stream be empty?
-        return passthrough;
+        ScopeID sid = 0;
+        ManifestUid manifestUid = 0;
+
+        if (!item.isDeleted()) {
+            auto dcpData = VB::Manifest::getCreateScopeEventData(
+                    {item.getData(), item.getNBytes()});
+            manifestUid = dcpData.manifestUid;
+            sid = dcpData.sid;
+        } else {
+            auto dcpData = VB::Manifest::getDropScopeEventData(
+                    {item.getData(), item.getNBytes()});
+            manifestUid = dcpData.manifestUid;
+            sid = dcpData.sid;
+        }
+
+        // Only consider this if it is an event the client hasn't observed
+        if (!uid || (manifestUid > *uid)) {
+            if (scopeID && sid == scopeID) {
+                return true;
+            }
+
+            return passthrough;
+        }
+        return false;
+    }
     default: {
         throw std::invalid_argument(
                 "Filter::allowSystemEvent:: event unknown:" +
