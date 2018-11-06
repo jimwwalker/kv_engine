@@ -19,6 +19,8 @@
 
 #include "mock_stream.h"
 
+#include <gtest/gtest.h>
+
 std::shared_ptr<MockActiveStream> MockDcpProducer::mockActiveStreamRequest(
         uint32_t flags,
         uint32_t opaque,
@@ -47,4 +49,14 @@ std::shared_ptr<MockActiveStream> MockDcpProducer::mockActiveStreamRequest(
     }
     notifyStreamReady(vb.getId());
     return stream;
+}
+
+extern cb::mcbp::ClientOpcode dcp_last_op;
+
+ENGINE_ERROR_CODE MockDcpProducer::stepAndExpect(
+        struct dcp_message_producers* producers,
+        cb::mcbp::ClientOpcode expectedOpcode) {
+    auto rv = step(producers);
+    EXPECT_EQ(expectedOpcode, dcp_last_op);
+    return rv;
 }

@@ -262,13 +262,13 @@ std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
        << ", defaultCollectionExists:" << manifest.defaultCollectionExists
        << ", collections.size:" << manifest.collections.size() << std::endl;
     for (const auto& entry : manifest.scopes) {
-        os << "scope:{" << std::hex << entry.first << "," << entry.second.name
-           << ",collections:{";
-        for (const auto& entry : manifest.collections) {
-            os << "collection:{" << std::hex << entry.first << ","
-               << entry.second << "}\n";
+        os << "scope:{" << std::hex << entry.first << ", " << entry.second.name
+           << ", collections:[";
+        for (const auto& collection : entry.second.collections) {
+            os << "{" << std::hex << collection << ", "
+               << manifest.collections.at(collection) << "}";
         }
-        os << "}\n";
+        os << "]\n";
     }
     return os;
 }

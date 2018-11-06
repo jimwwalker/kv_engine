@@ -2491,7 +2491,6 @@ void KVBucket::initializeExpiryPager(Configuration& config) {
 cb::engine_error KVBucket::setCollections(cb::const_char_buffer manifest) {
     // Inhibit VB state changes whilst updating the vbuckets
     LockHolder lh(vbsetMutex);
-
     return collectionsManager->update(*this, manifest);
 }
 

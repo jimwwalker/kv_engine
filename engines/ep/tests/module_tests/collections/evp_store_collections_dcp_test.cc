@@ -179,12 +179,21 @@ TEST_F(CollectionsDcpTest, test_dcp_non_default_scope) {
     EXPECT_FALSE(replica->lockCollections().doesKeyContainValidCollection(
             StoredDocKey{"meat:bacon", CollectionEntry::meat}));
 
-    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpSystemEvent));
     EXPECT_EQ(dcp_last_system_event, mcbp::systemevent::id::CreateScope);
     EXPECT_EQ(dcp_last_scope_id, ScopeEntry::shop1.uid);
     EXPECT_EQ(dcp_last_key, ScopeEntry::shop1.name);
 
-    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
+
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpSystemEvent));
     EXPECT_EQ(dcp_last_system_event, mcbp::systemevent::id::CreateCollection);
     EXPECT_EQ(dcp_last_collection_id, CollectionEntry::meat.uid);
     EXPECT_EQ(dcp_last_key, CollectionEntry::meat.name);
@@ -751,6 +760,11 @@ TEST_F(CollectionsFilteredDcpTest, filtering_scope) {
     EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
     EXPECT_EQ(ScopeEntry::shop1.name, dcp_last_key);
 
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
+
     // SystemEvent createCollection dairy in shop1
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
     EXPECT_EQ(mcbp::systemevent::id::CreateCollection, dcp_last_system_event);
@@ -832,6 +846,11 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope_from_empty) {
     EXPECT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
     EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
 
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
+
     // SystemEvent createCollection
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
     EXPECT_EQ(mcbp::systemevent::id::CreateCollection, dcp_last_system_event);
@@ -897,6 +916,11 @@ TEST_F(CollectionsFilteredDcpTest, filtering_grow_scope) {
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
     EXPECT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
     EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
+
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
 
     // SystemEvent createCollection
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
@@ -983,6 +1007,11 @@ TEST_F(CollectionsFilteredDcpTest, filtering_shrink_scope) {
     ASSERT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
     ASSERT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
     ASSERT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
+
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
 
     // Check the collection create events are correct
     ASSERT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
@@ -1216,28 +1245,60 @@ TEST_F(CollectionsFilteredDcpTest, stream_closes_scope) {
     // close once we transfer DeleteScope
 
     // Now step the producer to transfer the scope creation
-    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpSystemEvent));
+    EXPECT_EQ(mcbp::systemevent::id::CreateScope, dcp_last_system_event);
+    EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
 
-    // Now step the producer to transfer the collection creation
-    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
+
+    // SystemEvent createCollection
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpSystemEvent));
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection, dcp_last_system_event);
+    EXPECT_EQ(CollectionEntry::meat.getId(), dcp_last_collection_id);
+    EXPECT_EQ(CollectionEntry::meat.name, dcp_last_key);
 
     // Not dead yet...
     EXPECT_TRUE(vb0Stream->isActive());
 
-    // Perform a delete of meat via the bucket level
-    store->setCollections(
-            {cm.remove(CollectionEntry::meat, ScopeEntry::shop1)});
+    // Remove the scope
+    store->setCollections({cm.remove(ScopeEntry::shop1)});
 
     notifyAndStepToCheckpoint();
 
     // Now step the producer to transfer the collection deletion
-    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpSystemEvent));
+    EXPECT_EQ(mcbp::systemevent::id::DeleteCollection, dcp_last_system_event);
+    EXPECT_EQ(CollectionEntry::meat.getId(), dcp_last_collection_id);
+
+    EXPECT_EQ(
+            ENGINE_SUCCESS,
+            producer->stepAndExpect(producers.get(),
+                                    cb::mcbp::ClientOpcode::DcpSnapshotMarker));
+
+    // Now step the producer to transfer the scope deletion
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpSystemEvent));
+    EXPECT_EQ(mcbp::systemevent::id::DropScope, dcp_last_system_event);
+    EXPECT_EQ(ScopeEntry::shop1.getId(), dcp_last_scope_id);
 
     // Done... collection deletion of meat has closed the stream
     EXPECT_FALSE(vb0Stream->isActive());
 
-    // Now step the producer to transfer the close stream
-    EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
+    // Now step the producer to transfer the stream end message
+    EXPECT_EQ(ENGINE_SUCCESS,
+              producer->stepAndExpect(producers.get(),
+                                      cb::mcbp::ClientOpcode::DcpStreamEnd));
+    EXPECT_EQ(end_stream_status_t::END_STREAM_FILTER_EMPTY, dcp_last_flags);
 
     // And no more
     EXPECT_EQ(ENGINE_EWOULDBLOCK, producer->step(producers.get()));

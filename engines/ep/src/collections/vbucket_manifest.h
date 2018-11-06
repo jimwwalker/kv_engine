@@ -518,21 +518,7 @@ public:
         return {*this, rwlock};
     }
 
-    /**
-     * Return a patched PersistedManifest object cloned and mutated from the
-     * specified Item.
-     *
-     * The reason this is done is because when the Item was created and assigned
-     * flatbuffer data, the seqno for the start/end of the collection was not
-     * known, this call will patch the correct seqno into the created or dropped
-     * collection entry.
-     *
-     * @param collectionsEventItem an Item created to represent a collection
-     *        event. .
-     * @return The patched PersistedManifest which can be stored to disk.
-     */
-    static PersistedManifest patchSerialisedData(
-            const Item& collectionsEventItem);
+    static PersistedManifest getManifestData(const Item& item);
 
     /**
      * Get the system event collection create data from a SystemEvent
@@ -1022,6 +1008,20 @@ protected:
      * @return the keyExtra parameter to be passed to SystemEventFactory
      */
     static std::string makeScopeIdIntoString(ScopeID sid);
+
+    /**
+     * Return a patched PersistedManifest object cloned and mutated from the
+     * specified Item.
+     *
+     * The reason this is done is because when the Item was created and assigned
+     * flatbuffer data, the seqno for the start/end of the collection was not
+     * known, this call will patch the correct seqno into the created or dropped
+     * collection entry.
+     *
+     * @param item an Item created by manifest changes.
+     * @return The patched PersistedManifest which can be stored to disk.
+     */
+    static PersistedManifest patchSerialisedData(const Item& item);
 
     /**
      * Return a string for use in throwException, returns:

@@ -410,8 +410,25 @@ public:
                     break;
                 }
                 case SystemEvent::Scope: {
-                    // @todo: coming soon
-                    // ASSERT_TRUE(false) << "Scope not implemented";
+                    if (qi->isDeleted()) {
+                        auto dcpData = Collections::VB::Manifest::
+                                getDropScopeEventData(
+                                        {qi->getData(), qi->getNBytes()});
+                        // A deleted create means beginDelete collection
+                        replica.wlock().replicaDropScope(vbR,
+                                                         dcpData.manifestUid,
+                                                         dcpData.sid,
+                                                         qi->getBySeqno());
+                    } else {
+                        auto dcpData = Collections::VB::Manifest::
+                                getCreateScopeEventData(
+                                        {qi->getData(), qi->getNBytes()});
+                        replica.wlock().replicaAddScope(vbR,
+                                                        dcpData.manifestUid,
+                                                        dcpData.sid,
+                                                        dcpData.name,
+                                                        qi->getBySeqno());
+                    }
                     break;
                 }
                 }
@@ -427,9 +444,9 @@ public:
      *
      * @returns gtest assertion fail (with details) or success
      */
-    ::testing::AssertionResult checkJson(const Item& manifest) {
+    ::testing::AssertionResult checkJson(const Item& manifestItem) {
         MockVBManifest newManifest(
-                Collections::VB::Manifest::patchSerialisedData(manifest));
+                Collections::VB::Manifest::getManifestData(manifestItem));
         if (active != newManifest) {
             return ::testing::AssertionFailure() << "manifest mismatch\n"
                                                  << "generated\n"
@@ -567,6 +584,23 @@ TEST_F(VBucketManifestTest, add_to_empty_scope) {
     EXPECT_TRUE(manifest.isOpen(CollectionEntry::meat));
 }
 
+/**
+ * Test that all collections in a scope get deleted just by the scope drop
+ */
+TEST_F(VBucketManifestTest, drop_scope) {
+    EXPECT_TRUE(manifest.update(cm.add(ScopeEntry::shop1)));
+    EXPECT_TRUE(manifest.update(
+            cm.add(CollectionEntry::fruit, ScopeEntry::shop1)
+                    .add(CollectionEntry::dairy, ScopeEntry::shop1)
+                    .add(CollectionEntry::meat, ScopeEntry::shop1)));
+    EXPECT_TRUE(manifest.isOpen(CollectionEntry::fruit));
+    EXPECT_TRUE(manifest.isOpen(CollectionEntry::dairy));
+    EXPECT_TRUE(manifest.isOpen(CollectionEntry::meat));
+    EXPECT_TRUE(manifest.update(cm.remove(ScopeEntry::shop1)));
+    EXPECT_FALSE(manifest.isOpen(CollectionEntry::fruit));
+    EXPECT_FALSE(manifest.isOpen(CollectionEntry::dairy));
+    EXPECT_FALSE(manifest.isOpen(CollectionEntry::meat));
+}
 /**
  * Test that we can drop a scope (simulate this by dropping all the
  * collections within it) then add it back.

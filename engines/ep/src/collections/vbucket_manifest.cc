@@ -155,7 +155,7 @@ bool Manifest::update(::VBucket& vb, const Collections::Manifest& manifest) {
                      finalScopeCreate.get().name,
                      OptionalSeqno{/*no-seqno*/});
         }
-
+#warning "THIS IS WRONG - the very last event generated needs the new manifest!"
         auto finalDeletion = applyDeletions(vb, rv->collectionsToRemove);
 
         if (rv->collectionsToAdd.empty() && finalDeletion) {
@@ -164,7 +164,6 @@ bool Manifest::update(::VBucket& vb, const Collections::Manifest& manifest) {
                     manifest.getUid(), // Final update with new UID
                     *finalDeletion,
                     OptionalSeqno{/*no-seqno*/});
-            return true;
         } else if (finalDeletion) {
             beginCollectionDelete(vb,
                                   manifestUid,
@@ -368,6 +367,12 @@ void Manifest::addScope(::VBucket& vb,
 
     auto seqno = vb.queueItem(item.release(), optionalSeqno);
 
+    // If seq is not set, then this is an active vbucket queueing the event.
+    // Collection events will end the CP so they don't de-dup.
+    if (!optionalSeqno.is_initialized()) {
+        vb.checkpointManager->createNewCheckpoint();
+    }
+
     EP_LOG_INFO(
             "collections: {} added scope:name:{},id:{:x} "
             "replica:{}, backfill:{}, seqno:{}, manifest:{:x}",
@@ -389,11 +394,13 @@ void Manifest::dropScope(::VBucket& vb,
                 __FUNCTION__, "scope doesn't exist, scope:" + sid.to_string());
     }
 
-    // Remove from the set of scopes we know about
-    scopes.erase(sid);
+    scopes.emplace(sid);
 
     flatbuffers::FlatBufferBuilder builder;
     populateWithSerialisedData(builder, {});
+
+    // Remove from the set of scopes we know about
+    scopes.erase(sid);
 
     auto item = SystemEventFactory::make(
             SystemEvent::Scope,
@@ -404,6 +411,12 @@ void Manifest::dropScope(::VBucket& vb,
     item->setDeleted();
 
     auto seqno = vb.queueItem(item.release(), optionalSeqno);
+
+    // If seq is not set, then this is an active vbucket queueing the event.
+    // Collection events will end the CP so they don't de-dup.
+    if (!optionalSeqno.is_initialized()) {
+        vb.checkpointManager->createNewCheckpoint();
+    }
 
     EP_LOG_INFO(
             "collections: {} dropped scope:id:{:x} "
@@ -429,7 +442,7 @@ Manifest::ProcessResult Manifest::processManifest(
         }
     }
 
-    for (const auto& scope : scopes) {
+    for (const auto scope : scopes) {
         // Remove the scopes that don't exist in the new manifest
         if (manifest.findScope(scope) == manifest.endScopes()) {
             rv->scopesToRemove.push_back(scope);
@@ -735,11 +748,26 @@ void Manifest::populateWithSerialisedData(
     }
 }
 
-PersistedManifest Manifest::patchSerialisedData(
-        const Item& collectionsEventItem) {
-    const uint8_t* ptr =
-            reinterpret_cast<const uint8_t*>(collectionsEventItem.getData());
-    PersistedManifest mutableData(ptr, ptr + collectionsEventItem.getNBytes());
+PersistedManifest Manifest::getManifestData(const Item& item) {
+    switch (SystemEvent(item.getFlags())) {
+    case SystemEvent::Collection:
+        // Collection events need the endSeqno updating
+        return patchSerialisedData(item);
+    case SystemEvent::Scope: {
+        // Scope events require no changes
+        const uint8_t* ptr = reinterpret_cast<const uint8_t*>(item.getData());
+        return {ptr, ptr + item.getNBytes()};
+    }
+    default:
+        throw std::invalid_argument(
+                "Manifest::getManifestData: unknown event:" +
+                std::to_string(int(item.getFlags())));
+    }
+}
+
+PersistedManifest Manifest::patchSerialisedData(const Item& item) {
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(item.getData());
+    PersistedManifest mutableData(ptr, ptr + item.getNBytes());
     auto manifest =
             flatbuffers::GetMutableRoot<SerialisedManifest>(mutableData.data());
 
@@ -748,21 +776,18 @@ PersistedManifest Manifest::patchSerialisedData(
             manifest->entries()->size() - 1);
 
     bool failed = false;
-    if (collectionsEventItem.isDeleted()) {
-        failed = !mutatedEntry->mutate_endSeqno(
-                collectionsEventItem.getBySeqno());
+    if (item.isDeleted()) {
+        failed = !mutatedEntry->mutate_endSeqno(item.getBySeqno());
     } else {
-        failed = !mutatedEntry->mutate_startSeqno(
-                collectionsEventItem.getBySeqno());
+        failed = !mutatedEntry->mutate_startSeqno(item.getBySeqno());
     }
 
     if (failed) {
         throw std::logic_error(
                 "Manifest::patchSerialisedData failed to mutate, "
                 "new seqno: " +
-                std::to_string(collectionsEventItem.getBySeqno()) +
-                " isDeleted:" +
-                std::to_string(collectionsEventItem.isDeleted()));
+                std::to_string(item.getBySeqno()) +
+                " isDeleted:" + std::to_string(item.isDeleted()));
     }
 
     return mutableData;

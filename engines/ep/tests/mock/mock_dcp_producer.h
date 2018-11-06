@@ -169,4 +169,7 @@ public:
             uint64_t vbucket_uuid,
             uint64_t snap_start_seqno,
             uint64_t snap_end_seqno);
+
+    ENGINE_ERROR_CODE stepAndExpect(struct dcp_message_producers* producers,
+                                    cb::mcbp::ClientOpcode expectedOpcode);
 };
