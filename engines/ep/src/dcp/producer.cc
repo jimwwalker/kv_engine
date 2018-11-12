@@ -225,6 +225,7 @@ DcpProducer::DcpProducer(EventuallyPersistentEngine& e,
     enableExtMetaData = false;
     forceValueCompression = false;
     enableExpiryOpcode = false;
+    enableMultipleStreamRequests = false;
 
     // Cursor dropping is disabled for replication connections by default,
     // but will be enabled through a control message to support backward
@@ -902,6 +903,17 @@ ENGINE_ERROR_CODE DcpProducer::control(uint32_t opaque,
             enableExpiryOpcode = false;
         }
         return ENGINE_SUCCESS;
+    } else if (strncmp(param, "enable_multiple_stream_requests", key.size()) ==
+               0) {
+        // To simplify the stream management, once enabled it cannot be disabled
+        if (valueStr == "false" && enableMultipleStreamRequests) {
+            return ENGINE_EINVAL;
+        }
+
+        if (valueStr == "true") {
+            enableMultipleStreamRequests = true;
+        }
+        return ENGINE_SUCCESS;
     }
 
     logger->warn("Invalid ctrl parameter '{}' for {}", valueStr, keyStr);
@@ -1056,6 +1068,10 @@ void DcpProducer::addStats(ADD_STAT add_stat, const void *c) {
             add_stat, c);
     addStat("enable_expiry_opcode",
             enableExpiryOpcode ? "true" : "false",
+            add_stat,
+            c);
+    addStat("enable_multiple_stream_requests",
+            enableMultipleStreamRequests ? "true" : "false",
             add_stat,
             c);
 

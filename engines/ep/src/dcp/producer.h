@@ -404,6 +404,7 @@ protected:
     Couchbase::RelaxedAtomic<bool> sendStreamEndOnClientStreamClose;
     Couchbase::RelaxedAtomic<bool> supportsHifiMFU;
     Couchbase::RelaxedAtomic<bool> enableExpiryOpcode;
+    Couchbase::RelaxedAtomic<bool> enableMultipleStreamRequests;
 
     /// Timestamp of when we last transmitted a message to our peer.
     Couchbase::RelaxedAtomic<rel_time_t> lastSendTime;
