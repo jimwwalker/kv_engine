@@ -18,6 +18,7 @@
 #pragma once
 
 #include "collections/collections_types.h"
+#include "dcp/stream_id.h"
 #include "item.h"
 
 #include <memcached/engine_common.h>
@@ -158,6 +159,10 @@ public:
     }
 
     std::string getUid() const;
+
+    DcpStreamId getStreamId() const {
+        return {};
+    }
 
     /**
      * Dump this to std::cerr

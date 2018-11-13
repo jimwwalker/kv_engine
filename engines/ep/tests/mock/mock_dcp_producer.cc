@@ -44,7 +44,10 @@ std::shared_ptr<MockActiveStream> MockDcpProducer::mockActiveStreamRequest(
             snap_start_seqno,
             snap_end_seqno);
     stream->setActive();
-    if (!streams.insert(std::make_pair(vb.getId(), StreamsQueue{stream}))) {
+
+    if (!streams.insert(std::make_pair(
+                vb.getId(),
+                std::make_shared<StreamContainer<ContainerElement>>(stream)))) {
         throw std::logic_error(
                 "MockDcpProducer::mockActiveStreamRequest "
                 "failed to insert requested stream");
@@ -59,4 +62,19 @@ ENGINE_ERROR_CODE MockDcpProducer::stepAndExpect(
     auto rv = step(producers);
     EXPECT_EQ(expectedOpcode, dcp_last_op);
     return rv;
+}
+
+std::shared_ptr<Stream> MockDcpProducer::findStream(Vbid vbid) {
+    auto func = [](StreamsMap::value_type& vt) { return vt.second->lock(); };
+    auto rv = streams.apply2(vbid, func);
+    if (rv) {
+        if (rv.get().size() != 1) {
+            throw std::logic_error(
+                    "MockDcpProducer::findStream against producer with many "
+                    "streams size:" +
+                    std::to_string(rv.get().size()));
+        }
+        return rv.get().get();
+    }
+    return nullptr;
 }

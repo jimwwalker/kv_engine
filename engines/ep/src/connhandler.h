@@ -19,6 +19,7 @@
 
 #include "config.h"
 
+#include "dcp/stream_id.h"
 #include "statwriter.h"
 #include "utility.h"
 
@@ -94,7 +95,9 @@ public:
                                         Vbid vbucket,
                                         uint32_t flags);
 
-    virtual ENGINE_ERROR_CODE closeStream(uint32_t opaque, Vbid vbucket);
+    virtual ENGINE_ERROR_CODE closeStream(uint32_t opaque,
+                                          Vbid vbucket,
+                                          DcpStreamId sid);
 
     virtual ENGINE_ERROR_CODE streamEnd(uint32_t opaque,
                                         Vbid vbucket,

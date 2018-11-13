@@ -303,7 +303,9 @@ ENGINE_ERROR_CODE DcpConsumer::addStream(uint32_t opaque,
     return ENGINE_SUCCESS;
 }
 
-ENGINE_ERROR_CODE DcpConsumer::closeStream(uint32_t opaque, Vbid vbucket) {
+ENGINE_ERROR_CODE DcpConsumer::closeStream(uint32_t opaque,
+                                           Vbid vbucket,
+                                           DcpStreamId sid) {
     lastMessageTime = ep_current_time();
     if (doDisconnect()) {
         streams.erase(vbucket);

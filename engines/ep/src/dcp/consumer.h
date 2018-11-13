@@ -86,7 +86,9 @@ public:
                                 Vbid vbucket,
                                 uint32_t flags) override;
 
-    ENGINE_ERROR_CODE closeStream(uint32_t opaque, Vbid vbucket) override;
+    ENGINE_ERROR_CODE closeStream(uint32_t opaque,
+                                  Vbid vbucket,
+                                  DcpStreamId sid = {}) override;
 
     ENGINE_ERROR_CODE streamEnd(uint32_t opaque,
                                 Vbid vbucket,

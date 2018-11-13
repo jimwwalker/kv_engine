@@ -26,6 +26,7 @@
 #include "dcp/dcp-types.h"
 #include "dcp/ready-queue.h"
 #include "dcp/response.h"
+#include "dcp/stream_container.h"
 #include "ep_engine.h"
 #include "monotonic.h"
 #include "platform/cacheline_padded.h"
@@ -145,7 +146,9 @@ public:
      * @return ENGINE_SUCCESS upon a successful close
      *         ENGINE_NOT_MY_VBUCKET the vbucket stream doesn't exist
      */
-    ENGINE_ERROR_CODE closeStream(uint32_t opaque, Vbid vbucket) override;
+    ENGINE_ERROR_CODE closeStream(uint32_t opaque,
+                                  Vbid vbucket,
+                                  DcpStreamId sid = {}) override;
 
     void notifyStreamReady(Vbid vbucket);
 
@@ -317,7 +320,8 @@ public:
     /** Searches the streams map for a stream for vbucket ID. Returns the
      *  found stream, or an empty pointer if none found.
      */
-    std::shared_ptr<Stream> findStream(Vbid vbid);
+    std::shared_ptr<StreamContainer<std::shared_ptr<Stream>>> findStreams(
+            Vbid vbid);
 
 protected:
     /** We may disconnect if noop messages are enabled and the last time we
@@ -398,6 +402,27 @@ protected:
      */
     bool setStreamsDeadStatus(Vbid vbid, end_stream_status_t status);
 
+    /**
+     * DcpProducer maps from vbucket to the stream object(s), this a map
+     * of vbid to a container, however we do not map directly to the container
+     * but to a shared_pointer to the container, allowing for various functions
+     * which operate on streams to safely work together.
+     */
+    using ContainerElement = std::shared_ptr<Stream>;
+    using StreamMapValue = std::shared_ptr<StreamContainer<ContainerElement>>;
+    using StreamsMap = AtomicUnorderedMap<Vbid, StreamMapValue>;
+
+    /**
+     * Attempt to update the map of vb to stream(s) with the new stream
+     *
+     * @returns true if the vb_conn_map should be updated
+     * @throws engine_error if an active stream already exists or logic_error
+     *         if the update is not possible.
+     */
+    bool updateStreamsMap(Vbid vbid,
+                          DcpStreamId sid,
+                          std::shared_ptr<Stream>& stream);
+
     // stash response for retry if E2BIG was hit
     std::unique_ptr<DcpResponse> rejectResp;
 
@@ -424,10 +449,7 @@ protected:
     DcpReadyQueue ready;
 
     // Map of vbid -> streams. Map itself is atomic (thread-safe).
-    using StreamsQueue = std::vector<std::shared_ptr<Stream>>;
-    using StreamsMap = AtomicUnorderedMap<Vbid, StreamsQueue>;
     StreamsMap streams;
-
     std::atomic<size_t> itemsSent;
     std::atomic<size_t> totalBytesSent;
     std::atomic<size_t> totalUncompressedDataSize;
