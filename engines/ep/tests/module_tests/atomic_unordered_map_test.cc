@@ -19,12 +19,13 @@
 
 #include "atomic_unordered_map.h"
 
+#include <memory>
 #include <thread>
 
 #include <gtest/gtest.h>
 
 /* Test class which inherits from RCValue */
-struct DummyValue : public RCValue {
+struct DummyValue {
 public:
     DummyValue(size_t value_)
         : value(value_) {}
@@ -38,7 +39,7 @@ public:
 
 class AtomicUnorderedMapTest : public ::testing::Test {
 public:
-    typedef AtomicUnorderedMap<int, SingleThreadedRCPtr<DummyValue>> TestMap;
+    typedef AtomicUnorderedMap<int, std::shared_ptr<DummyValue>> TestMap;
 
     // Add N items to a map starting from the given offset.
     static void insert_into_map(TestMap& map, size_t n, size_t offset) {
@@ -165,7 +166,7 @@ TEST_F(AtomicUnorderedMapTest, for_each2) {
             // returning a SingleThreadedRCPtr
             return value.second;
         }
-        return SingleThreadedRCPtr<DummyValue>{};
+        return std::shared_ptr<DummyValue>{};
     });
 
     EXPECT_NE(nullptr, rv.get());
@@ -177,7 +178,7 @@ TEST_F(AtomicUnorderedMapTest, for_each2) {
             // returning a SingleThreadedRCPtr
             return value.second;
         }
-        return SingleThreadedRCPtr<DummyValue>{};
+        return std::shared_ptr<DummyValue>{};
     });
 
     EXPECT_EQ(nullptr, rv2.get());
