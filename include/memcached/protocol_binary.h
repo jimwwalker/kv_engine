@@ -1041,12 +1041,12 @@ protected:
 };
 static_assert(sizeof(DcpDeleteRequestV2) == 45, "Unexpected struct size");
 
-class DcpExpirationPayload {
+class DcpDeleteV2Payload {
 public:
-    DcpExpirationPayload() = default;
-    DcpExpirationPayload(uint64_t by_seqno,
-                         uint64_t rev_seqno,
-                         uint32_t delete_time)
+    DcpDeleteV2Payload() = default;
+    DcpDeleteV2Payload(uint64_t by_seqno,
+                       uint64_t rev_seqno,
+                       uint32_t delete_time)
         : by_seqno(htonll(by_seqno)),
           rev_seqno(htonll(rev_seqno)),
           delete_time(htonl(delete_time)) {
@@ -1056,19 +1056,19 @@ public:
         return ntohll(by_seqno);
     }
     void setBySeqno(uint64_t by_seqno) {
-        DcpExpirationPayload::by_seqno = htonll(by_seqno);
+        DcpDeleteV2Payload::by_seqno = htonll(by_seqno);
     }
     uint64_t getRevSeqno() const {
         return ntohll(rev_seqno);
     }
     void setRevSeqno(uint64_t rev_seqno) {
-        DcpExpirationPayload::rev_seqno = htonll(rev_seqno);
+        DcpDeleteV2Payload::rev_seqno = htonll(rev_seqno);
     }
     uint32_t getDeleteTime() const {
         return ntohl(delete_time);
     }
     void setDeleteTime(uint32_t delete_time) {
-        DcpExpirationPayload::delete_time = htonl(delete_time);
+        DcpDeleteV2Payload::delete_time = htonl(delete_time);
     }
 
     cb::const_byte_buffer getBuffer() const {
@@ -1080,7 +1080,10 @@ protected:
     uint64_t rev_seqno = 0;
     uint32_t delete_time = 0;
 };
-static_assert(sizeof(DcpExpirationPayload) == 20, "Unexpected struct size");
+static_assert(sizeof(DcpDeleteV2Payload) == 20, "Unexpected struct size");
+
+// Expiry is the same as Delete Version 2
+using DcpExpirationPayload = DcpDeleteV2Payload;
 
 class DcpSetVBucketState {
 public:

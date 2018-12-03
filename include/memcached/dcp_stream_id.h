@@ -18,6 +18,7 @@
 #pragma once
 
 #include <memcached/mcd_util-visibility.h>
+#include <platform/sized_buffer.h>
 #include <platform/socket.h>
 
 #include <stdint.h>
@@ -78,3 +79,22 @@ protected:
 
 MCD_UTIL_PUBLIC_API
 std::ostream& operator<<(std::ostream&, const DcpStreamId);
+
+struct DcpStreamIdFrameInfo {
+    DcpStreamIdFrameInfo(DcpStreamId sid) {
+        *reinterpret_cast<uint16_t*>(this->sid) = sid.hton();
+    }
+
+    cb::const_byte_buffer getBuf() const {
+        return cb::const_byte_buffer{reinterpret_cast<const uint8_t*>(this),
+                                     sizeof(tag) + sizeof(sid)};
+    }
+
+private:
+    // FrameID:2, len:2
+    uint8_t tag{0x22};
+    uint8_t sid[2]{};
+};
+
+static_assert(sizeof(DcpStreamIdFrameInfo) == 3,
+              "DcpStreamIdFrameInfo should be 3 bytes");
