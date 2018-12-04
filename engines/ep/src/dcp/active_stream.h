@@ -347,4 +347,6 @@ private:
      * many streams-per-vbucket
      */
     DcpStreamId sid;
+
+    std::string logPrefix;
 };

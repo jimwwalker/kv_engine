@@ -1857,8 +1857,9 @@ ENGINE_ERROR_CODE Connection::mutation(uint32_t opaque,
     req.setOpcode(cb::mcbp::ClientOpcode::DcpMutation);
     req.setExtlen(gsl::narrow<uint8_t>(sizeof(extras)));
     req.setKeylen(gsl::narrow<uint16_t>(key.size()));
-    req.setBodylen(gsl::narrow<uint32_t>(sizeof(extras) + key.size() + nmeta +
-                                         buffer.size()));
+    req.setBodylen(gsl::narrow<uint32_t>(
+            sizeof(extras) + key.size() + nmeta + buffer.size() +
+            (sid ? sizeof(DcpStreamIdFrameInfo) : 0)));
     req.setOpaque(opaque);
     req.setVBucket(vbucket);
     req.setCas(info.cas);
