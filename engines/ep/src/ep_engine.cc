@@ -1253,8 +1253,6 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::stream_req(
                                        json);
         } catch (const cb::engine_error& e) {
             return ENGINE_ERROR_CODE(e.code().value());
-        } catch (const std::invalid_argument&) {
-            return ENGINE_EINVAL;
         }
     }
     return ENGINE_DISCONNECT;

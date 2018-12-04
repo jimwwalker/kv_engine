@@ -343,6 +343,20 @@ ENGINE_ERROR_CODE DcpProducer::streamRequest(
     // of collections is compatible with the vbucket.
     Collections::VB::Filter filter(json, vb->getManifest());
 
+    if (!filter.getStreamId() &&
+        multipleStreamRequests == MultipleStreamRequests::Yes) {
+        logger->warn(
+                "Stream request failed because a valid stream-ID is required.");
+        return ENGINE_DCP_STREAMID_INVALID;
+    } else if (filter.getStreamId() &&
+               multipleStreamRequests == MultipleStreamRequests::No) {
+        logger->warn(
+                "Stream request failed because a stream-ID:{} is present "
+                "but not required.",
+                filter.getStreamId());
+        return ENGINE_DCP_STREAMID_INVALID;
+    }
+
     // If we are a notify stream then we can't use the start_seqno supplied
     // since if it is greater than the current high seqno then it will always
     // trigger a rollback. As a result we should use the current high seqno for
@@ -981,6 +995,20 @@ ENGINE_ERROR_CODE DcpProducer::closeStream(uint32_t opaque,
     lastReceiveTime = ep_current_time();
     if (doDisconnect()) {
         return ENGINE_DISCONNECT;
+    }
+
+    if (!sid && multipleStreamRequests == MultipleStreamRequests::Yes) {
+        logger->warn(
+                "DcpProducer::closeStream request failed because a valid "
+                "stream-ID is required.");
+        return ENGINE_DCP_STREAMID_INVALID;
+    } else if (sid && multipleStreamRequests == MultipleStreamRequests::No) {
+        logger->warn(
+                " DcpProducer::closeStream request failed because a "
+                "stream-ID:{} is present "
+                "but not required.",
+                sid);
+        return ENGINE_DCP_STREAMID_INVALID;
     }
 
     /* We should not remove the stream from the streams map if we have to
