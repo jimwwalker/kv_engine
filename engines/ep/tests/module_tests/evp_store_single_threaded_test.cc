@@ -368,7 +368,7 @@ TEST_P(STParameterizedBucketTest, SlowStreamBackfillPurgeSeqnoCheck) {
         EphemeralVBucket* evb = dynamic_cast<EphemeralVBucket*>(vbptr.get());
         purger.setCurrentVBucket(*evb);
         evb->ht.visit(purger);
-        evb->purgeStaleItems();
+       // evb->purgeStaleItems();
     }
 
     ASSERT_EQ(3, vb->getPurgeSeqno());

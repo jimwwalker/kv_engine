@@ -35,6 +35,8 @@
 
 #include <boost/optional/optional.hpp>
 
+#include "collections/eraser_context.h"
+
 /* [EPHE TODO]: Check if uint64_t can be used instead */
 using seqno_t = int64_t;
 
@@ -339,6 +341,10 @@ public:
      *         deleted).
      */
     virtual size_t purgeTombstones(seqno_t purgeUpToSeqno,
+
+std::function<bool(
+            const DocKey, int64_t, bool)> col,
+
                                    std::function<bool()> shouldPause = []() {
                                        return false;
                                    }) = 0;

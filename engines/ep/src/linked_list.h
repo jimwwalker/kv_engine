@@ -175,6 +175,10 @@ public:
                        StoredValue* newSv) override;
 
     size_t purgeTombstones(seqno_t purgeUpToSeqno,
+
+std::function<bool(
+            const DocKey, int64_t, bool )> col,
+
                            std::function<bool()> shouldPause = []() {
                                return false;
                            }) override;

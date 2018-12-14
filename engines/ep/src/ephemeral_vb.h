@@ -194,7 +194,8 @@ public:
      *
      * @return Number of items purged.
      */
-    size_t purgeStaleItems(std::function<bool()> shouldPauseCbk = []() {
+    size_t purgeStaleItems(std::function<bool(
+            const DocKey, int64_t, bool)>, std::function<bool()> shouldPauseCbk = []() {
         return false;
     });
 

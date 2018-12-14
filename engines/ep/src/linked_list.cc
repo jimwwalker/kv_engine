@@ -232,6 +232,10 @@ void BasicLinkedList::markItemStale(std::lock_guard<std::mutex>& listWriteLg,
 }
 
 size_t BasicLinkedList::purgeTombstones(seqno_t purgeUpToSeqno,
+
+    std::function<bool(
+            const DocKey, int64_t, bool)> col,
+
                                         std::function<bool()> shouldPause) {
     // Purge items marked as stale from the seqList.
     //
@@ -312,6 +316,11 @@ size_t BasicLinkedList::purgeTombstones(seqno_t purgeUpToSeqno,
             std::lock_guard<std::mutex> writeGuard(getListWriteLock());
             stale = it->isStale(writeGuard);
         }
+
+        if (!stale) {
+            stale = col(it->getKey(), it->getBySeqno(), it->isDeleted());
+        }
+
         // Only stale items are purged.
         if (!stale) {
             ++it;
