@@ -29,11 +29,14 @@
 #include <vector>
 
 #include "config.h"
+#include "collections/collections_types.h"
 #include "item.h"
 #include "memcached/engine_error.h"
 #include "stored-value.h"
 
 #include <boost/optional/optional.hpp>
+
+#include "collections/eraser_context.h"
 
 /* [EPHE TODO]: Check if uint64_t can be used instead */
 using seqno_t = int64_t;
@@ -338,10 +341,12 @@ public:
      * @return The number of items purged from the sequence list (and hence
      *         deleted).
      */
-    virtual size_t purgeTombstones(seqno_t purgeUpToSeqno,
-                                   std::function<bool()> shouldPause = []() {
-                                       return false;
-                                   }) = 0;
+    virtual size_t purgeTombstones(
+            seqno_t purgeUpToSeqno,
+
+            Collections::IsDroppedEphemeralCb isDroppedKey,
+
+            std::function<bool()> shouldPause = []() { return false; }) = 0;
 
     /**
      * Updates the number of deleted items in the sequence list whenever

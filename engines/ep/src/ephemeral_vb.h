@@ -202,9 +202,10 @@ public:
      *
      * @return Number of items purged.
      */
-    size_t purgeStaleItems(std::function<bool()> shouldPauseCbk = []() {
-        return false;
-    });
+    size_t purgeStaleItems(Collections::IsDroppedEphemeralCb isDroppedCb,
+                           std::function<bool()> shouldPauseCbk = []() {
+                               return false;
+                           });
 
     void setupDeferredDeletion(const void* cookie) override;
 

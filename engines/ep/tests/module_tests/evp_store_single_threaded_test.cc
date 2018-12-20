@@ -232,6 +232,15 @@ void SingleThreadedKVBucketTest::notifyAndStepToCheckpoint(
     if (expectedOp != cb::mcbp::ClientOpcode::Invalid) {
         EXPECT_EQ(ENGINE_SUCCESS, producer.step(&producers));
         EXPECT_EQ(expectedOp, producers.last_op);
+        if (expectedOp == cb::mcbp::ClientOpcode::DcpSnapshotMarker) {
+            if (fromMemory) {
+                EXPECT_EQ(MARKER_FLAG_MEMORY,
+                          producers.last_flags & MARKER_FLAG_MEMORY);
+            } else {
+                EXPECT_EQ(MARKER_FLAG_DISK,
+                          producers.last_flags & MARKER_FLAG_DISK);
+            }
+        }
     } else {
         EXPECT_EQ(ENGINE_EWOULDBLOCK, producer.step(&producers));
     }
@@ -381,7 +390,18 @@ TEST_P(STParameterizedBucketTest, SlowStreamBackfillPurgeSeqnoCheck) {
         EphemeralVBucket* evb = dynamic_cast<EphemeralVBucket*>(vbptr.get());
         purger.setCurrentVBucket(*evb);
         evb->ht.visit(purger);
-        evb->purgeStaleItems();
+
+        // Boiler-plate to get a callback so we can call purgeStaleItems
+        Collections::VB::EraserContext eraserContext(evb->getManifest());
+        auto isDroppedCb = std::bind(&KVBucket::collectionsEraseKey,
+                                     store,
+                                     evb->getId(),
+                                     std::placeholders::_1,
+                                     std::placeholders::_2,
+                                     std::placeholders::_3,
+                                     std::placeholders::_4,
+                                     std::ref(eraserContext));
+        evb->purgeStaleItems(isDroppedCb);
     }
 
     ASSERT_EQ(3, vb->getPurgeSeqno());
@@ -4109,7 +4129,18 @@ INSTANTIATE_TEST_CASE_P(XattrCompressedTest,
                         ::testing::Combine(::testing::Bool(),
                                            ::testing::Bool()), );
 
-static auto allConfigValues = ::testing::Values(
+std::string STParameterizedBucketTestPrintName::operator() (const ::testing::TestParamInfo<
+                  ::testing::tuple<std::string, std::string>>& info) const {
+        auto bucket = std::get<0>(info.param);
+
+        auto evictionPolicy = std::get<1>(info.param);
+        if (evictionPolicy.empty()) {
+          return bucket;
+        }
+        return bucket + "_" + evictionPolicy;
+        }
+
+static  auto allConfigValues = ::testing::Values(
         std::make_tuple(std::string("ephemeral"), std::string("auto_delete")),
         std::make_tuple(std::string("ephemeral"), std::string("fail_new_data")),
         std::make_tuple(std::string("persistent"), std::string{}));
@@ -4117,4 +4148,4 @@ static auto allConfigValues = ::testing::Values(
 // Test cases which run for persistent and ephemeral buckets
 INSTANTIATE_TEST_CASE_P(EphemeralOrPersistent,
                         STParameterizedBucketTest,
-                        allConfigValues, );
+                        allConfigValues, STParameterizedBucketTestPrintName());

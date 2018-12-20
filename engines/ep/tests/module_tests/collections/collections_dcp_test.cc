@@ -218,6 +218,9 @@ void CollectionsDcpTest::resetEngineAndWarmup(std::string new_config) {
     producers = std::make_unique<CollectionsDcpTestProducers>(engine.get());
     cookieC = create_mock_cookie();
     cookieP = create_mock_cookie();
+
+    // Ensure vbid is active as per internalSetup
+    store->setVBucketState(vbid, vbucket_state_active, false);
 }
 
 void CollectionsDcpTest::ensureDcpWillBackfill() {

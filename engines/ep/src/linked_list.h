@@ -175,6 +175,9 @@ public:
                        StoredValue* newSv) override;
 
     size_t purgeTombstones(seqno_t purgeUpToSeqno,
+
+                           Collections::IsDroppedEphemeralCb isDroppedKey,
+
                            std::function<bool()> shouldPause = []() {
                                return false;
                            }) override;
@@ -257,7 +260,7 @@ protected:
     Couchbase::RelaxedAtomic<size_t> staleMetaDataSize;
 
 private:
-    OrderedLL::iterator purgeListElem(OrderedLL::iterator it);
+    OrderedLL::iterator purgeListElem(OrderedLL::iterator it, bool isStale);
 
     /**
      * We need to keep track of the highest seqno separately because there is a
