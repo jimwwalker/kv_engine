@@ -33,7 +33,9 @@ ItemCompressorTask::ItemCompressorTask(EventuallyPersistentEngine* e,
 
 bool ItemCompressorTask::run(void) {
     TRACE_EVENT0("ep-engine/task", "ItemCompressorTask");
+    std::cerr << "compressor\n";
     if (engine->getCompressionMode() == BucketCompressionMode::Active) {
+        std::cerr << "GO\n";
         // Get our pause/resume visitor. If we didn't finish the previous pass,
         // then resume from where we last were, otherwise create a new visitor
         // starting from the beginning.
@@ -94,6 +96,7 @@ bool ItemCompressorTask::run(void) {
            << visitor.getVisitedCount() << " visited documents."
            << " mem_used=" << stats.getEstimatedTotalMemoryUsed()
            << ".Sleeping for " << getSleepTime() << " seconds.";
+        std::cerr << ss.str() << std::endl;
         EP_LOG_DEBUG("{}", ss.str());
 
         // Delete(reset) visitor if it finished.

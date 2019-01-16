@@ -495,7 +495,6 @@ bool KVBucket::resumeFlusher() {
 }
 
 void KVBucket::wakeUpFlusher() {
-    // Nothing do to - no flusher in this class
 }
 
 cb::mcbp::Status KVBucket::evictKey(const DocKey& key,
@@ -2481,9 +2480,15 @@ void KVBucket::initializeExpiryPager(Configuration& config) {
 
 cb::engine_error KVBucket::setCollections(cb::const_char_buffer manifest) {
     // Inhibit VB state changes whilst updating the vbuckets
-    LockHolder lh(vbsetMutex);
-
-    return collectionsManager->update(*this, manifest);
+    std::cerr << "run" << std::endl;
+    if (!itemCompressorTask) {
+        itemCompressorTask =
+                std::make_shared<ItemCompressorTask>(&engine, stats);
+    }
+    itemCompressorTask->run();
+    // LockHolder lh(vbsetMutex);
+    return cb::engine_error(cb::engine_errc::success, "aa");
+    // return collectionsManager->update(*this, manifest);
 }
 
 std::pair<cb::mcbp::Status, std::string> KVBucket::getCollections() const {

@@ -58,7 +58,8 @@ public:
 protected:
     void SetUp() override {
         // Set specific ht_size given we need to control expected memory usage.
-        config_string += "ht_size=47;max_size=" + std::to_string(200 * 1024) +
+        config_string += "ht_size=47;compression_mode=active;max_size=" +
+                         std::to_string(200 * 1024) +
                          ";mem_low_wat=" + std::to_string(120 * 1024) +
                          ";mem_high_wat=" + std::to_string(160 * 1024);
         STParameterizedBucketTest::SetUp();
@@ -785,6 +786,15 @@ protected:
         EXPECT_EQ(initialNonIoTasks, lpNonioQ.getFutureQueueSize());
     }
 
+    void wakeUpCompressor() {
+        std::cerr << "wakeUpCompressor:" << std::endl;
+        store->setCollections({});
+        // Expiry pager consists of two Tasks - the parent ExpiryPager task,
+        // and then a per-vBucket task (via VCVBAdapter) - which there is
+        // just one of as we only have one vBucket online.
+        // Trigger expiry pager - note the main task just spawns individual
+    }
+
     void expiredItemsDeleted();
 };
 
@@ -1051,7 +1061,12 @@ TEST_P(STPersistentExpiryPagerTest, MB_25991_ExpiryNonResident) {
     // Populate bucket with a TTL'd document, and then evict that document.
     auto key = makeStoredDocKey("key");
     auto expiry = ep_abs_time(ep_current_time() + 5);
-    auto item = make_item(vbid, key, "value", expiry);
+    std::string value = createXattrValue(
+            "value is large and ilue is large and ilue is large and ilue is "
+            "large and ilue is large and ilue is large and ilue is large and "
+            "ilue is large and ilue is large and ilue is large and");
+    auto item =
+            make_item(vbid, key, value, expiry, PROTOCOL_BINARY_DATATYPE_XATTR);
     ASSERT_EQ(ENGINE_SUCCESS, storeItem(item));
 
     flushDirectlyIfPersistent(vbid, std::make_pair(false, 1));
@@ -1061,6 +1076,8 @@ TEST_P(STPersistentExpiryPagerTest, MB_25991_ExpiryNonResident) {
     auto& stats = engine->getEpStats();
     EXPECT_LE(stats.getEstimatedTotalMemoryUsed(), stats.getMaxDataSize() * 0.8)
             << "Expected to not have exceeded 80% of bucket quota";
+
+    wakeUpCompressor();
 
     // Evict key so it is no longer resident.
     evict_key(vbid, key);
