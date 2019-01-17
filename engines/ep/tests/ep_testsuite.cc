@@ -839,6 +839,7 @@ static enum test_result test_expiry(EngineIface* h) {
                        DocumentState::Alive);
     checkeq(ENGINE_SUCCESS, rv, "Set failed.");
     check_key_value(h, key, data, strlen(data));
+     wait_for_flusher_to_settle(h);
 
     testHarness->time_travel(5);
     checkeq(cb::engine_errc::no_such_key,

@@ -44,12 +44,14 @@ void PersistenceCallback::callback(TransactionContext& txCtx,
                 handle.valid() ? QueueExpired::Yes : QueueExpired::No,
                 handle);
         if (v) {
+            std::cerr << "\nSET CB " << *v << std::endl;
             if (v->getCas() == cas) {
                 // mark this item clean only if current and stored cas
                 // value match
                 v->markClean();
             }
             if (v->isNewCacheItem()) {
+                std::cerr << "isNewCacheItem\n";
                 if (value.second) {
                     // Insert in value-only or full eviction mode.
                     ++vbucket.opsCreate;
@@ -122,6 +124,7 @@ void PersistenceCallback::callback(TransactionContext& txCtx, int& value) {
                 "(which is " +
                 std::to_string(value) + ") should be <= 1 for deletions");
     }
+    std::cerr << "Del cb? " << value << "\n";
     // -1 means fail
     // 1 means we deleted one row
     // 0 means we did not delete a row, but did not fail (did not exist)

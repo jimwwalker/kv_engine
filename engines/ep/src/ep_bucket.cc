@@ -301,7 +301,7 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                         "Retry in 1 sec ...");
                 sleep(1);
             }
-            rwUnderlying->optimizeWrites(items);
+           // rwUnderlying->optimizeWrites(items);
 
             Item *prev = NULL;
             auto vbstate = vb->getVBucketState();
@@ -354,9 +354,10 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                     --stats.diskQueueSize;
                     vb->doStatsForFlushing(*item, item->size());
 
-                } else if (!prev || prev->getKey() != item->getKey()) {
+                } else if (true) { //!prev || prev->getKey() != item->getKey()) {
                     prev = item.get();
                     ++items_flushed;
+                    std::cerr << "\nFlush " << *item << std::endl;
                     auto cb = flushOneDelOrSet(item, vb.getVB());
                     if (cb) {
                         pcbs.emplace_back(std::move(cb));
