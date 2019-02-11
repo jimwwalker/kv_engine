@@ -897,7 +897,7 @@ TEST_F(EphTombstoneTest, PurgePauseResume) {
     //            simulate pause-resume
     int numPurged = 0, numPaused = -1;
     while (numPurged != 1) {
-        numPurged += mockEpheVB->purgeStaleItems({}, []() { return true; });
+        numPurged += mockEpheVB->purgeStaleItems([]() { return true; });
         ++numPaused;
     }
     EXPECT_EQ(keys.size() + 1, vbucket->getPurgeSeqno())
@@ -911,7 +911,7 @@ TEST_F(EphTombstoneTest, PurgePauseResumeWithUpdateAtPausedPoint) {
     // simulate pause-resume
     int numPurged = 0, numPaused = -1;
     while (numPurged != 1) {
-        numPurged += mockEpheVB->purgeStaleItems({}, []() { return true; });
+        numPurged += mockEpheVB->purgeStaleItems([]() { return true; });
         if (numPaused == -1) {
             // Delete the second item, we actually moving the element at
             // the paused point to end.

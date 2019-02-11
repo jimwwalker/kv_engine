@@ -791,19 +791,22 @@ static int time_purge_hook(Db* d, DocInfo* info, sized_buf item, void* ctx_p) {
         auto metadata = MetaDataFactory::createMetaData(info->rev_meta);
         uint32_t exptime = metadata->getExptime();
 
-        // Is the collections eraser installed?
-        if (ctx->collectionsEraser &&
-            ctx->collectionsEraser(makeDocKey(info->id),
-                                   int64_t(info->db_seq),
-                                   info->deleted,
-                                   metadata->getFlags(),
-                                   *ctx->eraserContext)) {
-            if (!info->deleted) {
-                ctx->stats.collectionsItemsPurged++;
-            } else {
-                ctx->stats.collectionsDeletedItemsPurged++;
+        auto key = makeDocKey(info->id);
+        if (ctx->droppedKeyCb) {
+            if (ctx->eraserContext->isLogicallyDeleted(key,
+                                                       int64_t(info->db_seq))) {
+                // Inform vb that the key@seqno is dropped
+                ctx->droppedKeyCb(key, int64_t(info->db_seq));
+                if (!info->deleted) {
+                    ctx->stats.collectionsItemsPurged++;
+                } else {
+                    ctx->stats.collectionsDeletedItemsPurged++;
+                }
+                return COUCHSTORE_COMPACT_DROP_ITEM;
+            } else if (info->deleted) {
+                ctx->eraserContext->processEndOfCollection(
+                        key, SystemEvent(metadata->getFlags()));
             }
-            return COUCHSTORE_COMPACT_DROP_ITEM;
         }
 
         if (info->deleted) {
@@ -939,9 +942,8 @@ bool CouchKVStore::compactDBInternal(compaction_ctx* hook_ctx,
         return false;
     }
 
-    Collections::VB::Manifest manifest(readCollectionsManifest(*compactdb));
-    hook_ctx->eraserContext =
-            std::make_unique<Collections::VB::EraserContext>(manifest);
+    hook_ctx->eraserContext = std::make_unique<Collections::VB::EraserContext>(
+            getDroppedCollections(*compactdb));
 
     uint64_t new_rev = compactdb.getFileRev() + 1;
 
@@ -1004,7 +1006,7 @@ bool CouchKVStore::compactDBInternal(compaction_ctx* hook_ctx,
     }
 
     couchstore_open_flags openFlags =
-            hook_ctx->eraserContext->needToUpdateCollectionsManifest()
+            hook_ctx->eraserContext->needToUpdateCollectionsMetadata()
                     ? 0
                     : COUCHSTORE_OPEN_FLAG_RDONLY;
 
@@ -1025,15 +1027,18 @@ bool CouchKVStore::compactDBInternal(compaction_ctx* hook_ctx,
         return false;
     }
 
-    if (hook_ctx->eraserContext->needToUpdateCollectionsManifest()) {
-        // Finalise any collections metadata which may have changed during the
-        // compaction due to collection Deletion
-        hook_ctx->eraserContext->finaliseCollectionsManifest(
-                std::bind(&CouchKVStore::saveCollectionsManifest,
-                          this,
-                          std::ref(*targetDb.getDb()),
-                          std::placeholders::_1));
-
+    if (hook_ctx->eraserContext->needToUpdateCollectionsMetadata()) {
+        if (!hook_ctx->eraserContext->empty()) {
+            std::stringstream ss;
+            ss << "CouchKVStore::compactDB finalising dropped collections, set "
+                  "should be empty"
+               << *hook_ctx->eraserContext << std::endl;
+            throw std::logic_error(ss.str());
+        }
+        // Need to ensure the 'dropped' list on disk is now empty, just clear
+        // the meta-data and trigger an update of the dropped collections list
+        collectionsMeta.clear();
+        updateDroppedCollections(*targetDb.getDb());
         errCode = couchstore_commit(targetDb.getDb());
         if (errCode != COUCHSTORE_SUCCESS) {
             logger.warn(
@@ -1318,7 +1323,7 @@ ScanContext* CouchKVStore::initScanContext(
 
     size_t scanId = scanCounter++;
 
-    auto collectionsManifest = readCollectionsManifest(*db);
+    auto collectionsManifest = getDroppedCollections(*db);
 
     {
         LockHolder lh(scanLock);
@@ -1776,9 +1781,7 @@ int CouchKVStore::recordDbDump(Db *db, DocInfo *docinfo, void *ctx) {
     if (!docKey.getCollectionID().isSystem()) {
         if (sctx->docFilter !=
             DocumentFilter::ALL_ITEMS_AND_DROPPED_COLLECTIONS) {
-            auto cHandle =
-                    sctx->collectionsContext.lockCollections(docKey, false);
-            if (!cHandle.valid() || cHandle.isLogicallyDeleted(byseqno)) {
+            if (sctx->collectionsContext.isLogicallyDeleted(docKey, byseqno)) {
                 sctx->lastReadSeqno = byseqno;
                 return COUCHSTORE_SUCCESS;
             }
@@ -2064,12 +2067,12 @@ couchstore_error_t CouchKVStore::saveDocs(
             }
         }
 
-            collectionsFlush.saveCollectionStats(
-                    std::bind(&CouchKVStore::saveCollectionStats,
-                              this,
-                              std::ref(*db),
-                              std::placeholders::_1,
-                              std::placeholders::_2));
+        collectionsFlush.saveCollectionStats(
+                std::bind(&CouchKVStore::saveCollectionStats,
+                          this,
+                          std::ref(*db),
+                          std::placeholders::_1,
+                          std::placeholders::_2));
 
         errCode = saveVBState(db, *state);
         if (errCode != COUCHSTORE_SUCCESS) {
@@ -2082,18 +2085,12 @@ couchstore_error_t CouchKVStore::saveDocs(
         if (collectionsFlush.getCollectionsManifestItem()) {
             auto data = collectionsFlush.getManifestData();
             saveCollectionsManifest(*db, {data.data(), data.size()});
-            // Process any collection deletes (removing the item count docs)
-            collectionsFlush.saveDeletes(
-                    std::bind(&CouchKVStore::deleteCollectionStats,
-                              this,
-                              std::ref(*db),
-                              std::placeholders::_1));
         }
 
         auto cs_begin = std::chrono::steady_clock::now();
 
         if (collectionsMeta.needsCommit) {
-            errCode = updateCollectionsMeta(*db);
+            errCode = updateCollectionsMeta(*db, collectionsFlush);
             if (errCode) {
                 logger.warn(
                         "CouchKVStore::saveDocs: updateCollectionsMeta "
@@ -3248,7 +3245,8 @@ CouchKVStore::getDroppedCollections(Db& db) {
     return rv;
 }
 
-couchstore_error_t CouchKVStore::updateCollectionsMeta(Db& db) {
+couchstore_error_t CouchKVStore::updateCollectionsMeta(
+        Db& db, Collections::VB::Flush& collectionsFlush) {
     auto err = updateManifestUid(db);
     if (err != COUCHSTORE_SUCCESS) {
         return err;
@@ -3267,6 +3265,7 @@ couchstore_error_t CouchKVStore::updateCollectionsMeta(Db& db) {
         if (err != COUCHSTORE_SUCCESS) {
             return err;
         }
+        collectionsFlush.setNeedsPurge();
     }
 
     if (!collectionsMeta.scopes.empty() ||
@@ -3382,6 +3381,9 @@ couchstore_error_t CouchKVStore::updateDroppedCollections(Db& db) {
                                                     dropped.endSeqno,
                                                     dropped.collectionId);
         droppedCollections.push_back(newEntry);
+
+        // Delete the 'stats' document for the collection
+        deleteCollectionStats(db, dropped.collectionId);
     }
 
     // And 'merge' with the data we read

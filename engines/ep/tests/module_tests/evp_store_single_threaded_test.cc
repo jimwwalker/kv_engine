@@ -318,17 +318,7 @@ void SingleThreadedKVBucketTest::runCollectionsEraser() {
     } else {
         auto vb = store->getVBuckets().getBucket(vbid);
         EphemeralVBucket* evb = dynamic_cast<EphemeralVBucket*>(vb.get());
-        // Boiler-plate to get a callback so we can call purgeStaleItems
-        Collections::VB::EraserContext eraserContext(evb->getManifest());
-        auto isDroppedCb = std::bind(&KVBucket::collectionsEraseKey,
-                                     store,
-                                     vb->getId(),
-                                     std::placeholders::_1,
-                                     std::placeholders::_2,
-                                     std::placeholders::_3,
-                                     std::placeholders::_4,
-                                     std::ref(eraserContext));
-        evb->purgeStaleItems(isDroppedCb);
+        evb->purgeStaleItems();
     }
 }
 
@@ -417,17 +407,7 @@ TEST_P(STParameterizedBucketTest, SlowStreamBackfillPurgeSeqnoCheck) {
         purger.setCurrentVBucket(*evb);
         evb->ht.visit(purger);
 
-        // Boiler-plate to get a callback so we can call purgeStaleItems
-        Collections::VB::EraserContext eraserContext(evb->getManifest());
-        auto isDroppedCb = std::bind(&KVBucket::collectionsEraseKey,
-                                     store,
-                                     evb->getId(),
-                                     std::placeholders::_1,
-                                     std::placeholders::_2,
-                                     std::placeholders::_3,
-                                     std::placeholders::_4,
-                                     std::ref(eraserContext));
-        evb->purgeStaleItems(isDroppedCb);
+        evb->purgeStaleItems();
     }
 
     ASSERT_EQ(3, vb->getPurgeSeqno());

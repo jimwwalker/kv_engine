@@ -705,7 +705,8 @@ protected:
      * @param db The database handle to update
      * @return error code success or other (non-success is logged)
      */
-    couchstore_error_t updateCollectionsMeta(Db& db);
+    couchstore_error_t updateCollectionsMeta(
+            Db& db, Collections::VB::Flush& collectionsFlush);
 
     /**
      * Called from updateCollectionsMeta this function maintains the current

@@ -452,14 +452,12 @@ TEST_P(CollectionsDcpParameterizedTest, test_dcp_non_default_scope) {
     // Now step the producer to transfer the collection deletion
     EXPECT_EQ(ENGINE_SUCCESS, producer->step(producers.get()));
 
-    // 3. Replica now blocking access to meat
+    // 3. Check that the scopeID was replicated properly
+    EXPECT_TRUE(replica->lockCollections().isScopeValid(ScopeEntry::shop1));
+
+    // 4. Replica now blocking access to meat
     EXPECT_FALSE(replica->lockCollections().doesKeyContainValidCollection(
             StoredDocKey{"meat:bacon", CollectionEntry::meat}));
-
-    // 4. Check that the scopeID was replicated properly
-    EXPECT_TRUE(replica->lockCollections().doesKeyBelongToScope(
-            StoredDocKey{"meat:bacon", CollectionEntry::meat},
-            ScopeEntry::shop1));
 
     // Now step the producer, no more collection events
     EXPECT_EQ(ENGINE_EWOULDBLOCK, producer->step(producers.get()));
