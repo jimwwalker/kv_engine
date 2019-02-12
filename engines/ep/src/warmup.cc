@@ -873,15 +873,18 @@ void Warmup::createVBuckets(uint16_t shardId) {
             if (config.isCollectionsEnabled()) {
                 manifest = std::make_unique<Collections::VB::Manifest>(
                         store.getROUnderlyingByShard(shardId)
+<<<<<<< HEAD
                                 ->getCollectionsManifest(vbid));
                 // @todo in 4/4 add to constructor
                 manifest->wlock().setDropInProgress(
                         !store.getROUnderlyingByShard(shardId)
                                  ->getDroppedCollections(vbid)
                                  .empty());
+=======
+                                ->getCollectionsManifest_new(vbid));
+>>>>>>> feb4fa8f9... MB-32784: 4/5 Streamline collection system events
             } else {
-                manifest = std::make_unique<Collections::VB::Manifest>(
-                        Collections::VB::PersistedManifest{});
+                manifest = std::make_unique<Collections::VB::Manifest>();
             }
 
             vb = store.makeVBucket(vbid,
