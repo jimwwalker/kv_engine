@@ -874,6 +874,7 @@ void Warmup::createVBuckets(uint16_t shardId) {
                 manifest = std::make_unique<Collections::VB::Manifest>(
                         store.getROUnderlyingByShard(shardId)
 <<<<<<< HEAD
+<<<<<<< HEAD
                                 ->getCollectionsManifest(vbid));
                 // @todo in 4/4 add to constructor
                 manifest->wlock().setDropInProgress(
@@ -883,6 +884,9 @@ void Warmup::createVBuckets(uint16_t shardId) {
 =======
                                 ->getCollectionsManifest_new(vbid));
 >>>>>>> feb4fa8f9... MB-32784: 4/5 Streamline collection system events
+=======
+                                ->getCollectionsManifest(vbid));
+>>>>>>> 9de6bef63... MB-32784: 5/5 Removal of old collection meta-data code
             } else {
                 manifest = std::make_unique<Collections::VB::Manifest>();
             }

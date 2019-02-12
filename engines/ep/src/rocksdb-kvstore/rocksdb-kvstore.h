@@ -290,12 +290,6 @@ public:
 
     void destroyScanContext(ScanContext* ctx) override;
 
-    Collections::VB::PersistedManifest getCollectionsManifest(
-            Vbid vbid) override {
-        // TODO DJR 2017-05-19 implement this.
-        return {};
-    }
-
     std::unique_ptr<KVFileHandle, KVFileHandleDeleter> makeFileHandle(
             Vbid vbid) override {
         // TODO JWW 2018-07-30 implement this fully - for now return something
@@ -326,8 +320,7 @@ public:
         return 0;
     }
 
-    Collections::KVStore::Manifest getCollectionsManifest_new(
-            Vbid vbid) override {
+    Collections::KVStore::Manifest getCollectionsManifest(Vbid vbid) override {
         throw std::logic_error(
                 "Unimplemented RocksDBKVStore getCollectionsManifest");
         return {};

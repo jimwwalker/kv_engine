@@ -85,7 +85,7 @@ TEST_P(CollectionsDcpParameterizedTest, test_dcp_consumer) {
     // We can now access the collection
     EXPECT_TRUE(vb->lockCollections().doesKeyContainValidCollection(
             StoredDocKey{"meat:bacon", CollectionEntry::meat}));
-    EXPECT_TRUE(vb->lockCollections().isCollectionOpen(CollectionEntry::meat));
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::meat));
     EXPECT_EQ(0xcafef00d, vb->lockCollections().getManifestUid());
 
     // Lets put an item in it
@@ -172,7 +172,7 @@ TEST_F(CollectionsDcpTest, stream_request_uid) {
     // We can now access the collection
     EXPECT_TRUE(vb->lockCollections().doesKeyContainValidCollection(
             StoredDocKey{"meat:bacon", CollectionEntry::meat}));
-    EXPECT_TRUE(vb->lockCollections().isCollectionOpen(CollectionEntry::meat));
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::meat));
     EXPECT_EQ(0xcafef00d, vb->lockCollections().getManifestUid());
 
     consumer->closeAllStreams();
@@ -598,7 +598,7 @@ TEST_F(CollectionsDcpTest, test_dcp_create_delete) {
     testDcpCreateDelete(
             {CollectionEntry::fruit}, {CollectionEntry::dairy}, items, false);
 
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
             CollectionEntry::fruit));
 }
 
@@ -649,11 +649,10 @@ TEST_F(CollectionsDcpTest, test_dcp_create_delete_warmup) {
                 {cm.remove(CollectionEntry::dairy)});
 
         // Front-end will be stopping dairy mutations...
-        EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+        EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
                 CollectionEntry::fruit));
-        EXPECT_FALSE(
-                store->getVBucket(vbid)->lockCollections().isCollectionOpen(
-                        CollectionEntry::dairy));
+        EXPECT_FALSE(store->getVBucket(vbid)->lockCollections().exists(
+                CollectionEntry::dairy));
     }
 
     createDcpObjects({{nullptr, 0}}); // from disk
@@ -679,9 +678,9 @@ TEST_F(CollectionsDcpTest, test_dcp_create_delete_warmup) {
                         (2 * items),
                         false);
 
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
             CollectionEntry::fruit));
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
             CollectionEntry::dairy));
 }
 
@@ -727,7 +726,7 @@ TEST_F(CollectionsDcpTest, test_dcp_create_delete_create) {
     testDcpCreateDelete(
             {CollectionEntry::dairy2}, {CollectionEntry::dairy}, 0, false);
 
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
             CollectionEntry::dairy2.getId()));
 }
 
@@ -770,7 +769,7 @@ TEST_F(CollectionsDcpTest, test_dcp_create_delete_create2) {
     testDcpCreateDelete(
             {CollectionEntry::dairy2}, {CollectionEntry::dairy}, 0, false);
 
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
             CollectionEntry::dairy2.getId()));
 }
 
@@ -824,8 +823,8 @@ TEST_F(CollectionsDcpTest, MB_26455) {
             items,
             false /*fromMemory*/);
 
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
-            (m - 1) + 10));
+    EXPECT_TRUE(
+            store->getVBucket(vbid)->lockCollections().exists((m - 1) + 10));
 }
 
 TEST_P(CollectionsDcpParameterizedTest, collections_manifest_is_ahead) {
@@ -912,7 +911,7 @@ TEST_F(CollectionsDcpTest, test_dcp_create_delete_erase) {
     testDcpCreateDelete(
             {CollectionEntry::dairy2}, {CollectionEntry::dairy}, 0, false);
 
-    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().isCollectionOpen(
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
             CollectionEntry::dairy2.getId()));
 }
 

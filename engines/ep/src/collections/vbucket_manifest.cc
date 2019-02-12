@@ -22,7 +22,6 @@
 #include "collections/events_generated.h"
 #include "collections/kvstore.h"
 #include "collections/manifest.h"
-#include "collections/vbucket_serialised_manifest_entry_generated.h"
 #include "ep_time.h"
 #include "item.h"
 #include "statwriter.h"
@@ -240,8 +239,7 @@ void Manifest::addCollection(const WriteHandle& wHandle,
 
 ManifestEntry& Manifest::addNewCollectionEntry(ScopeCollectionPair identifiers,
                                                cb::ExpiryLimit maxTtl,
-                                               int64_t startSeqno,
-                                               int64_t endSeqno) {
+                                               int64_t startSeqno) {
     // This method is only for when the map does not have the collection
     auto itr = map.find(identifiers.second);
     if (itr != map.end()) {
@@ -251,17 +249,14 @@ ManifestEntry& Manifest::addNewCollectionEntry(ScopeCollectionPair identifiers,
                 ", collection:" +
                         identifiers.second.to_string() +
                         ", scope:" + identifiers.first.to_string() +
-                        ", startSeqno:" + std::to_string(startSeqno) +
-                        ", endSeqno:" + std::to_string(endSeqno));
+                        ", startSeqno:" + std::to_string(startSeqno));
     }
 
-    auto inserted = map.emplace(
-            identifiers.second,
-            ManifestEntry(identifiers.first, maxTtl, startSeqno, endSeqno));
+    auto inserted =
+            map.emplace(identifiers.second,
+                        ManifestEntry(identifiers.first, maxTtl, startSeqno));
 
-    if (identifiers.second.isDefaultCollection() && inserted.second) {
-        defaultCollectionExists = (*inserted.first).second.isOpen();
-    }
+    defaultCollectionExists = identifiers.second.isDefaultCollection();
 
     return (*inserted.first).second;
 }
@@ -321,8 +316,6 @@ void Manifest::dropCollection(const WriteHandle& wHandle,
         defaultCollectionExists = false;
     }
 
-    itr->second.setEndSeqno(seqno);
-
     map.erase(itr);
 }
 
@@ -335,22 +328,6 @@ const ManifestEntry& Manifest::getManifestEntry(CollectionID identifier) const {
     }
 
     return itr->second;
-}
-
-void Manifest::completeDeletion(::VBucket& vb, CollectionID collectionID) {
-    auto itr = map.find(collectionID);
-
-    EP_LOG_INFO("collections: {} complete delete of collection:{:x}",
-                vb.getId(),
-                collectionID);
-    // Caller should not be calling in if the collection doesn't exist
-    if (itr == map.end()) {
-        throwException<std::logic_error>(
-                __FUNCTION__,
-                "could not find collection:" + collectionID.to_string());
-    }
-
-    map.erase(itr);
 }
 
 void Manifest::addScope(const WriteHandle& wHandle,
@@ -461,10 +438,9 @@ Manifest::ProcessResult Manifest::processManifest(
     ProcessResult rv = ManifestChanges();
 
     for (const auto& entry : map) {
-        // If the entry is open and not found in the new manifest it must be
+        // If the entry is not found in the new manifest it must be
         // deleted.
-        if (entry.second.isOpen() &&
-            manifest.findCollection(entry.first) == manifest.end()) {
+        if (manifest.findCollection(entry.first) == manifest.end()) {
             rv->collectionsToRemove.push_back(entry.first);
         }
     }
@@ -493,12 +469,6 @@ Manifest::ProcessResult Manifest::processManifest(
                         {std::make_pair(scopeItr->first, m.id),
                          manifest.findCollection(m.id)->second,
                          m.maxTtl});
-            } else if (mapItr->second.isDeleting()) {
-                // trying to add a collection which is deleting, not allowed.
-                EP_LOG_WARN("Attempt to add a deleting collection:{}:{:x}",
-                            manifest.findCollection(m.id)->second,
-                            m.id);
-                return {};
             }
         }
     }
@@ -510,13 +480,8 @@ bool Manifest::doesKeyContainValidCollection(const DocKey& key) const {
     if (defaultCollectionExists &&
         key.getCollectionID().isDefaultCollection()) {
         return true;
-    } else {
-        auto itr = map.find(key.getCollectionID());
-        if (itr != map.end()) {
-            return itr->second.isOpen();
-        }
     }
-    return false;
+    return map.count(key.getCollectionID()) > 0;
 }
 
 bool Manifest::isScopeValid(ScopeID scopeID) const {
@@ -561,19 +526,6 @@ bool Manifest::isLogicallyDeleted(const container::const_iterator entry,
     // seqno >= 0 (so temp items etc... are ok) AND the seqno is below the
     // collection start (start is set on creation and moves with flush)
     return seqno >= 0 && seqno <= entry->second.getStartSeqno();
-}
-
-boost::optional<CollectionID> Manifest::shouldCompleteDeletion(
-        const DocKey& key,
-        int64_t bySeqno,
-        const container::const_iterator entry) const {
-    // If this is a SystemEvent key then...
-    if (key.getCollectionID() == CollectionID::System) {
-        if (entry->second.isDeleting()) {
-            return entry->first; // returning CID
-        }
-    }
-    return {};
 }
 
 void Manifest::processExpiryTime(const container::const_iterator entry,
@@ -663,6 +615,7 @@ int64_t Manifest::queueCollectionSystemEvent(
     return rv;
 }
 
+<<<<<<< HEAD
 void Manifest::populateWithSerialisedData(
         flatbuffers::FlatBufferBuilder& builder,
         ScopeCollectionPair identifiers,
@@ -871,6 +824,8 @@ CreateEventData Manifest::getCreateEventData(
     auto manifest = flatbuffers::GetRoot<SerialisedManifest>(
             (const uint8_t*)serialisedManifest.data());
 =======
+=======
+>>>>>>> 9de6bef63... MB-32784: 5/5 Removal of old collection meta-data code
 template <class T>
 static void verifyFlatbuffersData(cb::const_char_buffer buf,
                                   const std::string& caller) {

@@ -145,22 +145,6 @@ ADD_CUSTOM_COMMAND(OUTPUT
                      src/generated_configuration.h.temp
                   COMMENT "Copying code for configuration class")
 
-# todo: remove this flatbuffers generation once completely redundant
-ADD_CUSTOM_COMMAND(OUTPUT
-                     ${CMAKE_CURRENT_BINARY_DIR}/src/collections/vbucket_serialised_manifest_entry_generated.h
-                     ${CMAKE_CURRENT_BINARY_DIR}/src/collections/vbucket_serialised_manifest_entry_raw_schema.cc
-                  COMMAND
-                     ${FLATC} -o ${CMAKE_CURRENT_BINARY_DIR}/src/collections/ --gen-mutable --cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/collections/vbucket_serialised_manifest_entry.fbs
-                  COMMAND
-                     ${CMAKE_COMMAND}
-                     -DDIR1=${CMAKE_CURRENT_SOURCE_DIR}
-                     -DDIR2=${CMAKE_CURRENT_BINARY_DIR}
-                      -P ${CMAKE_CURRENT_SOURCE_DIR}/src/collections/generate_flatbuffers_raw_schema.cmake
-                  DEPENDS
-                     src/collections/vbucket_serialised_manifest_entry.fbs
-                     src/collections/vbucket_serialised_manifest_entry_raw_schema.in
-                  COMMENT "Generating flatbuffers serialied_manifest_entry_generated")
-
 # Generate the flatbuffers data used by at least couchstore for storing the collection manifest
 ADD_CUSTOM_COMMAND(OUTPUT
                      ${CMAKE_CURRENT_BINARY_DIR}/src/collections/kvstore_generated.h
@@ -187,7 +171,6 @@ ADD_CUSTOM_COMMAND(OUTPUT
 
 # Collections library for things required outside of ep-engine
 ADD_LIBRARY(ep-engine_collections STATIC
-  ${CMAKE_CURRENT_BINARY_DIR}/src/collections/vbucket_serialised_manifest_entry_raw_schema.cc
   ${CMAKE_CURRENT_BINARY_DIR}/src/collections/kvstore_flatbuffers_schema.cc
   src/collections/collection_persisted_stats.cc)
 
@@ -211,7 +194,6 @@ SET(COLLECTIONS_SOURCE src/collections/collections_types.cc
                        src/collections/manager.cc
                        src/collections/manifest.cc
                        ${CMAKE_CURRENT_BINARY_DIR}/src/collections/events_generated.h
-                       ${CMAKE_CURRENT_BINARY_DIR}/src/collections/vbucket_serialised_manifest_entry_generated.h
                        ${CMAKE_CURRENT_BINARY_DIR}/src/collections/kvstore_generated.h
                        src/collections/scan_context.cc
                        src/collections/vbucket_filter.cc

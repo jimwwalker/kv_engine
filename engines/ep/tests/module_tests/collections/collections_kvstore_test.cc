@@ -188,7 +188,7 @@ protected:
 
 TEST_P(CollectionsKVStoreTest, initial_meta) {
     // Ask the kvstore for the initial meta
-    auto md = kvstore->getCollectionsManifest_new(Vbid(0));
+    auto md = kvstore->getCollectionsManifest(Vbid(0));
 
     // Expect 1 collection and 1 scope
     EXPECT_EQ(1, md.collections.size());
@@ -212,7 +212,7 @@ TEST_P(CollectionsKVStoreTest, one_update) {
 
     applyEvents(cm);
     kvstore->commit(flush);
-    auto md = kvstore->getCollectionsManifest_new(Vbid(0));
+    auto md = kvstore->getCollectionsManifest(Vbid(0));
     checkUid(md, cm);
     checkCollections(md, cm, 2);
     checkScopes(md, cm, 1);
@@ -226,7 +226,7 @@ TEST_P(CollectionsKVStoreTest, two_updates) {
 
     applyEvents(cm);
     kvstore->commit(flush);
-    auto md = kvstore->getCollectionsManifest_new(Vbid(0));
+    auto md = kvstore->getCollectionsManifest(Vbid(0));
     checkUid(md, cm);
     checkCollections(md, cm, 3);
     checkScopes(md, cm, 1);
@@ -242,7 +242,7 @@ TEST_P(CollectionsKVStoreTest, updates_with_scopes) {
 
     applyEvents(cm);
     kvstore->commit(flush);
-    auto md = kvstore->getCollectionsManifest_new(Vbid(0));
+    auto md = kvstore->getCollectionsManifest(Vbid(0));
     checkUid(md, cm);
     checkCollections(md, cm, 3);
     checkScopes(md, cm, 3);
@@ -255,7 +255,7 @@ TEST_P(CollectionsKVStoreTest, updates_between_commits) {
         kvstore->begin(std::make_unique<TransactionContext>());
         applyEvents(cm);
         kvstore->commit(flush);
-        auto md = kvstore->getCollectionsManifest_new(Vbid(0));
+        auto md = kvstore->getCollectionsManifest(Vbid(0));
         checkUid(md, cm);
         checkCollections(md, cm, expectedCollections);
         checkScopes(md, cm, expectedScopes);
@@ -279,7 +279,7 @@ TEST_P(CollectionsKVStoreTest, updates_and_drops_between_commits) {
         kvstore->begin(std::make_unique<TransactionContext>());
         applyEvents(cm);
         kvstore->commit(flush);
-        auto md = kvstore->getCollectionsManifest_new(Vbid(0));
+        auto md = kvstore->getCollectionsManifest(Vbid(0));
         checkUid(md, cm);
         checkCollections(md, cm, expectedCollections, expectedDropped);
         checkScopes(md, cm, expectedScopes);

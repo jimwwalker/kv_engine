@@ -151,13 +151,6 @@ public:
         }
 
         /**
-         * @returns true if collection is open, false if not or unknown
-         */
-        bool isCollectionOpen(CollectionID identifier) const {
-            return manifest->isCollectionOpen(identifier);
-        }
-
-        /**
          * @returns optional vector of CollectionIDs associated with the
          *          scope. Returns uninitialized if the scope does not exist
          */
@@ -223,11 +216,6 @@ public:
 
         void updateSummary(Summary& summary) const {
             manifest->updateSummary(summary);
-        }
-
-        void populateWithSerialisedData(
-                flatbuffers::FlatBufferBuilder& builder) const {
-            manifest->populateWithSerialisedData(builder, {});
         }
 
         /**
@@ -534,17 +522,6 @@ public:
         }
 
         /**
-         * Complete the deletion of a collection, that is all data has been
-         * erased and now the collection meta data can be erased
-         *
-         * @param vb The VBucket in which the deletion is occurring.
-         * @param identifier The collection that has finished being deleted.
-         */
-        void completeDeletion(::VBucket& vb, CollectionID identifier) {
-            manifest.completeDeletion(vb, identifier);
-        }
-
-        /**
          * Add a collection for a replica VB, this is for receiving
          * collection updates via DCP and the collection already has a start
          * seqno assigned.
@@ -730,16 +707,6 @@ public:
     }
 
     /**
-     * Retrieve the data that can be used to recreate a VB::Manifest from the
-     * item, the item should be a collection system event (Collection/Scope)
-     *
-     * @param item An item representing a collection system event
-     * @return A PersistedManifest object which can be stored to disk for later
-     *         warmup or rollback purposes.
-     */
-    static PersistedManifest getPersistedManifest(const Item& item);
-
-    /**
      * Get the system event collection create data from a SystemEvent
      * Item's value.
      *
@@ -903,15 +870,6 @@ protected:
                         OptionalSeqno optionalSeqno);
 
     /**
-     * Complete the deletion of a collection, that is all data has been
-     * erased and now the collection meta data can be erased
-     *
-     * @param vb The VBucket in which the deletion is occurring.
-     * @param identifier The collection that has finished being deleted.
-     */
-    void completeDeletion(::VBucket& vb, CollectionID identifier);
-
-    /**
      * Add a scope to the manifest.
      *
      * @param wHandle The manifest write handle under which this operation is
@@ -1036,25 +994,6 @@ protected:
         entry->second.resetPersistedHighSeqno(value);
     }
 
-    /**
-     * Function intended for use by the collection eraser code, checking
-     * keys@seqno status as we walk the by-seqno index.
-     *
-     * @param key Collections::DocKey
-     * @param bySeqno Seqno assigned to the key
-     * @param entry the manifest entry associated with key
-     * @return if the key@seqno indicates that we've now hit the real end of a
-     *         deleted collection (because the key is a system event) and the
-     *         manifest entry determines we should call completeDeletion, then
-     *         the return value is initialised with the collection which is to
-     *         be deleted. If the key does not indicate the end, the return
-     *         value is an empty buffer.
-     */
-    boost::optional<CollectionID> shouldCompleteDeletion(
-            const DocKey& key,
-            int64_t bySeqno,
-            const container::const_iterator entry) const;
-
     /// see comment on CachingReadHandle
     void processExpiryTime(const container::const_iterator entry,
                            Item& item,
@@ -1070,17 +1009,6 @@ protected:
      */
     bool doesDefaultCollectionExist() const {
         return defaultCollectionExists;
-    }
-
-    /**
-     * @returns true if the collection isOpen - false if not (or doesn't exist)
-     */
-    bool isCollectionOpen(CollectionID identifier) const {
-        auto itr = map.find(identifier);
-        if (itr != map.end()) {
-            return itr->second.isOpen();
-        }
-        return false;
     }
 
     /**
@@ -1193,16 +1121,12 @@ protected:
      * @param maxTtl The max_ttl that if defined will be applied to new items of
      *        the collection (overriding bucket max_ttl)
      * @param startSeqno The seqno where the collection begins. Defaults to 0.
-     * @param endSeqno The seqno where it ends (can be the special open
-     * marker). Defaults to the collection open state (-6).
      * @return a non const reference to the new ManifestEntry so the caller can
      *         set the correct seqno.
      */
-    ManifestEntry& addNewCollectionEntry(
-            ScopeCollectionPair identifiers,
-            cb::ExpiryLimit maxTtl,
-            int64_t startSeqno = 0,
-            int64_t endSeqno = StoredValue::state_collection_open);
+    ManifestEntry& addNewCollectionEntry(ScopeCollectionPair identifiers,
+                                         cb::ExpiryLimit maxTtl,
+                                         int64_t startSeqno = 0);
 
     /**
      * Get the ManifestEntry for the given collection. Throws an
@@ -1265,6 +1189,7 @@ protected:
                                        OptionalSeqno seq) const;
 
     /**
+<<<<<<< HEAD
      * Populate a buffer with the serialised state of the manifest. The
      * serialised state also always places the mutated CollectionEntry as the
      * last element of the entries Vector. The mutated entry represents the
@@ -1335,6 +1260,8 @@ protected:
     static PersistedManifest patchSerialisedDataForScopeEvent(const Item& item);
 
     /**
+=======
+>>>>>>> 9de6bef63... MB-32784: 5/5 Removal of old collection meta-data code
      * Return a string for use in throwException, returns:
      *   "VB::Manifest::<thrower>:<error>, this:<ostream *this>"
      *
