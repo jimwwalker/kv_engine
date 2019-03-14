@@ -53,6 +53,7 @@ StoredValue::StoredValue(const Item& itm,
     setNru(itm.getNRUValue());
     setResident(!isTempItem());
     setStale(false);
+    setAge(0);
     // dirty initialised below
 
     // Placement-new the key which lives in memory directly after this
@@ -401,6 +402,27 @@ boost::optional<item_info> StoredValue::getItemInfo(uint64_t vbuuid) const {
     return info;
 }
 
+uint8_t StoredValue::getAge() const {
+    chain_next_or_replacement_tag tag(chain_next_or_replacement.get().getTag());
+    return tag.fields.age;
+}
+
+void StoredValue::setAge(uint8_t age) {
+    chain_next_or_replacement_tag tag;
+    tag.fields.age = age;
+    auto taggedPtr = chain_next_or_replacement.get();
+    taggedPtr.setTag(tag.raw);
+    chain_next_or_replacement.reset(taggedPtr);
+}
+
+void StoredValue::incrementAge() {
+    auto age = getAge();
+    if (age < std::numeric_limits<uint8_t>::max()) {
+        age++;
+        setAge(age);
+    }
+}
+
 std::ostream& operator<<(std::ostream& os, const StoredValue& sv) {
 
     // type, address
@@ -440,10 +462,11 @@ std::ostream& operator<<(std::ostream& os, const StoredValue& sv) {
     } else {
         os << " exp:" << sv.getExptime();
     }
+    os << " age:" << sv.getAge();
 
     os << " vallen:" << sv.valuelen();
     if (sv.getValue().get()) {
-        os << " val:\"";
+        os << " val age:" << sv.getValue()->getAge() << " :\"";
         const char* data = sv.getValue()->getData();
         // print up to first 40 bytes of value.
         const size_t limit = std::min(size_t(40), sv.getValue()->valueSize());

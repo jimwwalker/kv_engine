@@ -59,8 +59,13 @@ bool DefragmentVisitor::visit(const HashTable::HashBucketLock& lh,
     }
 
     // Defrag StoredValue
-    auto newSv = currentVb->ht.copyStoredValue(sv.get().get());
-    sv.swap(newSv);
+    if (sv->getAge() >= age_threshold) {
+        auto newSv = currentVb->ht.copyStoredValue(sv.get().get());
+        newSv->setAge(0);
+        sv.swap(newSv);
+    } else {
+        sv->incrementAge();
+    }
 
     visited_count++;
 

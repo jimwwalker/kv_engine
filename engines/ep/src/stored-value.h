@@ -631,6 +631,16 @@ public:
         return chain_next_or_replacement;
     }
 
+    /**
+     * The age is get/set via the fragmenter
+     * @return the age of the StoredValue since it was allocated
+     */
+    uint8_t getAge() const;
+
+    void setAge(uint8_t age);
+
+    void incrementAge();
+
     /*
      * Values of the bySeqno attribute used by temporarily created StoredValue
      * objects.
@@ -810,6 +820,18 @@ protected:
     // so we release the ptr in the destructor. The replacement is needed to
     // determine if it would also appear in a given rangeRead - we should return
     // only the newer version if so.
+    union chain_next_or_replacement_tag {
+        chain_next_or_replacement_tag() : raw{0} {
+        }
+        chain_next_or_replacement_tag(uint16_t raw) : raw(raw) {
+        }
+        uint16_t raw;
+
+        struct chain_next_or_replacement_tag_fields {
+            uint8_t age;
+            uint8_t unused;
+        } fields;
+    };
     UniquePtr chain_next_or_replacement; // 8 bytes
     uint64_t           cas;            //!< CAS identifier.
     // bySeqno is atomic primarily for TSAN, which would flag that we write/read
