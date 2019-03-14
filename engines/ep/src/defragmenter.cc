@@ -40,9 +40,13 @@ bool DefragmenterTask::run(void) {
         // then resume from where we last were, otherwise create a new visitor
         // starting from the beginning.
         if (!prAdapter) {
-            prAdapter = std::make_unique<PauseResumeVBAdapter>(
-                    std::make_unique<DefragmentVisitor>(
-                            getAgeThreshold(), getMaxValueSize(alloc_hooks)));
+            auto visitor = std::make_unique<DefragmentVisitor>(
+                    getAgeThreshold(), getMaxValueSize(alloc_hooks));
+            if (engine->getConfiguration().getBucketType() == "persistent") {
+                visitor->setStoredValueDefragmenter(getAgeThreshold());
+            }
+            prAdapter =
+                    std::make_unique<PauseResumeVBAdapter>(std::move(visitor));
             epstore_position = engine->getKVBucket()->startPosition();
         }
 
