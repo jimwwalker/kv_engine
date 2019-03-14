@@ -35,27 +35,27 @@ void ItemCompressorVisitor::setDeadline(ProcessClock::time_point deadline) {
 }
 
 bool ItemCompressorVisitor::visit(const HashTable::HashBucketLock& lh,
-                                  StoredValue& v) {
-
+                                  StoredValue::UniquePtr& sv) {
     // Check if the item can be compressed
-    if (compressMode == BucketCompressionMode::Active && v.isCompressible()) {
+    if (compressMode == BucketCompressionMode::Active && sv->isCompressible()) {
         cb::compression::Buffer deflated;
-        if (cb::compression::deflate(cb::compression::Algorithm::Snappy,
-                                     {v.getValue()->getData(), v.valuelen()},
-                                     deflated)) {
-            auto comp_ratio = static_cast<float>(v.valuelen()) /
+        if (cb::compression::deflate(
+                    cb::compression::Algorithm::Snappy,
+                    {sv->getValue()->getData(), sv->valuelen()},
+                    deflated)) {
+            auto comp_ratio = static_cast<float>(sv->valuelen()) /
                               static_cast<float>(deflated.size());
 
             // Compress the document only if the compression ratio is greater
             // than or equal to the current minium compression ratio
             if (comp_ratio >= currentMinCompressionRatio) {
-                currentVb->ht.storeCompressedBuffer(deflated, v);
+                currentVb->ht.storeCompressedBuffer(deflated, *sv.get());
 
                 // If the value was compressed, increment the count of number
                 // of compressed documents
                 compressed_count++;
             } else {
-                v.setUncompressible();
+                sv->setUncompressible();
             }
         }
     }

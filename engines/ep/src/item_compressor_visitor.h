@@ -46,7 +46,7 @@ public:
 
     // Implementation of HashTableVisitor interface:
     virtual bool visit(const HashTable::HashBucketLock& lh,
-                       StoredValue& v) override;
+                       StoredValue::UniquePtr& v) override;
 
     // Resets any held stats to zero.
     void clearStats();

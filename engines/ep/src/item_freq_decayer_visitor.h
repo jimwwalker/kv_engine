@@ -39,7 +39,8 @@ public:
     // The visit function will decay the frequency counter of each document
     // in the hash table by the percentage set when the visitor was
     // constructed.
-    bool visit(const HashTable::HashBucketLock& lh, StoredValue& v) override;
+    bool visit(const HashTable::HashBucketLock& lh,
+               StoredValue::UniquePtr& sv) override;
 
     // Resets any held stats to zero.
     void clearStats();

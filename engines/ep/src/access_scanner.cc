@@ -71,14 +71,15 @@ public:
         }
     }
 
-    bool visit(const HashTable::HashBucketLock& lh, StoredValue& v) override {
-        if (log && v.isResident()) {
-            if (v.isExpired(startTime) || v.isDeleted()) {
+    bool visit(const HashTable::HashBucketLock& lh,
+               StoredValue::UniquePtr& sv) override {
+        if (log && sv->isResident()) {
+            if (sv->isExpired(startTime) || sv->isDeleted()) {
                 LOG(EXTENSION_LOG_INFO,
                     "INFO: Skipping expired/deleted item: %" PRIu64,
-                    v.getBySeqno());
+                    sv->getBySeqno());
             } else {
-                accessed.push_back(StoredDocKey(v.getKey()));
+                accessed.push_back(StoredDocKey(sv->getKey()));
                 return ++items_scanned < items_to_scan;
             }
         }

@@ -40,13 +40,13 @@ void EphemeralVBucket::HTTombstonePurger::setCurrentVBucket(VBucket& vb) {
 }
 
 bool EphemeralVBucket::HTTombstonePurger::visit(
-        const HashTable::HashBucketLock& hbl, StoredValue& v) {
-    auto* osv = v.toOrderedStoredValue();
+        const HashTable::HashBucketLock& hbl, StoredValue::UniquePtr& sv) {
+    auto* osv = sv->toOrderedStoredValue();
 
     if (osv->isDeleted() && (now - osv->getDeletedTime() >= purgeAge)) {
         // This item should be purged. Remove from the HashTable and move over
         // to being owned by the sequence list.
-        auto ownedSV = vbucket->ht.unlocked_release(hbl, v.getKey());
+        auto ownedSV = vbucket->ht.unlocked_release(hbl, osv->getKey());
         {
             std::lock_guard<std::mutex> listWriteLg(
                     vbucket->seqList->getListWriteLock());

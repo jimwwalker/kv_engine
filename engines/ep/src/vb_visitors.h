@@ -95,7 +95,7 @@ public:
 class VBucketAwareHTVisitor : public HashTableVisitor {
 public:
     bool visit(const HashTable::HashBucketLock& lh,
-               StoredValue& v) override = 0;
+               StoredValue::UniquePtr& sv) override = 0;
 
     /**
      * Inform the visitor of the current vBucket.

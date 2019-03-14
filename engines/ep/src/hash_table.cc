@@ -569,6 +569,10 @@ MutationStatus HashTable::insertFromWarmup(
     return MutationStatus::NotFound;
 }
 
+StoredValue::UniquePtr HashTable::copyStoredValue(StoredValue* v) {
+    return valFact->copyStoredValue(*v, std::move(v->getNext()));
+}
+
 void HashTable::dump() const {
     std::cerr << *this << std::endl;
 }
@@ -615,10 +619,11 @@ void HashTable::visit(HashTableVisitor& visitor) {
                             std::to_string(i) + ")");
                 }
             }
-            while (v) {
-                StoredValue* tmp = v->getNext().get().get();
-                visitor.visit(lh, *v);
-                v = tmp;
+
+            StoredValue::UniquePtr* sv = &values[i];
+            while (sv->get()) {
+                visitor.visit(lh, *sv);
+                sv = &sv->get()->getNext();
             }
             ++visited;
         }
@@ -707,11 +712,10 @@ HashTable::Position HashTable::pauseResumeVisit(HashTableVisitor& visitor,
         for (; !paused && hash_bucket < size; hash_bucket += mutexes.size()) {
             HashBucketLock lh(hash_bucket, mutexes[lock]);
 
-            StoredValue* v = values[hash_bucket].get().get();
-            while (!paused && v) {
-                StoredValue* tmp = v->getNext().get().get();
-                paused = !visitor.visit(lh, *v);
-                v = tmp;
+            StoredValue::UniquePtr* sv = &values[hash_bucket];
+            while (!paused && sv->get()) {
+                paused = !visitor.visit(lh, *sv);
+                sv = &sv->get()->getNext();
             }
         }
 

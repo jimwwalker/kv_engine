@@ -798,6 +798,8 @@ public:
                                     bool keyMetaDataOnly,
                                     item_eviction_policy_t evictionPolicy);
 
+    StoredValue::UniquePtr copyStoredValue(StoredValue* v);
+
     /**
      * Dump a representation of the HashTable to stderr.
      */
@@ -928,7 +930,8 @@ public:
      * @param v a pointer to a value in the hash table
      * @return true if visiting should continue, false if it should terminate.
      */
-    virtual bool visit(const HashTable::HashBucketLock& lh, StoredValue& v) = 0;
+    virtual bool visit(const HashTable::HashBucketLock& lh,
+                       StoredValue::UniquePtr& sv) = 0;
 };
 
 /**

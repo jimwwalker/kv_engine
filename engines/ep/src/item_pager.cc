@@ -80,12 +80,14 @@ PagingVisitor::PagingVisitor(KVBucket& s,
     }
 
     bool PagingVisitor::visit(const HashTable::HashBucketLock& lh,
-                              StoredValue& v) {
+                              StoredValue::UniquePtr& sv) {
         // Delete expired items for an active vbucket.
         bool isExpired = (currentBucket->getState() == vbucket_state_active) &&
-                         v.isExpired(startTime) && !v.isDeleted();
-        if (isExpired || v.isTempNonExistentItem() || v.isTempDeletedItem()) {
-            std::unique_ptr<Item> it = v.toItem(false, currentBucket->getId());
+                         sv->isExpired(startTime) && !sv->isDeleted();
+        if (isExpired || sv->isTempNonExistentItem() ||
+            sv->isTempDeletedItem()) {
+            std::unique_ptr<Item> it =
+                    sv->toItem(false, currentBucket->getId());
             expired.push_back(*it.get());
             return true;
         }
@@ -105,12 +107,12 @@ PagingVisitor::PagingVisitor(KVBucket& s,
                             static_cast<double>(std::rand()) /
                             static_cast<double>(RAND_MAX);
 
-            if (*pager_phase == PAGING_UNREFERENCED && v.getNRUValue()
-                    == MAX_NRU_VALUE) {
-                doEviction(lh, &v);
-            } else if (*pager_phase == PAGING_RANDOM
-                    && v.incrNRUValue() == MAX_NRU_VALUE && r <= percent) {
-                doEviction(lh, &v);
+            if (*pager_phase == PAGING_UNREFERENCED &&
+                sv->getNRUValue() == MAX_NRU_VALUE) {
+                doEviction(lh, sv.get().get());
+            } else if (*pager_phase == PAGING_RANDOM &&
+                       sv->incrNRUValue() == MAX_NRU_VALUE && r <= percent) {
+                doEviction(lh, sv.get().get());
             }
             return true;
         }
@@ -120,7 +122,7 @@ PagingVisitor::PagingVisitor(KVBucket& s,
              * doEviction can modify the value, and when we want to
              * add it to the histogram we want to use the original value.
              */
-            auto storedValueFreqCounter = v.getFreqCounterValue();
+            auto storedValueFreqCounter = sv->getFreqCounterValue();
             bool evicted = true;
 
             /*
@@ -138,7 +140,8 @@ PagingVisitor::PagingVisitor(KVBucket& s,
              * so the item will appear very old.  However, this does not
              * matter as it just means that is likely to be evicted.
              */
-            uint64_t age = (maxCas > v.getCas()) ? (maxCas - v.getCas()) : 0;
+            uint64_t age =
+                    (maxCas > sv->getCas()) ? (maxCas - sv->getCas()) : 0;
             age = age >> ItemEviction::casBitsNotTime;
 
             if ((storedValueFreqCounter <= freqCounterThreshold) &&
@@ -155,7 +158,7 @@ PagingVisitor::PagingVisitor(KVBucket& s,
                  * so that we get a frequency threshold that will remove the
                  * correct number of storedValue items.
                  */
-                if (!doEviction(lh, &v)) {
+                if (!doEviction(lh, sv.get().get())) {
                     evicted = false;
                     storedValueFreqCounter = std::numeric_limits<uint8_t>::max();
                 }
@@ -163,7 +166,7 @@ PagingVisitor::PagingVisitor(KVBucket& s,
                 evicted = false;
                 // If the storedValue is NOT eligible for eviction then
                 // we want to add the maximum value (255).
-                if (!currentBucket->eligibleToPageOut(lh, v)) {
+                if (!currentBucket->eligibleToPageOut(lh, *sv.get().get())) {
                     storedValueFreqCounter = std::numeric_limits<uint8_t>::max();
                 } else {
                     /*
@@ -175,7 +178,7 @@ PagingVisitor::PagingVisitor(KVBucket& s,
                      * incremented in between visits of the item pager).
                      */
                     if (storedValueFreqCounter > 0) {
-                        v.setFreqCounterValue(storedValueFreqCounter - 1);
+                        sv->setFreqCounterValue(storedValueFreqCounter - 1);
                     }
                 }
             }

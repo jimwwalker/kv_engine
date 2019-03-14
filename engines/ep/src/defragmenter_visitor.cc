@@ -36,8 +36,8 @@ void DefragmentVisitor::setDeadline(ProcessClock::time_point deadline) {
 }
 
 bool DefragmentVisitor::visit(const HashTable::HashBucketLock& lh,
-                              StoredValue& v) {
-    const size_t value_len = v.valuelen();
+                              StoredValue::UniquePtr& sv) {
+    const size_t value_len = sv->valuelen();
 
     // value must be at least non-zero (also covers Items with null Blobs)
     // and no larger than the biggest size class the allocator
@@ -49,14 +49,19 @@ bool DefragmentVisitor::visit(const HashTable::HashBucketLock& lh,
         // It may be possible to add a reference to the blob without holding
         // any locks, therefore the check is somewhat of an estimate which
         // should be good enough.
-        if (v.getValue()->getAge() >= age_threshold &&
-            v.getValue().refCount() < 2) {
-            v.reallocate();
+        if (sv->getValue()->getAge() >= age_threshold &&
+            sv->getValue().refCount() < 2) {
+            sv->reallocate();
             defrag_count++;
         } else {
-            v.getValue()->incrementAge();
+            sv->getValue()->incrementAge();
         }
     }
+
+    // Defrag StoredValue
+    auto newSv = currentVb->ht.copyStoredValue(sv.get().get());
+    sv.swap(newSv);
+
     visited_count++;
 
     // See if we have done enough work for this chunk. If so

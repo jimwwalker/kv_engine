@@ -92,7 +92,8 @@ public:
 
     void setCurrentVBucket(VBucket& vb) override;
 
-    bool visit(const HashTable::HashBucketLock& lh, StoredValue& v) override;
+    bool visit(const HashTable::HashBucketLock& lh,
+               StoredValue::UniquePtr& sv) override;
 
     /// Return the number of items visited in the HashTable.
     size_t getVisitedCount() const {

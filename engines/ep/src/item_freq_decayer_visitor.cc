@@ -28,9 +28,9 @@ void ItemFreqDecayerVisitor::setDeadline(ProcessClock::time_point deadline) {
 }
 
 bool ItemFreqDecayerVisitor::visit(const HashTable::HashBucketLock& lh,
-                                   StoredValue& v) {
+                                   StoredValue::UniquePtr& sv) {
     // age the value's frequency counter by the given percentage
-    v.setFreqCounterValue(v.getFreqCounterValue() * (percentage * 0.01));
+    sv->setFreqCounterValue(sv->getFreqCounterValue() * (percentage * 0.01));
     visitedCount++;
 
     // See if we have done enough work for this chunk. If so

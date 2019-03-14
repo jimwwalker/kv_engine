@@ -72,7 +72,8 @@ public:
                   size_t _freqCounterAgeThreshold,
                   EvictionPolicy evictionPolicy);
 
-    bool visit(const HashTable::HashBucketLock& lh, StoredValue& v) override;
+    bool visit(const HashTable::HashBucketLock& lh,
+               StoredValue::UniquePtr& sv) override;
 
     void visitBucket(VBucketPtr& vb) override;
 
