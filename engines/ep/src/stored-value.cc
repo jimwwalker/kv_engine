@@ -410,9 +410,7 @@ uint8_t StoredValue::getAge() const {
 void StoredValue::setAge(uint8_t age) {
     chain_next_or_replacement_tag tag;
     tag.fields.age = age;
-    auto taggedPtr = chain_next_or_replacement.get();
-    taggedPtr.setTag(tag.raw);
-    chain_next_or_replacement.reset(taggedPtr);
+    chain_next_or_replacement.get().setTag(tag.raw);
 }
 
 void StoredValue::incrementAge() {

@@ -622,8 +622,9 @@ void HashTable::visit(HashTableVisitor& visitor) {
 
             StoredValue::UniquePtr* sv = &values[i];
             while (sv->get()) {
+                StoredValue::UniquePtr* next = &sv->get()->getNext();
                 visitor.visit(lh, *sv);
-                sv = &sv->get()->getNext();
+                sv = next;
             }
             ++visited;
         }
@@ -714,8 +715,9 @@ HashTable::Position HashTable::pauseResumeVisit(HashTableVisitor& visitor,
 
             StoredValue::UniquePtr* sv = &values[hash_bucket];
             while (!paused && sv->get()) {
+                StoredValue::UniquePtr* next = &sv->get()->getNext();
                 paused = !visitor.visit(lh, *sv);
-                sv = &sv->get()->getNext();
+                sv = next;
             }
         }
 
