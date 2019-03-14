@@ -58,13 +58,9 @@ bool DefragmentVisitor::visit(const HashTable::HashBucketLock& lh,
         }
     }
 
-    // Defrag StoredValue
-    if (sv->getAge() >= age_threshold) {
-        auto newSv = currentVb->ht.copyStoredValue(sv.get().get());
-        newSv->setAge(0);
-        sv.swap(newSv);
-    } else {
-        sv->incrementAge();
+    // StoredValue Defragmenter is optional
+    if (svDefragmenter) {
+        svDefragmenter(*currentVb, sv);
     }
 
     visited_count++;
@@ -89,4 +85,23 @@ size_t DefragmentVisitor::getVisitedCount() const {
 
 void DefragmentVisitor::setCurrentVBucket(VBucket& vb) {
     currentVb = &vb;
+}
+
+void storedValueDefragmenter(uint8_t age_threshold,
+                             VBucket& vb,
+                             StoredValue::UniquePtr& sv) {
+    if (sv->getAge() >= age_threshold) {
+        auto newSv = vb.ht.copyStoredValue(sv.get().get());
+        newSv->setAge(0);
+        sv.swap(newSv);
+    } else {
+        sv->incrementAge();
+    }
+}
+
+void DefragmentVisitor::setStoredValueDefragmenter(uint8_t age_threshold) {
+    this->svDefragmenter = std::bind(storedValueDefragmenter,
+                                     age_threshold,
+                                     std::placeholders::_1,
+                                     std::placeholders::_2);
 }

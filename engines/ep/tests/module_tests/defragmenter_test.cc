@@ -247,11 +247,14 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
     const size_t expected_mapped = ((mapped_2 - mapped_0) * 0.5) + mapped_0;
 
     auto& visitor = dynamic_cast<DefragmentVisitor&>(prAdapter.getHTVisitor());
+    std::cerr << "expected_mapped:" << expected_mapped << std::endl;
+    std::cerr << "get_mapped_bytes():" << get_mapped_bytes() << std::endl;
     EXPECT_TRUE(wait_for_mapped_below(expected_mapped, 1 * 1000 * 1000))
         << "Mapped memory (" << get_mapped_bytes() << ") didn't fall below "
         << "estimate (" <<  expected_mapped << ") after the defragmentater "
         << "visited " << visitor.getVisitedCount() << " items "
         << "and moved " << visitor.getDefragCount() << " items!";
+    std::cerr << "get_mapped_bytes():" << get_mapped_bytes() << std::endl;
 }
 
 // Check that the defragmenter doesn't increase the memory used. The specific

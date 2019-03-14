@@ -53,6 +53,8 @@ public:
 
     void setCurrentVBucket(VBucket& vb) override;
 
+    void setStoredValueDefragmenter(uint8_t age_threshold);
+
 private:
     /* Configuration parameters */
 
@@ -75,4 +77,6 @@ private:
 
     // The current vbucket that is being processed
     VBucket* currentVb;
+
+    std::function<void(VBucket&, StoredValue::UniquePtr&)> svDefragmenter;
 };
