@@ -21,6 +21,7 @@
 #include "item.h"
 #include "stored-value.h"
 #include "threadlocal.h"
+#include <platform/cb_malloc.h>
 
 #if 1
 static ThreadLocal<EventuallyPersistentEngine*> *th;
@@ -179,6 +180,12 @@ EventuallyPersistentEngine *ObjectRegistry::onSwitchThread(
     }
 
     th->set(engine);
+    if (engine) {
+        cb_malloc_set_engine_index_and_arena(0,
+                                             engine->arena); // or in an index?
+    } else {
+        cb_malloc_set_engine_index_and_arena(0, 0);
+    }
     return old_engine;
 }
 

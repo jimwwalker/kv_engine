@@ -15,186 +15,101 @@
  *   limitations under the License.
  */
 
-// We need folly's Windows.h and not spdlog's so include folly's portability
-// header before anything that includes spdlog (bucket_logger etc.)
 #include <folly/portability/GTest.h>
+#include <jemalloc/jemalloc.h>
+#include <array>
+#include <memory>
 
-#include "bucket_logger.h"
-#include "bucket_logger_test.h"
-#include "item.h"
-#include "memory_tracker.h"
-#include "objectregistry.h"
-#include "test_helpers.h"
-#include "tests/mock/mock_synchronous_ep_engine.h"
-
-#include <logger/logger_test_fixture.h>
-#include <programs/engine_testapp/mock_server.h>
-#include <spdlog/async.h>
-
-class ObjectRegistryTest : virtual public ::testing::Test {
+class JimsJeMallocModelTest : virtual public ::testing::Test {
 protected:
     void SetUp() override {
-        ObjectRegistry::onSwitchThread(&engine);
     }
     void TearDown() override {
-        ObjectRegistry::onSwitchThread(nullptr);
     }
 
-    SynchronousEPEngine engine;
 };
 
-// Check that constructing & destructing an Item is correctly tracked in
-// EpStats::numItem via ObjectRegistry::on{Create,Delete}Item.
-TEST_F(ObjectRegistryTest, NumItem) {
-    ASSERT_EQ(0, engine.getEpStats().getNumItem());
+using Ptr = std::unique_ptr<char>;
 
-    {
-        auto item = make_item(Vbid(0), makeStoredDocKey("key"), "value");
-        EXPECT_EQ(1, engine.getEpStats().getNumItem());
-    }
-    EXPECT_EQ(0, engine.getEpStats().getNumItem());
-}
+// Engine allocates all memory through the given arena
+class Engine {
+public:
+    Engine() {
+        unsigned a = 0;
+        size_t sz = sizeof(unsigned);
+        if (je_mallctl("arenas.create", (void*)&a, &sz, nullptr, 0) != 0) {
+            throw std::logic_error("Could not allocate arena");
+        }
+        arena = a;
 
-// Check that constructing & destructing an Item is correctly tracked in
-// EpStats::memOverhead via ObjectRegistry::on{Create,Delete}Item.
-TEST_F(ObjectRegistryTest, MemOverhead) {
-    ASSERT_EQ(0, engine.getEpStats().getMemOverhead());
-
-    {
-        auto item = make_item(Vbid(0), makeStoredDocKey("key"), "value");
-        // Currently just checking the overhead is non-zero; could expand
-        // to calculate expected size based on the Item's size.
-        EXPECT_NE(0, engine.getEpStats().getMemOverhead());
-    }
-    EXPECT_EQ(0, engine.getEpStats().getMemOverhead());
-}
-
-/**
- * Test fixture for ObjectRegistry + BucketLogger tests.
- *
- * Memory tracking with spdlog can be somewhat complex as spdlog can allocate
- * memory in the thread calling spdlog->warn(...), but then releases that memory
- * from a different background thread which actually writes the log message to
- * disk. Therefore We must ensure that these allocations match up.
- */
-class ObjectRegistrySpdlogTest : public BucketLoggerTest,
-                                 public ObjectRegistryTest {
-protected:
-    void SetUp() override {
-        // Override some logger config params before calling parent class
-        // Setup():
-
-        // 1. Write to a different file in case other related class fixtures are
-        // running in parallel
-        config.filename = "objectregistry_spdlogger_test";
-
-        // 2. Set up logger with the async logger (which uses a seperate thread
-        // to pring log messages and hence free temporary buffers), but with
-        // only a single buffer so acts more synchronous to make it easier to
-        // test & have messages printed sooner after logged.
-        config.buffersize = 1;
-        config.unit_test = false;
-
-        BucketLoggerTest::SetUp();
-        ObjectRegistryTest::SetUp();
-
-        // Enable memory tracking hooks
-        MemoryTracker::getInstance(*get_mock_server_api()->alloc_hooks);
-        engine.getEpStats().memoryTrackerEnabled.store(true);
+        if (je_mallctl("tcache.create", (void*)&a, &sz, nullptr, 0) != 0) {
+            throw std::logic_error("Could not allocate tcache");
+        }
+        tcache = a;
     }
 
-    void TearDown() override {
-        MemoryTracker::destroyInstance();
-
-        // Parent classes TearDown methods are sufficient here.
-        ObjectRegistryTest::TearDown();
-        BucketLoggerTest::TearDown();
+    void allocate(size_t sz) {
+        if (allocateIndex >= allocations.size()) {
+            throw std::logic_error("Engine full");
+        }
+        allocations[allocateIndex].reset(
+                reinterpret_cast<char*>(je_mallocx(sz, MALLOCX_ARENA(arena))));
+        mem_used += sz;
     }
+
+    void tcache_allocate(size_t sz) {
+        if (allocateIndex >= allocations.size()) {
+            throw std::logic_error("Engine full");
+        }
+        allocations[allocateIndex].reset(reinterpret_cast<char*>(
+                je_mallocx(sz, MALLOCX_ARENA(arena) | MALLOCX_TCACHE(tcache))));
+        mem_used += sz;
+    }
+
+    int arena{0};
+    short tcache{0};
+    int allocateIndex{0};
+    size_t mem_used{0};
+    std::vector<Ptr> allocations{500};
 };
 
-// Check that memory allocated by our logger (spdlog) is correctly tracked.
-TEST_F(ObjectRegistrySpdlogTest, SpdlogMemoryTrackedCorrectly) {
-    ASSERT_TRUE(ObjectRegistry::getCurrentEngine());
-    const char* testName =
-            ::testing::UnitTest::GetInstance()->current_test_info()->name();
-
-    // const char* - uses the single argument overload of warn().
-    auto baselineMemory = engine.getEpStats().getPreciseTotalMemoryUsed();
-    {
-        auto logger = BucketLogger::createBucketLogger(testName);
-        logger->log(spdlog::level::warn, "const char* message");
-        logger->flush();
-    }
-    EXPECT_EQ(baselineMemory, engine.getEpStats().getPreciseTotalMemoryUsed());
-
-    // multiple arguments using format string, with a short (< sizeof(sync_msg)
-    // log string.
-    // Check that we correctly account even when multiple messages are created
-    // & destroyed.
-    // "short" - messages less than the aync_msg's buffer are stored as inside
-    // async_msg object directly, and don't need additional heap allocation.
-
-    // The actual message capacity is slightly less than sizeof(async_msg.raw) -
-    // should be the SIZE template parameter but we don't have access to that
-    // so estimate as 50% of the object size.
-    spdlog::details::async_msg msg;
-    const auto asyncMsgCapacity = sizeof(msg.raw) / 2;
-    {
-        auto logger = BucketLogger::createBucketLogger(testName);
-        logger->warn("short+variable ({}) {} ",
-                     asyncMsgCapacity,
-                     std::string(asyncMsgCapacity, 's'));
-        logger->flush();
-    }
-    EXPECT_EQ(baselineMemory, engine.getEpStats().getPreciseTotalMemoryUsed());
-
-    // As previous, but looping with multiple warn() calls - check that we
-    // correctly account even when multiple messages are created & destroyed.
-    {
-        auto logger = BucketLogger::createBucketLogger(testName);
-        auto afterLoggerMemory =
-                engine.getEpStats().getPreciseTotalMemoryUsed();
-
-        for (int i = 0; i < 100; i++) {
-            logger->warn("short+variable loop ({}) {} ",
-                         i,
-                         std::string(asyncMsgCapacity, 's'));
-            logger->flush();
-            EXPECT_EQ(afterLoggerMemory,
-                      engine.getEpStats().getPreciseTotalMemoryUsed());
+static void allocations(Engine& e, bool tcache) {
+    std::array<int, 8> sizes = {{320, 384, 448, 512, 640, 768, 896, 1024}};
+    for (auto s : sizes) {
+        if (tcache) {
+            e.tcache_allocate(s);
+        } else {
+            e.allocate(s);
         }
     }
-    EXPECT_EQ(baselineMemory, engine.getEpStats().getPreciseTotalMemoryUsed());
+}
 
-    // Multiple arguments with a very long string (greater than
-    // asyncMsgCapacity)
-    // Expect it to heap-allocate mmemory for the message in the calling
-    // thread, which will not be freed until the message is flushed by the
-    // background thread.
-    {
-        auto logger = BucketLogger::createBucketLogger(testName);
-        logger->warn("long+variable ({}) {}",
-                     asyncMsgCapacity * 2,
-                     std::string(asyncMsgCapacity * 2, 'x'));
-        logger->flush();
-    }
-    EXPECT_EQ(baselineMemory, engine.getEpStats().getPreciseTotalMemoryUsed());
+TEST_F(JimsJeMallocModelTest, default_tcache_allocate) {
+    Engine engine1;
+    Engine engine2;
+    Engine engine3;
 
-    // Multiple log messages; each with a log string - check that we correctly
-    // account even when multiple messages are created & destroyed.
-    {
-        auto logger = BucketLogger::createBucketLogger(testName);
-        auto afterLoggerMemory =
-                engine.getEpStats().getPreciseTotalMemoryUsed();
+    allocations(engine1, false);
+    allocations(engine2, false);
+    allocations(engine3, false);
 
-        for (int i = 0; i < 100; i++) {
-            logger->warn("long+variable loop ({}) {}",
-                         i,
-                         std::string(asyncMsgCapacity * 2, 'x'));
-            logger->flush();
-            EXPECT_EQ(afterLoggerMemory,
-                      engine.getEpStats().getPreciseTotalMemoryUsed());
-        }
-    }
-    EXPECT_EQ(baselineMemory, engine.getEpStats().getPreciseTotalMemoryUsed());
+    je_malloc_stats_print(NULL, NULL, NULL);
+    std::cerr << "engine1.mem_used:" << engine1.mem_used << std::endl;
+    std::cerr << "engine2.mem_used:" << engine2.mem_used << std::endl;
+    std::cerr << "engine3.mem_used:" << engine3.mem_used << std::endl;
+}
+
+TEST_F(JimsJeMallocModelTest, own_tcache_allocate) {
+    Engine engine1;
+    Engine engine2;
+    Engine engine3;
+
+    allocations(engine1, true);
+    allocations(engine2, true);
+    allocations(engine3, true);
+
+    je_malloc_stats_print(NULL, NULL, NULL);
+    std::cerr << "engine1.mem_used:" << engine1.mem_used << std::endl;
+    std::cerr << "engine2.mem_used:" << engine2.mem_used << std::endl;
+    std::cerr << "engine3.mem_used:" << engine3.mem_used << std::endl;
 }

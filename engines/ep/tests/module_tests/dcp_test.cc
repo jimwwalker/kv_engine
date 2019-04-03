@@ -2025,6 +2025,7 @@ void ConnectionTest::sendConsumerMutationsNearThreshold(bool beyondThreshold) {
     const uint64_t snapStart = 1;
     const uint64_t snapEnd = std::numeric_limits<uint64_t>::max();
     uint64_t bySeqno = snapStart;
+    ObjectRegistry::onSwitchThread(engine);
 
     /* Set up a consumer connection */
     auto consumer =
@@ -2462,7 +2463,7 @@ TEST_F(SingleThreadedStreamTest, MB31410) {
                                   dcp_marker_flag_t::MARKER_FLAG_MEMORY,
                                   {});
     passiveStream->processMarker(&snapshotMarker);
-
+    bool replicationThresholdReached = false;
     // The consumer receives mutations.
     // Here I want to create the scenario where we have hit the replication
     // threshold.
@@ -2494,11 +2495,14 @@ TEST_F(SingleThreadedStreamTest, MB31410) {
                       epStats.getMaxDataSize() *
                               epStats.replicationThrottleThreshold);
 
+            replicationThresholdReached = true;
             break;
         } else {
             ASSERT_EQ(ENGINE_SUCCESS, ret);
         }
     }
+
+    ASSERT_TRUE(replicationThresholdReached);
 
     // At this point 'seqno' has been buffered. So in the following:
     //     - I start frontEndThread where I try to process 'seqno + 1'

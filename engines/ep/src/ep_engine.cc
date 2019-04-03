@@ -1689,7 +1689,7 @@ static void EvpHandleDeleteBucket(const void* cookie,
     void* c = const_cast<void*>(cb_data);
     acquireEngine(static_cast<EngineIface*>(c))->handleDeleteBucket(cookie);
 }
-
+#include <jemalloc/jemalloc.h>
 /**
  * The only public interface to the eventually persistent engine.
  * Allocate a new instance and initialize it
@@ -1840,6 +1840,15 @@ EventuallyPersistentEngine::EventuallyPersistentEngine(
       taskable(this),
       compressionMode(BucketCompressionMode::Off),
       minCompressionRatio(default_min_compression_ratio) {
+    unsigned arena_ind1 = 0;
+    size_t sz = sizeof(unsigned);
+    if (je_mallctl("arenas.create", (void*)&arena_ind1, &sz, nullptr, 0) != 0) {
+        throw std::logic_error("Could not allocate arena 1");
+    }
+    arena = arena_ind1;
+    // copy through to stats so we can ask for mem used
+    getEpStats().arena = arena;
+
     serverApi = getServerApiFunc();
 }
 

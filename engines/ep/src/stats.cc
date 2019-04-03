@@ -19,6 +19,8 @@
 
 #include "objectregistry.h"
 
+#include <jemalloc/jemalloc.h>
+
 #ifndef DEFAULT_MAX_DATA_SIZE
 /* Something something something ought to be enough for anybody */
 #define DEFAULT_MAX_DATA_SIZE (std::numeric_limits<size_t>::max())
@@ -124,6 +126,11 @@ EPStats::EPStats()
       // A "sensible" default, will change when setMaxDataSize is called
       memUsedMergeThreshold(102400),
       memUsedMergeThresholdPercent(0.5) {
+    // MIB lookup
+    je_mallctlnametomib(
+            "stats.arenas.0.small.allocated", mib_small, &miblen_small);
+    je_mallctlnametomib(
+            "stats.arenas.0.large.allocated", mib_large, &miblen_large);
 }
 
 EPStats::~EPStats() {
@@ -195,17 +202,23 @@ void EPStats::maybeUpdateEstimatedTotalMemUsed(
     }
 }
 
+size_t EPStats::getEstimatedTotalMemoryUsed() {
+    mib_small[2] = arena;
+    mib_large[2] = arena;
+    size_t small = 0;
+    size_t large = 0;
+    auto size = sizeof(size_t);
+    je_mallctlbymib(mib_small, miblen_small, &small, &size, NULL, 0);
+    je_mallctlbymib(mib_large, miblen_large, &large, &size, NULL, 0);
+    return small + large;
+}
+
 size_t EPStats::getPreciseTotalMemoryUsed() {
-    if (memoryTrackerEnabled.load()) {
-        for (auto& core : coreLocal) {
-            estimatedTotalMemory->fetch_add(
-                    core.get()->totalMemory.exchange(0));
-        }
-        // This still could become negative, e.g. core 0 allocated X after we
-        // read it, then core n deallocated X and we read -X.
-        return size_t(std::max(int64_t(0), estimatedTotalMemory->load()));
-    }
-    return getCurrentSize() + getMemOverhead();
+    uint64_t epochIn = 0;
+    size_t epochInSz = sizeof(epochIn);
+    // Refresh stats
+    je_mallctl("epoch", nullptr, nullptr, &epochIn, epochInSz);
+    return getEstimatedTotalMemoryUsed();
 }
 
 size_t EPStats::getCurrentSize() const {

@@ -97,6 +97,8 @@ private:
 class EventuallyPersistentEngine : public EngineIface, public DcpIface {
     friend class LookupCallback;
 public:
+    int arena{0};
+
     ENGINE_ERROR_CODE initialize(const char* config) override;
     void destroy(bool force) override;
 

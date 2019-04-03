@@ -79,16 +79,7 @@ public:
      * value which may lag behind what getPreciseTotalMemoryUsed function
      * returns.
      */
-    size_t getEstimatedTotalMemoryUsed() const {
-        int64_t rv = 0;
-        if (memoryTrackerEnabled.load()) {
-            rv = estimatedTotalMemory->load();
-        } else {
-            rv = getCurrentSize() + getMemOverhead();
-        }
-        // Don't allow a negative result to be exposed as a size_t
-        return size_t(std::max(int64_t(0), rv));
-    }
+    size_t getEstimatedTotalMemoryUsed();
 
     /**
      * @return a "precise" memory used value. Calling this method triggers a
@@ -483,6 +474,12 @@ public:
     //! Checkpoint Cursor histograms
     MicrosecondHistogram persistenceCursorGetItemsHisto;
     MicrosecondHistogram dcpCursorsGetItemsHisto;
+
+    int arena{0};
+    mutable size_t mib_small[5];
+    mutable size_t miblen_small{5};
+    mutable size_t mib_large[5];
+    mutable size_t miblen_large{5};
 
     //! Reset all stats to reasonable values.
     void reset() {
