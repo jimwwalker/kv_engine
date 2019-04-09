@@ -1463,6 +1463,7 @@ TEST_F(SingleThreadedPassiveStreamTest, MB31410) {
     // Here I want to create the scenario where we have hit the replication
     // threshold.
     size_t seqno = snapStart;
+    bool replicationThresholdReached = false;
     for (; seqno <= snapEnd; seqno++) {
         auto ret = stream->messageReceived(
                 makeMutationConsumerMessage(seqno, vbid, value, opaque));
@@ -1490,11 +1491,16 @@ TEST_F(SingleThreadedPassiveStreamTest, MB31410) {
                       epStats.getMaxDataSize() *
                               epStats.replicationThrottleThreshold);
 
+            replicationThresholdReached = true;
             break;
         } else {
+            // Force the memory stats to update
+            engine->getEpStats().getPreciseTotalMemoryUsed();
             ASSERT_EQ(ENGINE_SUCCESS, ret);
         }
     }
+
+    ASSERT_TRUE(replicationThresholdReached);
 
     // At this point 'seqno' has been buffered. So in the following:
     //     - I start frontEndThread where I try to process 'seqno + 1'

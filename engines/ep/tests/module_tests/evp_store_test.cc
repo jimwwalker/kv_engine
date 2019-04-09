@@ -863,14 +863,18 @@ TEST_P(EPStoreEvictionTest, getDeletedItemWithValue) {
 //Test to verify the behavior in the condition where
 //memOverhead is greater than the bucket quota
 TEST_P(EPStoreEvictionTest, memOverheadMemoryCondition) {
-    //Limit the bucket quota to 200K
     Configuration& config = engine->getConfiguration();
-    config.setMaxSize(204800);
-    config.setMemHighWat(0.8 * 204800);
-    config.setMemLowWat(0.6 * 204800);
+    auto& stats = engine->getEpStats();
+
+    // Engine's arena could still hold allocations from prior tests so may not
+    // be zero raise the test quota to 200K above current mem_used
+    auto quota = stats.getPreciseTotalMemoryUsed();
+    quota += 1024 * 200;
+    config.setMaxSize(quota);
+    config.setMemHighWat(0.8 * quota);
+    config.setMemLowWat(0.6 * quota);
 
     //Ensure the memOverhead is greater than the bucket quota
-    auto& stats = engine->getEpStats();
     stats.coreLocal.get()->memOverhead.store(config.getMaxSize() + 1);
 
     // Fill bucket until we hit ENOMEM - note storing via external
@@ -885,6 +889,9 @@ TEST_P(EPStoreEvictionTest, memOverheadMemoryCondition) {
                               makeStoredDocKey("key_" + std::to_string(count)),
                               value);
         uint64_t cas;
+        // We must force stats.estimate to update so storeInner can trigger
+        // the memory failure, done by calling getPrecise
+        stats.getPreciseTotalMemoryUsed();
         result = engine->storeInner(
                 dummyCookie.get(), &item, cas, OPERATION_SET);
     }

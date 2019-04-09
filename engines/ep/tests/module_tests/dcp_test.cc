@@ -159,13 +159,6 @@ void DCPTest::SetUp() {
     // task does not run.
     ExecutorPool::get()->setNumNonIO(0);
     callbackCount = 0;
-
-#if defined(HAVE_JEMALLOC)
-    // MB-28370: Run with memory tracking for all alloc/deallocs when built
-    // with jemalloc.
-    MemoryTracker::getInstance(*get_mock_server_api()->alloc_hooks);
-    engine->getEpStats().memoryTrackerEnabled.store(true);
-#endif
 }
 
 void DCPTest::TearDown() {
@@ -2093,6 +2086,8 @@ void ConnectionTest::sendConsumerMutationsNearThreshold(bool beyondThreshold) {
                 "fail_new_data") {
         /* Expect disconnect signal in Ephemeral with "fail_new_data" policy */
         while (1) {
+            // Read precise to force estimated update
+            stats.getPreciseTotalMemoryUsed();
             /* Keep sending items till the memory usage goes above the
                threshold and the connection is disconnected */
             if (ENGINE_DISCONNECT ==
@@ -2223,10 +2218,10 @@ void ConnectionTest::processConsumerMutationsNearThreshold(
     if (beyondThreshold) {
         /* Actually setting it well above also, as there can be a drop in memory
            usage during testing */
-        stats.setMaxDataSize(stats.getEstimatedTotalMemoryUsed() / 4);
+        stats.setMaxDataSize(stats.getPreciseTotalMemoryUsed() / 4);
     } else {
         /* set max size to a value just over */
-        stats.setMaxDataSize(stats.getEstimatedTotalMemoryUsed() + 1);
+        stats.setMaxDataSize(stats.getPreciseTotalMemoryUsed() + 1);
         /* Simpler to set the replication threshold to 1 and test, rather than
            testing with maxData = (memUsed / replicationThrottleThreshold); that
            is, we are avoiding a division */

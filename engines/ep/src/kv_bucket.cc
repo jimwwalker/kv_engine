@@ -423,8 +423,9 @@ bool KVBucket::initialize() {
 }
 
 void KVBucket::deinitialize() {
-    ExecutorPool::get()->stopTaskGroup(engine.getTaskable().getGID(),
-                                       NONIO_TASK_IDX, stats.forceShutdown);
+    // Stop all the tasks of the engine
+    ExecutorPool::get()->stopTaskGroup(
+            engine.getTaskable().getGID(), NO_TASK_TYPE, stats.forceShutdown);
 
     ExecutorPool::get()->cancel(statsSnapshotTaskId);
 

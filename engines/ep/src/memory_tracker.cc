@@ -16,6 +16,7 @@
  */
 
 #include <memcached/engine.h>
+#include <platform/cb_arena_malloc.h>
 
 #include <string>
 #include <utility>
@@ -43,6 +44,9 @@ void MemoryTracker::statsThreadMainLoop(void* arg) {
             return;
         } else {
             tracker->updateStats();
+            // Request that the arena malloc code updates any counters
+            // registered with it
+            cb::ArenaMalloc::updateTotalCounters();
         }
     }
 }

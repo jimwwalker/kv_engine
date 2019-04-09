@@ -59,11 +59,25 @@ public:
 
 protected:
     void SetUp() override {
-        // Set specific ht_size given we need to control expected memory usage.
-        config_string += "ht_size=47;max_size=" + std::to_string(200 * 1024) +
-                         ";mem_low_wat=" + std::to_string(120 * 1024) +
-                         ";mem_high_wat=" + std::to_string(160 * 1024);
+        config_string += "ht_size=47";
         STParameterizedBucketTest::SetUp();
+        auto& stats = engine->getEpStats();
+
+        // Setup the bucket from the entry state, which can be polluted from
+        // previous tests, i.e. not guaranteed to be '0'. The worst offender is
+        // if a background thread is still around, it could have data in the
+        // arena inflating it - e.g. rocksdb threads
+        const size_t expectedStart = stats.getPreciseTotalMemoryUsed();
+
+        ObjectRegistry::onSwitchThread(engine.get());
+
+        // Bump the quota 300KiB above the current mem_used
+        const size_t quota = expectedStart + (300 * 1024);
+        engine->getConfiguration().setMaxSize(quota);
+
+        // Set the water marks to 80% and 90%
+        engine->getConfiguration().setMemLowWat(quota * 0.8);
+        engine->getConfiguration().setMemHighWat(quota * 0.9);
 
         // How many nonIO tasks we expect initially
         // - 0 for persistent.
@@ -84,12 +98,6 @@ protected:
         ASSERT_EQ(47, store->getVBucket(vbid)->ht.getSize())
                 << "Expected to have a HashTable of size 47 (mem calculations "
                    "based on this).";
-        auto& stats = engine->getEpStats();
-        ASSERT_LE(stats.getEstimatedTotalMemoryUsed(), 20 * 1024)
-                << "Expected to start with less than 20KB of memory used";
-        ASSERT_LT(stats.getEstimatedTotalMemoryUsed(),
-                  stats.getMaxDataSize() * 0.5)
-                << "Expected to start below 50% of bucket quota";
     }
 
     ENGINE_ERROR_CODE storeItem(Item& item) {
@@ -120,6 +128,8 @@ protected:
             item.setNRUValue(MAX_NRU_VALUE);
             item.setFreqCounterValue(0);
             result = storeItem(item);
+            // Get the stats estimate to update by calling getPrecise
+            engine->getEpStats().getPreciseTotalMemoryUsed();
         }
         EXPECT_EQ(ENGINE_TMPFAIL, result);
         // Fixup count for last loop iteration.
@@ -150,14 +160,15 @@ protected:
         int count = 0;
         auto& stats = engine->getEpStats();
         while (populate) {
+            if (stats.getPreciseTotalMemoryUsed() > stats.mem_high_wat.load()) {
+                populate = false;
+            }
             auto key = makeStoredDocKey("key_" + std::to_string(count++));
             auto item = make_item(vbid, key, {"x", 128}, 0 /*ttl*/);
             // Set NRU of item to maximum; so will be a candidate for paging out
             // straight away.
             item.setNRUValue(MAX_NRU_VALUE);
             EXPECT_EQ(ENGINE_SUCCESS, storeItem(item));
-            populate = stats.getEstimatedTotalMemoryUsed() <=
-                       stats.mem_high_wat.load();
         }
     }
 
@@ -276,12 +287,12 @@ TEST_P(STItemPagerTest, ServerQuotaReached) {
     auto& stats = engine->getEpStats();
     auto vb = engine->getVBucket(vbid);
     if (std::get<1>(GetParam()) == "fail_new_data") {
-        EXPECT_GT(stats.getEstimatedTotalMemoryUsed(), stats.mem_low_wat.load())
+        EXPECT_GT(stats.getPreciseTotalMemoryUsed(), stats.mem_low_wat.load())
                 << "Expected still to exceed low watermark after hitting "
                    "TMPFAIL with fail_new_data bucket";
         EXPECT_EQ(count, vb->getNumItems());
     } else {
-        EXPECT_LT(stats.getEstimatedTotalMemoryUsed(), stats.mem_low_wat.load())
+        EXPECT_LT(stats.getPreciseTotalMemoryUsed(), stats.mem_low_wat.load())
                 << "Expected to be below low watermark after running item "
                    "pager";
         const auto numResidentItems =
@@ -663,8 +674,6 @@ TEST_P(STEphemeralItemPagerTest, ReplicaNotPaged) {
     store->setVBucketState(replica_vb, vbucket_state_active);
 
     auto& stats = engine->getEpStats();
-    ASSERT_LE(stats.getEstimatedTotalMemoryUsed(), 40 * 1024)
-            << "Expected to start with less than 40KB of memory used";
     ASSERT_LT(stats.getEstimatedTotalMemoryUsed(), stats.mem_low_wat.load())
             << "Expected to start below low watermark";
 
@@ -680,7 +689,7 @@ TEST_P(STEphemeralItemPagerTest, ReplicaNotPaged) {
         item.setFreqCounterValue(0);
         ASSERT_EQ(ENGINE_SUCCESS, storeItem(item));
         active_count++;
-    } while (stats.getEstimatedTotalMemoryUsed() < stats.mem_low_wat.load());
+    } while (stats.getPreciseTotalMemoryUsed() < stats.mem_low_wat.load());
 
     ASSERT_GE(active_count, 10)
             << "Expected at least 10 active items before hitting low watermark";
@@ -708,7 +717,7 @@ TEST_P(STEphemeralItemPagerTest, ReplicaNotPaged) {
                 << "Active count should be the same after Item Pager "
                    "(fail_new_data)";
     } else {
-        EXPECT_LT(stats.getEstimatedTotalMemoryUsed(), stats.mem_low_wat.load())
+        EXPECT_LT(stats.getPreciseTotalMemoryUsed(), stats.mem_low_wat.load())
                 << "Expected to be below low watermark after running item "
                    "pager";
         EXPECT_LT(store->getVBucket(active_vb)->getNumItems(), active_count)

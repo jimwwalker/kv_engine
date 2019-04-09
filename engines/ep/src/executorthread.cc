@@ -96,6 +96,14 @@ void ExecutorThread::run() {
 
             if (currentTask->isdead()) {
                 manager->doneWork(taskType);
+                // Always switch to the no-engine context when the task is dead
+                // this is to guarantee that if a shutdown is occuring TLS does
+                // not store an engine which is on its way down. Critically do
+                // the switch before the cancel as if a shutdown is happening
+                // the live engine is waiting for all tasks to cancel before
+                // actually moving to delete, without this, this thread may
+                // try and deference the engine in other onSwitchThread calls
+                ObjectRegistry::onSwitchThread(nullptr);
                 manager->cancel(currentTask->uid, true);
                 continue;
             }
@@ -172,6 +180,8 @@ void ExecutorThread::run() {
 
             // Check if task is run once or needs to be rescheduled..
             if (!again || currentTask->isdead()) {
+                // See above comment, but must switch to null before cancelling
+                ObjectRegistry::onSwitchThread(nullptr);
                 manager->cancel(currentTask->uid, true);
             } else {
                 // if a task has not set snooze, update its waketime to now

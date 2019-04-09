@@ -51,7 +51,7 @@
 #include <memcached/server_cookie_iface.h>
 #include <memcached/util.h>
 #include <phosphor/phosphor.h>
-#include <platform/cb_malloc.h>
+#include <platform/cb_arena_malloc.h>
 #include <platform/checked_snprintf.h>
 #include <platform/compress.h>
 #include <platform/histogram.h>
@@ -151,6 +151,7 @@ static void checkNumeric(const char* str) {
 
 void EventuallyPersistentEngine::destroy(const bool force) {
     auto eng = acquireEngine(this);
+    cb::ArenaMalloc::switchToClient(eng->getArenaMallocClient());
     eng->destroyInner(force);
     delete eng.get();
 }
@@ -1700,24 +1701,18 @@ ENGINE_ERROR_CODE create_instance(GET_SERVER_API get_server_api,
 
     MemoryTracker::getInstance(*api->alloc_hooks);
     ObjectRegistry::initialize(api->alloc_hooks->get_allocation_size);
+    // Register and track the engine creation
+    auto arena = cb::ArenaMalloc::registerClient();
+    // Use the RAII switch
+    auto autoSwitchFrom = cb::ArenaMalloc::switchToClientAuto(arena);
 
-    std::atomic<size_t>* inital_tracking = new std::atomic<size_t>();
-
-    ObjectRegistry::setStats(inital_tracking);
     EventuallyPersistentEngine* engine;
-    engine = new EventuallyPersistentEngine(get_server_api);
-    ObjectRegistry::setStats(NULL);
+    engine = new EventuallyPersistentEngine(get_server_api, arena);
 
     if (engine == NULL) {
+        cb::ArenaMalloc::unregisterClient(arena);
         return ENGINE_ENOMEM;
     }
-
-    if (MemoryTracker::trackingMemoryAllocations()) {
-        engine->getEpStats().estimatedTotalMemory.get()->store(
-                inital_tracking->load());
-        engine->getEpStats().memoryTrackerEnabled.store(true);
-    }
-    delete inital_tracking;
 
     initialize_time_functions(api->core);
 
@@ -1822,7 +1817,7 @@ bool EventuallyPersistentEngine::isXattrEnabled() {
 }
 
 EventuallyPersistentEngine::EventuallyPersistentEngine(
-        GET_SERVER_API get_server_api)
+        GET_SERVER_API get_server_api, cb::ArenaMallocClient arena)
     : kvBucket(nullptr),
       workload(NULL),
       workloadPriority(NO_BUCKET_PRIORITY),
@@ -1832,7 +1827,14 @@ EventuallyPersistentEngine::EventuallyPersistentEngine(
       startupTime(0),
       taskable(this),
       compressionMode(BucketCompressionMode::Off),
-      minCompressionRatio(default_min_compression_ratio) {
+      minCompressionRatio(default_min_compression_ratio),
+      arena(arena) {
+    // copy through to stats so we can ask for mem used
+    getEpStats().arena = arena;
+    // Register our estimate for periodic updates
+    cb::ArenaMalloc::registerTotalCounter(
+            arena, getEpStats().estimatedTotalMemory.get());
+
     serverApi = getServerApiFunc();
 }
 
@@ -2121,13 +2123,11 @@ void EventuallyPersistentEngine::destroyInner(bool force) {
 }
 
 void EventuallyPersistentEngine::operator delete(void* ptr) {
-    // Already destructed EventuallyPersistentEngine object; about to
-    // deallocate its memory. As such; it is not valid to update the
-    // memory state inside the now-destroyed EPStats child object of
-    // EventuallyPersistentEngine.  Therefore forcably disassociated
-    // the current thread from this engine before deallocating memory.
-    ObjectRegistry::onSwitchThread(nullptr);
+    // Delete the ptr and unregister from the arena
     ::operator delete(ptr);
+    cb::ArenaMalloc::unregisterCurrentClient();
+    // Ensure the now invalid engine is not in TLS
+    ObjectRegistry::onSwitchThread(nullptr);
 }
 
 ENGINE_ERROR_CODE EventuallyPersistentEngine::itemAllocate(
@@ -2644,13 +2644,14 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::doEngineStats(
 
     add_casted_stat("ep_persist_vbstate_total",
                     epstats.totalPersistVBState, add_stat, cookie);
-
-    size_t memUsed = stats.getPreciseTotalMemoryUsed();
-    add_casted_stat("mem_used", memUsed, add_stat, cookie);
+    // Requesting estimate before precise so the difference may be observed
     add_casted_stat("mem_used_estimate",
                     stats.getEstimatedTotalMemoryUsed(),
                     add_stat,
                     cookie);
+    size_t memUsed = stats.getPreciseTotalMemoryUsed();
+    add_casted_stat("mem_used", memUsed, add_stat, cookie);
+
     add_casted_stat("ep_mem_low_wat_percent", stats.mem_low_wat_percent,
                     add_stat, cookie);
     add_casted_stat("ep_mem_high_wat_percent", stats.mem_high_wat_percent,
@@ -2682,8 +2683,10 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::doEngineStats(
     add_casted_stat("ep_oom_errors", stats.oom_errors, add_stat, cookie);
     add_casted_stat("ep_tmp_oom_errors", stats.tmp_oom_errors,
                     add_stat, cookie);
-    add_casted_stat("ep_mem_tracker_enabled", stats.memoryTrackerEnabled,
-                    add_stat, cookie);
+    add_casted_stat("ep_mem_tracker_enabled",
+                    EPStats::isMemoryTrackingEnabled(),
+                    add_stat,
+                    cookie);
     add_casted_stat("ep_bg_fetched", epstats.bg_fetched,
                     add_stat, cookie);
     add_casted_stat("ep_bg_meta_fetched", epstats.bg_meta_fetched,
@@ -3052,14 +3055,14 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::doEngineStats(
 
 ENGINE_ERROR_CODE EventuallyPersistentEngine::doMemoryStats(
         const void* cookie, const AddStatFn& add_stat) {
-    add_casted_stat(
-            "bytes", stats.getPreciseTotalMemoryUsed(), add_stat, cookie);
-    add_casted_stat(
-            "mem_used", stats.getPreciseTotalMemoryUsed(), add_stat, cookie);
-    add_casted_stat("mem_used_estimate",
-                    stats.getEstimatedTotalMemoryUsed(),
-                    add_stat,
-                    cookie);
+    // MB-23086: Ask for the estimate first so that we can see the difference
+    // between estimate and precise
+    auto memUsedEstimate = stats.getEstimatedTotalMemoryUsed();
+    auto memUsed = stats.getPreciseTotalMemoryUsed();
+
+    add_casted_stat("bytes", memUsed, add_stat, cookie);
+    add_casted_stat("mem_used", memUsed, add_stat, cookie);
+    add_casted_stat("mem_used_estimate", memUsedEstimate, add_stat, cookie);
     add_casted_stat("mem_used_merge_threshold",
                     stats.getMemUsedMergeThreshold(),
                     add_stat,

@@ -51,7 +51,6 @@ public:
 BENCHMARK_DEFINE_F(MemoryAllocationStat, AllocNRead1)(benchmark::State& state) {
     if (state.thread_index == 0) {
         stats.reset();
-        stats.memoryTrackerEnabled = true;
         // memUsed merge must be 4 times higher so in theory we merge at the
         // same rate as TLS (because 4 more threads than cores).
         stats.setMemUsedMergeThreshold(10240 * 4);
@@ -73,7 +72,6 @@ BENCHMARK_DEFINE_F(MemoryAllocationStat, AllocNRead1)(benchmark::State& state) {
 BENCHMARK_DEFINE_F(MemoryAllocationStat, AllocNReadM)(benchmark::State& state) {
     if (state.thread_index == 0) {
         stats.reset();
-        stats.memoryTrackerEnabled = true;
         // memUsed merge must be 4 times higher so in theory we merge at the
         // same rate as TLS (because 4 more threads than cores).
         stats.setMemUsedMergeThreshold(10240 * 4);
@@ -98,7 +96,6 @@ BENCHMARK_DEFINE_F(MemoryAllocationStat, AllocNReadPreciseM)
 (benchmark::State& state) {
     if (state.thread_index == 0) {
         stats.reset();
-        stats.memoryTrackerEnabled = true;
         // memUsed merge must be 4 times higher so in theory we merge at the
         // same rate as TLS (because 4 more threads than cores).
         stats.setMemUsedMergeThreshold(10240 * 4);

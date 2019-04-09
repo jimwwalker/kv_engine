@@ -1228,6 +1228,12 @@ TEST_F(SingleThreadedCheckpointTest,
                                           snapshotEnd,
                                           flags,
                                           {});
+
+            // 1.1) This test relies on getEstimatedTotalMemoryUsed making the
+            // processMarker call close the snapshot, call getPrecise to ensure
+            // it is updated.
+            stats.getPreciseTotalMemoryUsed();
+
             passiveStream->processMarker(&snapshotMarker);
 
             // 2) the consumer receives the mutations until (snapshotEnd -1)
@@ -1251,7 +1257,7 @@ TEST_F(SingleThreadedCheckpointTest,
             if (highMemUsed) {
                 // Check that (mem_used > high_wat) when we processed the
                 // snapshotEnd mutation
-                ASSERT_GT(stats.getEstimatedTotalMemoryUsed(),
+                ASSERT_GT(stats.getPreciseTotalMemoryUsed(),
                           stats.mem_high_wat.load());
 
                 // The consumer has received the snapshotEnd mutation, now we
@@ -1273,7 +1279,7 @@ TEST_F(SingleThreadedCheckpointTest,
             } else {
                 // Check that (mem_used < high_wat) when we processed the
                 // snapshotEnd mutation
-                ASSERT_LT(stats.getEstimatedTotalMemoryUsed(),
+                ASSERT_LT(stats.getPreciseTotalMemoryUsed(),
                           stats.mem_high_wat.load());
 
                 // The consumer has received the snapshotEnd mutation, but

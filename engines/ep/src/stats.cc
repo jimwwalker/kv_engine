@@ -19,6 +19,8 @@
 
 #include "objectregistry.h"
 
+#include <platform/cb_arena_malloc.h>
+
 #ifndef DEFAULT_MAX_DATA_SIZE
 /* Something something something ought to be enough for anybody */
 #define DEFAULT_MAX_DATA_SIZE (std::numeric_limits<size_t>::max())
@@ -72,7 +74,6 @@ EPStats::EPStats()
       numFailedEjects(0),
       numNotMyVBuckets(0),
       estimatedTotalMemory(0),
-      memoryTrackerEnabled(false),
       forceShutdown(false),
       oom_errors(0),
       tmp_oom_errors(0),
@@ -197,17 +198,12 @@ void EPStats::maybeUpdateEstimatedTotalMemUsed(
     }
 }
 
-size_t EPStats::getPreciseTotalMemoryUsed() {
-    if (memoryTrackerEnabled.load()) {
-        for (auto& core : coreLocal) {
-            estimatedTotalMemory->fetch_add(
-                    core.get()->totalMemory.exchange(0));
-        }
-        // This still could become negative, e.g. core 0 allocated X after we
-        // read it, then core n deallocated X and we read -X.
-        return size_t(std::max(int64_t(0), estimatedTotalMemory->load()));
+size_t EPStats::getPreciseTotalMemoryUsed() const {
+    if (isMemoryTrackingEnabled()) {
+        estimatedTotalMemory.get()->store(cb::ArenaMalloc::getAllocated(arena));
+        return estimatedTotalMemory.get()->load();
     }
-    return getCurrentSize() + getMemOverhead();
+    return size_t(std::max(size_t(0), getCurrentSize() + getMemOverhead()));
 }
 
 size_t EPStats::getCurrentSize() const {

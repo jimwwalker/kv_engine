@@ -184,7 +184,7 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
         << "Memory tracker not enabled - cannot continue";
 
     // 0. Get baseline memory usage (before creating any objects).
-    size_t mem_used_0 = mem_used.load();
+    size_t mem_used_0 = global_stats.getPreciseTotalMemoryUsed();
     size_t mapped_0 = get_mapped_bytes();
 
     // 1. Create a number of documents.
@@ -201,13 +201,15 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
     // items we want to delete
     vbucket->checkpointManager->clear(vbucket->getState());
     // Record memory usage after creation.
-    size_t mem_used_1 = mem_used.load();
+    size_t mem_used_1 = global_stats.getPreciseTotalMemoryUsed();
     size_t mapped_1 = get_mapped_bytes();
 
     // Sanity check - mem_used should be at least size * count bytes larger than
     // initial.
     EXPECT_GE(mem_used_1, mem_used_0 + (size * num_docs))
-        << "mem_used smaller than expected after creating documents";
+            << "mem_used:" << mem_used_1
+            << " smaller than expected:" << mem_used_0 + (size * num_docs)
+            << " after creating documents";
 
     // 2. Determine how many documents are in each page, and then remove all but
     //    one from each page.
@@ -222,7 +224,7 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
     // many documents were removed.
     // Allow some extra, to handle any increase in data structure sizes used
     // to actually manage the objects.
-    const double fuzz_factor = 1.05;
+    const double fuzz_factor = 1.15;
     const size_t all_docs_size = mem_used_1 - mem_used_0;
     const size_t remaining_size = (all_docs_size / num_docs) * num_remaining;
     const size_t expected_mem = (mem_used_0 + remaining_size) * fuzz_factor;
@@ -230,14 +232,15 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
     unsigned int retries;
     const int RETRY_LIMIT = 100;
     for (retries = 0; retries < RETRY_LIMIT; retries++) {
-        if (mem_used.load() < expected_mem) {
+        if (global_stats.getPreciseTotalMemoryUsed() < expected_mem) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
     if (retries == RETRY_LIMIT) {
         FAIL() << "Exceeded retry count waiting for mem_used be below "
-               << expected_mem << " current mem_used: " << mem_used.load();
+               << expected_mem << " current mem_used: "
+               << global_stats.getPreciseTotalMemoryUsed();
     }
 
     size_t mapped_2 = get_mapped_bytes();
@@ -253,8 +256,6 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
         << previous_mapped << "). ";
 
     // 3. Enable defragmenter and trigger defragmentation
-    AllocHooks::enable_thread_cache(false);
-
     auto defragVisitor = std::make_unique<DefragmentVisitor>(
             DefragmenterTask::getMaxValueSize(
                     get_mock_server_api()->alloc_hooks));
@@ -270,7 +271,6 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
     PauseResumeVBAdapter prAdapter(std::move(defragVisitor));
     prAdapter.visit(*vbucket);
 
-    AllocHooks::enable_thread_cache(true);
     AllocHooks::release_free_memory();
 
     // Check that mapped memory has decreased after defragmentation - should be
@@ -349,7 +349,7 @@ TEST_P(DefragmenterTest, DISABLED_RefCountMemUsage) {
     // removing the documents above.
     AllocHooks::release_free_memory();
 
-    size_t mem_used_before_defrag = mem_used.load();
+    size_t mem_used_before_defrag = global_stats.getPreciseTotalMemoryUsed();
 
     // The refcounts of all blobs should at least 2 at this point as the
     // CheckpointManager will also be holding references to them.
@@ -374,7 +374,7 @@ TEST_P(DefragmenterTest, DISABLED_RefCountMemUsage) {
         ASSERT_EQ(visitor.getDefragCount(), 0);
     }
 
-    size_t mem_used_after_defrag = mem_used.load();
+    size_t mem_used_after_defrag = global_stats.getPreciseTotalMemoryUsed();
 
     EXPECT_LE(mem_used_after_defrag, mem_used_before_defrag);
 }
