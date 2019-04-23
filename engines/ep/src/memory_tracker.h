@@ -44,17 +44,9 @@ public:
 
     void getAllocatorStats(std::map<std::string, size_t> &alloc_stats);
 
-    static bool trackingMemoryAllocations();
-
     void updateStats();
 
     void getDetailedStats(char* buffer, int size);
-
-    size_t getFragmentation();
-
-    size_t getTotalBytesAllocated();
-
-    size_t getTotalHeapBytes();
 
 private:
     MemoryTracker(const ServerAllocatorIface& hooks_api_);
@@ -66,11 +58,7 @@ private:
     // Function for the stats updater main loop.
     static void statsThreadMainLoop(void* arg);
 
-    static void NewHook(const void* ptr, size_t);
-    static void DeleteHook(const void* ptr);
 
-    // Wheter or not we have the ability to accurately track memory allocations
-    static std::atomic<bool> tracking;
     // Singleton memory tracker and mutex guarding it's creation.
     static std::atomic<MemoryTracker*> instance;
     static std::mutex instance_mutex;
@@ -82,6 +70,9 @@ private:
     std::mutex mutex;
     // Condition variable used to signal shutdown to the stats thread.
     std::condition_variable shutdown_cv;
+
+    // Should the stats thread keep running
+    std::atomic<bool> statsThreadRunnable{false};
 
     // Memory allocator hooks API to use (needed by New / Delete hook
     // functions)

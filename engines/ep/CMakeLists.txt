@@ -388,7 +388,6 @@ if (NOT EP_BYPASS_TESTS)
                    tests/module_tests/item_test.cc
                    tests/module_tests/kvstore_test.cc
                    tests/module_tests/kv_bucket_test.cc
-                   tests/module_tests/memory_tracker_test.cc
                    tests/module_tests/memory_tracking_allocator_test.cc
                    tests/module_tests/mock_hooks_api.cc
                    tests/module_tests/monotonic_test.cc
@@ -454,7 +453,6 @@ if (NOT EP_BYPASS_TESTS)
 
     ADD_EXECUTABLE(ep_engine_benchmarks
                    benchmarks/access_scanner_bench.cc
-                   benchmarks/benchmark_memory_tracker.cc
                    benchmarks/checkpoint_iterator_bench.cc
                    benchmarks/defragmenter_bench.cc
                    benchmarks/engine_fixture.cc

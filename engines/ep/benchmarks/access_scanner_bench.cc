@@ -24,17 +24,11 @@
 #include <mock/mock_synchronous_ep_engine.h>
 #include <programs/engine_testapp/mock_server.h>
 
-#include "benchmark_memory_tracker.h"
-
 #include "engine_fixture.h"
 
 class AccessLogBenchEngine : public EngineFixture {
 protected:
     void SetUp(const benchmark::State& state) override {
-        memoryTracker = BenchmarkMemoryTracker::getInstance(
-                *get_mock_server_api()->alloc_hooks);
-        memoryTracker->reset();
-
         // If the access scanner is running then it will always scan
         varConfig = "alog_resident_ratio_threshold=100;";
         varConfig += "alog_max_stored_items=" +
@@ -44,14 +38,9 @@ protected:
 
     void TearDown(const benchmark::State& state) override {
         EngineFixture::TearDown(state);
-        if (state.thread_index == 0) {
-            memoryTracker->destroyInstance();
-        }
     }
 
     const size_t alog_max_stored_items = 2048;
-
-    BenchmarkMemoryTracker* memoryTracker;
 };
 
 /*
@@ -88,7 +77,6 @@ BENCHMARK_DEFINE_F(AccessLogBenchEngine, MemoryOverhead)
         auto item = make_item(vbid, keyPrefixPre + std::to_string(i), value);
         engine->getKVBucket()->set(item, cookie);
     }
-    size_t baseMemory = memoryTracker->getCurrentAlloc();
     while (state.KeepRunning()) {
         if (state.range(0) == 1) {
             executorPool->wake(task->getId());
@@ -97,8 +85,6 @@ BENCHMARK_DEFINE_F(AccessLogBenchEngine, MemoryOverhead)
                                       "Item Access Scanner on vb:0");
         }
     }
-    state.counters["MaxBytesAllocatedPerItem"] =
-            (memoryTracker->getMaxAlloc() - baseMemory) / alog_max_stored_items;
 }
 
 static void AccessScannerArguments(benchmark::internal::Benchmark* b) {

@@ -24,22 +24,6 @@
  */
 
 extern "C" {
-    static bool mock_add_new_hook(void (*)(const void* ptr, size_t size)) {
-        return false;
-    }
-
-    static bool mock_remove_new_hook(void (*)(const void* ptr, size_t size)) {
-        return false;
-    }
-
-    static bool mock_add_delete_hook(void (*)(const void* ptr)) {
-        return false;
-    }
-
-    static bool mock_remove_delete_hook(void (*)(const void* ptr)) {
-        return false;
-    }
-
     static int mock_get_extra_stats_size() {
         return 0;
     }
@@ -55,10 +39,6 @@ extern "C" {
 
 ServerAllocatorIface* getHooksApi(void) {
     static ServerAllocatorIface hooksApi;
-    hooksApi.add_new_hook = mock_add_new_hook;
-    hooksApi.remove_new_hook = mock_remove_new_hook;
-    hooksApi.add_delete_hook = mock_add_delete_hook;
-    hooksApi.remove_delete_hook = mock_remove_delete_hook;
     hooksApi.get_extra_stats_size = mock_get_extra_stats_size;
     hooksApi.get_allocator_stats = mock_get_allocator_stats;
     hooksApi.get_allocation_size = mock_get_allocation_size;

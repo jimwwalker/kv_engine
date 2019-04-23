@@ -180,8 +180,8 @@ TEST_P(DefragmenterTest, DISABLED_MappedMemory) {
     }
 
     // Sanity check - need memory tracker to be able to check our memory usage.
-    ASSERT_TRUE(MemoryTracker::trackingMemoryAllocations())
-        << "Memory tracker not enabled - cannot continue";
+    ASSERT_TRUE(cb::ArenaMalloc::canTrackDeallocations())
+            << "Memory tracker not enabled - cannot continue";
 
     // 0. Get baseline memory usage (before creating any objects).
     size_t mem_used_0 = global_stats.getPreciseTotalMemoryUsed();
@@ -331,7 +331,7 @@ TEST_P(DefragmenterTest, DISABLED_RefCountMemUsage) {
     }
 
     // Sanity check - need memory tracker to be able to check our memory usage.
-    ASSERT_TRUE(MemoryTracker::trackingMemoryAllocations())
+    ASSERT_TRUE(cb::ArenaMalloc::canTrackDeallocations())
             << "Memory tracker not enabled - cannot continue";
 
     // 1. Create a small number of documents to record the checkpoint manager

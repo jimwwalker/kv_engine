@@ -23,7 +23,6 @@
 #include <programs/engine_testapp/mock_server.h>
 #include <thread>
 
-#include "benchmark_memory_tracker.h"
 #include "ep_time.h"
 
 void EngineFixture::SetUp(const benchmark::State& state) {

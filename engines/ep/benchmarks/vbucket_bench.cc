@@ -19,7 +19,6 @@
  * Benchmarks relating to the VBucket class.
  */
 
-#include "benchmark_memory_tracker.h"
 #include "checkpoint_manager.h"
 #include "engine_fixture.h"
 #include "fakes/fake_executorpool.h"
@@ -90,31 +89,6 @@ protected:
     Store store;
 };
 
-/**
- * Benchmark fixture for VBucket tests which includes a memoryTracker to
- * allow monitoring of current/peak memory usage.
- */
-class MemTrackingVBucketBench : public VBucketBench {
-protected:
-    void SetUp(const benchmark::State& state) override {
-        if (state.thread_index == 0) {
-            memoryTracker = BenchmarkMemoryTracker::getInstance(
-                    *get_mock_server_api()->alloc_hooks);
-            memoryTracker->reset();
-        }
-        VBucketBench::SetUp(state);
-    }
-
-    void TearDown(const benchmark::State& state) override {
-        if (state.thread_index == 0) {
-            memoryTracker->destroyInstance();
-        }
-        VBucketBench::TearDown(state);
-    }
-
-    BenchmarkMemoryTracker* memoryTracker;
-};
-
 /*
  * Fixture for CheckpointManager benchmarks
  */
@@ -145,7 +119,7 @@ protected:
  * Items have a 10% chance of being a duplicate key of a previous item (to
  * model de-dupe).
  */
-BENCHMARK_DEFINE_F(MemTrackingVBucketBench, QueueDirty)
+BENCHMARK_DEFINE_F(VBucketBench, QueueDirty)
 (benchmark::State& state) {
     const auto itemCount = state.range(1);
 
@@ -166,12 +140,6 @@ BENCHMARK_DEFINE_F(MemTrackingVBucketBench, QueueDirty)
     auto* vb = engine->getKVBucket()->getVBucket(vbid).get();
     vb->ht.resize(itemCount);
 
-    // Memory size before queuing.
-    const size_t baseBytes = memoryTracker->getCurrentAlloc();
-
-    // Maximum memory during queueing.
-    size_t peakBytes = 0;
-
     const std::string value(1, 'x');
     while (state.KeepRunning()) {
         // Benchmark: Add the given number of items to checkpoint manager.
@@ -186,7 +154,6 @@ BENCHMARK_DEFINE_F(MemTrackingVBucketBench, QueueDirty)
         }
 
         state.PauseTiming();
-        peakBytes = std::max(peakBytes, memoryTracker->getMaxAlloc());
         /// Cleanup VBucket
         vb->ht.clear();
         vb->checkpointManager->clear(*vb, 0);
@@ -194,21 +161,12 @@ BENCHMARK_DEFINE_F(MemTrackingVBucketBench, QueueDirty)
     }
 
     state.SetItemsProcessed(itemsQueuedTotal);
-    // Peak memory usage while queuing, minus baseline.
-    state.counters["PeakQueueBytes"] = peakBytes - baseBytes;
-    state.counters["PeakBytesPerItem"] = (peakBytes - baseBytes) / itemCount;
 }
 
-BENCHMARK_DEFINE_F(MemTrackingVBucketBench, FlushVBucket)
+BENCHMARK_DEFINE_F(VBucketBench, FlushVBucket)
 (benchmark::State& state) {
     const auto itemCount = state.range(1);
     int itemsFlushedTotal = 0;
-
-    // Memory size before flushing.
-    size_t baseBytes = 0;
-
-    // Maximum memory during flushing.
-    size_t peakBytes = 0;
 
     // Pre-size the VBucket's hashtable so a sensible size.
     engine->getKVBucket()->getVBucket(vbid)->ht.resize(itemCount);
@@ -222,21 +180,18 @@ BENCHMARK_DEFINE_F(MemTrackingVBucketBench, FlushVBucket)
                     vbid, std::string("key") + std::to_string(i), value);
             ASSERT_EQ(ENGINE_SUCCESS, engine->getKVBucket()->set(item, cookie));
         }
-        baseBytes = memoryTracker->getCurrentAlloc();
+
         state.ResumeTiming();
 
         // Benchmark.
         size_t itemsFlushed = flushAllItems(vbid);
 
         ASSERT_EQ(itemCount, itemsFlushed);
-        peakBytes = std::max(peakBytes, memoryTracker->getMaxAlloc());
+
         itemsFlushedTotal += itemsFlushed;
     }
     state.SetItemsProcessed(itemsFlushedTotal);
     state.SetLabel(std::string("store:" + to_string(store)).c_str());
-    // Peak memory usage while flushing, minus baseline.
-    state.counters["PeakFlushBytes"] = peakBytes - baseBytes;
-    state.counters["PeakBytesPerItem"] = (peakBytes - baseBytes) / itemCount;
 }
 
 BENCHMARK_DEFINE_F(VBucketBench, CreateDeleteStoredValue)
@@ -387,7 +342,7 @@ BENCHMARK_DEFINE_F(CheckpointBench, QueueDirtyWithManyClosedUnrefCheckpoints)
 }
 
 // Run with item counts from 1..10,000,000.
-BENCHMARK_REGISTER_F(MemTrackingVBucketBench, QueueDirty)
+BENCHMARK_REGISTER_F(VBucketBench, QueueDirty)
         ->Args({1})
         ->Args({100})
         ->Args({10000})
@@ -401,8 +356,7 @@ static void FlushArguments(benchmark::internal::Benchmark* b) {
     }
 }
 
-BENCHMARK_REGISTER_F(MemTrackingVBucketBench, FlushVBucket)
-        ->Apply(FlushArguments);
+BENCHMARK_REGISTER_F(VBucketBench, FlushVBucket)->Apply(FlushArguments);
 
 BENCHMARK_REGISTER_F(CheckpointBench, QueueDirtyWithManyClosedUnrefCheckpoints)
         ->Args({1000000, 1000})

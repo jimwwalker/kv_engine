@@ -120,7 +120,7 @@ protected:
 
         // Sanity check - need memory tracker to be able to check our memory
         // usage.
-        ASSERT_TRUE(MemoryTracker::trackingMemoryAllocations())
+        ASSERT_TRUE(cb::ArenaMalloc::canTrackDeallocations())
                 << "Memory tracker not enabled - cannot continue";
 
         for (int ii = 0; ii < noOfVBs; ii++) {

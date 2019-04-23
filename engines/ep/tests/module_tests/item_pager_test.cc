@@ -88,8 +88,8 @@ protected:
 
         // Sanity check - need memory tracker to be able to check our memory
         // usage.
-        ASSERT_TRUE(MemoryTracker::trackingMemoryAllocations())
-            << "Memory tracker not enabled - cannot continue";
+        ASSERT_TRUE(cb::ArenaMalloc::canTrackDeallocations())
+                << "Memory tracker not enabled - cannot continue";
 
         store->setVBucketState(vbid, vbucket_state_active);
 
