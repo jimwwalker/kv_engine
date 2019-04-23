@@ -139,6 +139,17 @@ task_type_t GlobalTask::getTaskType(TaskId id) {
                            std::to_string(static_cast<int>(id)));
 }
 
+// Tasks are created by the engine and then passed over to the executor pool,
+// they can then be destroyed by the executorpool with the destruction not
+// accounted to the engine. Use our own delete operator to switch to the engine
+// so the delete is accounted.
+void GlobalTask::operator delete(void* ptr) {
+    auto* task = reinterpret_cast<GlobalTask*>(ptr);
+    auto* current = ObjectRegistry::onSwitchThread(task->engine, true);
+    ::operator delete(ptr);
+    ObjectRegistry::onSwitchThread(current);
+}
+
 std::array<TaskId, static_cast<int>(TaskId::TASK_COUNT)> GlobalTask::allTaskIds = {{
 #define TASK(name, type, prio) TaskId::name,
 #include "tasks.def.h"

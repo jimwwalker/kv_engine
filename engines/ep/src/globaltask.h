@@ -241,6 +241,12 @@ public:
      */
     static std::array<TaskId, static_cast<int>(TaskId::TASK_COUNT)> allTaskIds;
 
+    /**
+     * class-specific deallocation. Required to ensure task is deleted with
+     * correct engine (for the allocator tracking)
+     */
+    static void operator delete(void* ptr);
+
 protected:
     /**
      * Wake up a task, setting it's wakeTime to "now".
