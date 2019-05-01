@@ -28,6 +28,7 @@
 
 #include <memcached/engine.h>
 #include <memcached/server_callback_iface.h>
+#include <platform/cb_arena_malloc_client.h>
 
 #include <chrono>
 #include <string>
@@ -796,6 +797,10 @@ public:
      */
     void setMaxDataSize(size_t size);
 
+    cb::ArenaMallocClient& getArenaMallocClient() {
+        return arena;
+    }
+
 protected:
     friend class EpEngineValueChangeListener;
 
@@ -815,7 +820,8 @@ protected:
         getlMaxTimeout = value;
     }
 
-    EventuallyPersistentEngine(GET_SERVER_API get_server_api);
+    EventuallyPersistentEngine(GET_SERVER_API get_server_api,
+                               cb::ArenaMallocClient arena);
     friend ENGINE_ERROR_CODE create_ep_engine_instance(
             GET_SERVER_API get_server_api, EngineIface** handle);
     /**
@@ -1170,4 +1176,5 @@ protected:
     std::atomic<BucketCompressionMode> compressionMode;
     std::atomic<float> minCompressionRatio;
     std::atomic_bool allowDelWithMetaPruneUserData;
+    cb::ArenaMallocClient arena;
 };

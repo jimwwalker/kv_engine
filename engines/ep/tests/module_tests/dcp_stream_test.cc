@@ -1545,8 +1545,6 @@ MutationStatus SingleThreadedActiveStreamTest::public_processSet(
 }
 
 void SingleThreadedPassiveStreamTest::SetUp() {
-    // Bucket Quota 100MB, Replication Threshold 4%
-    config_string += "max_size=104857600;replication_throttle_threshold=4";
     STParameterizedBucketTest::SetUp();
 
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_replica);
@@ -1762,6 +1760,8 @@ TEST_P(SingleThreadedPassiveStreamTest, MB31410) {
     const std::string value(1024 * 1024, 'x');
     const uint64_t snapStart = 1;
     const uint64_t snapEnd = 100;
+    // Run with 4% replication throttle (see commit for this test)
+    engine->getEpStats().replicationThrottleThreshold = 0.04;
 
     // The consumer receives the snapshot-marker
     uint32_t opaque = 0;
