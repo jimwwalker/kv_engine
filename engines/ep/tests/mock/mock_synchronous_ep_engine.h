@@ -24,6 +24,8 @@
 #include <ep_bucket.h>
 #include <ep_engine.h>
 
+#include <platform/cb_arena_malloc_client.h>
+
 class SynchronousEPEngine;
 
 struct SynchronousEPEngineDeleter {
@@ -45,7 +47,8 @@ using SynchronousEPEngineUniquePtr =
  */
 class SynchronousEPEngine : public EventuallyPersistentEngine {
 public:
-    SynchronousEPEngine(std::string extra_config = {});
+    SynchronousEPEngine(const cb::ArenaMallocClient& client,
+                        std::string extra_config = {});
 
     void setKVBucket(std::unique_ptr<KVBucket> store);
     void setDcpConnMap(std::unique_ptr<DcpConnMap> dcpConnMap);

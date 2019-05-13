@@ -18,8 +18,8 @@
 #include <stdbool.h>
 
 #include "memcached/visibility.h"
+#include <platform/cb_arena_malloc.h>
 #include <platform/cb_malloc.h>
-
 
 /* Irrespective of how jemalloc was configured on this platform,
 * don't rename je_FOO to FOO.
@@ -146,7 +146,7 @@ size_t JemallocHooks::get_allocation_size(const void* ptr) {
      * pass a non-const pointer to a function who accepts a
      * const pointer
      */
-    return je_malloc_usable_size((void*) ptr);
+    return cb::ArenaMalloc::malloc_usable_size((void*)ptr);
 }
 
 void JemallocHooks::get_detailed_stats(char* buffer, int size) {

@@ -316,7 +316,7 @@ TEST_F(CheckpointRemoverEPTest, cursorDroppingTriggerTest) {
      * With a large max size (with no other changes) we should
      * conclude the cursor dropping is not required.
      */
-    config.setMaxSize(10240);
+    config.setMaxSize(engine->getEpStats().getPreciseTotalMemoryUsed() * 2);
 
     std::tie(shouldTriggerCursorDropping, amountOfMemoryToClear) =
             task->isCursorDroppingNeeded();
