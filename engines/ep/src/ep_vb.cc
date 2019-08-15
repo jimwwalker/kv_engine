@@ -850,3 +850,14 @@ void EPVBucket::processImplicitlyCompletedPrepare(
     // used after.
     ht.unlocked_del(v.getHBL(), v.release());
 }
+
+void EPVBucket::setAbsoluteSnapshotEnd(uint64_t seqno) {
+    if (!seqno && !lastAbsoluteSnapshotEndSeqno) {
+        return; // ignore 0 to 0
+    }
+    lastAbsoluteSnapshotEndSeqno = seqno;
+}
+
+uint64_t EPVBucket::getAbsoluteSnapshotEnd() const {
+    return lastAbsoluteSnapshotEndSeqno;
+}

@@ -413,7 +413,7 @@ VBucket::ItemsToFlush VBucket::getItemsToPersist(size_t approxLimit) {
                         std::chrono::steady_clock::now() - _begin_));
     } else {
         // We haven't got sufficient remaining capacity to read items from
-        // CheckpoitnManager, therefore we must assume that there /could/
+        // CheckpointManager, therefore we must assume that there /could/ be
         // more data to follow (leaving ckptItemsAvailable true). We also must
         // ensure the valid snapshot range is returned
         result.range = checkpointManager->getSnapshotInfo().range;

@@ -220,6 +220,10 @@ public:
             boost::optional<CollectionID> cid,
             const Collections::VB::Manifest::WriteHandle& wHandle) override;
 
+    void setAbsoluteSnapshotEnd(uint64_t seqno);
+
+    uint64_t getAbsoluteSnapshotEnd() const;
+
 protected:
     /**
      * queue a background fetch of the specified item.
@@ -319,6 +323,12 @@ private:
      * file revision we will unlink from disk.
      */
     std::atomic<uint64_t> deferredDeletionFileRevision;
+
+    /**
+     * The range.end value of the last absolutely flushed snapshot (i.e. the
+     * flusher has flushed the item with a seqno of range.end
+     */
+    Monotonic<uint64_t> lastAbsoluteSnapshotEndSeqno;
 
     friend class EPVBucketTest;
 };

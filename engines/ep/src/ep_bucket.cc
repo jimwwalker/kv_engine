@@ -353,18 +353,22 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
     bool moreAvailable = false;
     const auto flush_start = std::chrono::steady_clock::now();
 
-    auto vb = getLockedVBucket(vbid, std::try_to_lock);
-    if (!vb.owns_lock()) {
+    auto lvb = getLockedVBucket(vbid, std::try_to_lock);
+    if (!lvb.owns_lock()) {
         // Try another bucket if this one is locked to avoid blocking flusher.
         return {true, 0};
     }
+    auto* vb = static_cast<EPVBucket*>(lvb.getVB().get());
     if (vb) {
         // Obtain the set of items to flush, up to the maximum allowed for
         // a single flush.
         auto toFlush = vb->getItemsToPersist(flusherBatchSplitTrigger);
         auto& items = toFlush.items;
-        auto& range = toFlush.range;
+        // The range becomes initialised only when an item is flushed
+        boost::optional<snapshot_range_t> range;
+        OptionalSeqno completedSnapshotEndSeqno;
         moreAvailable = toFlush.moreAvailable;
+        std::cerr << "Flush running:" << toFlush.range << std::endl;
 
         KVStore* rwUnderlying = getRWUnderlying(vb->getId());
 
@@ -401,8 +405,6 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
 
             uint64_t maxSeqno = 0;
             auto minSeqno = std::numeric_limits<uint64_t>::max();
-
-            range.setStart(std::max(range.getStart(), vbstate.lastSnapStart));
 
             bool mustCheckpointVBState = false;
 
@@ -459,7 +461,7 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                     // This is an item we must persist.
                     prev = item.get();
                     ++items_flushed;
-                    flushOneDelOrSet(item, vb.getVB());
+                    flushOneDelOrSet(item, lvb.getVB());
 
                     maxSeqno = std::max(maxSeqno, (uint64_t)item->getBySeqno());
 
@@ -472,6 +474,18 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                                          item->getRevSeqno());
                     }
                     ++stats.flusher_todo;
+
+                    if (!range.is_initialized()) {
+                        range = snapshot_range_t{vb->getAbsoluteSnapshotEnd(),
+                                                 toFlush.range.getEnd()};
+                    }
+                    // Is the seqno the final item of the range we're flushing?
+                    // I.e. have we now flushed a full snapshot? Once a full
+                    // snapshot has been reached, the persisted range start can
+                    // now be
+                    if (item->getBySeqno() == toFlush.range.getEnd()) {
+                        completedSnapshotEndSeqno = toFlush.range.getEnd();
+                    }
 
                 } else {
                     // Item is the same key as the previous[1] one - don't need
@@ -502,9 +516,9 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
 
                 // only update the snapshot range if items were flushed, i.e.
                 // don't appear to be in a snapshot when you have no data for it
-                if (items_flushed) {
-                    vbstate.lastSnapStart = range.getStart();
-                    vbstate.lastSnapEnd = range.getEnd();
+                if (range) {
+                    vbstate.lastSnapStart = range->getStart();
+                    vbstate.lastSnapEnd = range->getEnd();
                 }
                 // Track the lowest seqno written in spock and record it as
                 // the HLC epoch, a seqno which we can be sure the value has a
@@ -563,9 +577,17 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
             if (vb->rejectQueue.empty()) {
                 // only update the snapshot range if items were flushed, i.e.
                 // don't appear to be in a snapshot when you have no data for it
-                if (items_flushed) {
-                    vb->setPersistedSnapshot(range.getStart(), range.getEnd());
+                if (range) {
+                    vb->setPersistedSnapshot(range->getStart(),
+                                             range->getEnd());
                 }
+                // If the flusher completed a range, update the vbucket with the
+                // seqno so it can correctly initialise the range.start on the
+                // next flush
+                if (completedSnapshotEndSeqno) {
+                    vb->setAbsoluteSnapshotEnd(completedSnapshotEndSeqno.get());
+                }
+
                 uint64_t highSeqno = rwUnderlying->getLastPersistedSeqno(vbid);
                 if (highSeqno > 0 && highSeqno != vb->getPersistenceSeqno()) {
                     vb->setPersistenceSeqno(highSeqno);

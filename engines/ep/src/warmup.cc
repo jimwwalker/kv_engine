@@ -1085,6 +1085,17 @@ void Warmup::createVBuckets(uint16_t shardId) {
         vb->setPersistenceCheckpointId(vbs.checkpointId);
         // For each vbucket, set the last persisted seqno checkpoint
         vb->setPersistenceSeqno(vbs.highSeqno);
+
+        // Set the seqno which the flusher will set the flush range.start to
+        if (vbs.highSeqno == vbs.lastSnapEnd) {
+            // Full snapshot on disk
+            static_cast<EPVBucket*>(vb.get())->setAbsoluteSnapshotEnd(
+                    vbs.lastSnapEnd);
+        } else {
+            // Partial snapshot on disk
+            static_cast<EPVBucket*>(vb.get())->setAbsoluteSnapshotEnd(
+                    vbs.lastSnapStart);
+        }
     }
 
     if (++threadtask_count == store.vbMap.getNumShards()) {
