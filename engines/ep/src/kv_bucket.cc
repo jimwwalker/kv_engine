@@ -2010,7 +2010,7 @@ void KVBucket::reset() {
             vb->ht.clear();
             vb->checkpointManager->clear(vb->getState());
             vb->resetStats();
-            vb->setPersistedSnapshot(0, 0);
+            vb->setPersistedSnapshot({0, 0});
             EP_LOG_INFO("KVBucket::reset(): Successfully flushed {}", vbid);
         }
     }

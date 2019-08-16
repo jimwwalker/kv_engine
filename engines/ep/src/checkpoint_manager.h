@@ -54,14 +54,14 @@ class CheckpointManager {
 public:
     typedef std::shared_ptr<Callback<Vbid>> FlusherCallback;
 
-    /// Return type of getItemsForCursor()
+    /// Return type of getNextItemsForCursor()
     struct ItemsForCursor {
-        ItemsForCursor(uint64_t start,
-                       uint64_t end,
-                       CheckpointType checkpointType = CheckpointType::Memory)
-            : range(start, end), checkpointType(checkpointType) {
+        ItemsForCursor() {
         }
-        snapshot_range_t range;
+        ItemsForCursor(CheckpointType checkpointType)
+            : checkpointType(checkpointType) {
+        }
+        std::vector<snapshot_range_t> ranges;
         bool moreAvailable = {false};
         CheckpointType checkpointType = CheckpointType::Memory;
     };
