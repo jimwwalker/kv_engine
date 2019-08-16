@@ -478,14 +478,23 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                     if (!range.is_initialized()) {
                         range = snapshot_range_t{vb->getAbsoluteSnapshotEnd(),
                                                  toFlush.range.getEnd()};
+                        std::cerr << "Init range:" << *range << std::endl;
+                        std::cerr << "P.range:{" << vbstate.lastSnapStart << "," << vbstate.lastSnapEnd << "}" << std::endl;
                     }
                     // Is the seqno the final item of the range we're flushing?
                     // I.e. have we now flushed a full snapshot? Once a full
                     // snapshot has been reached, the persisted range start can
                     // now be
                     if (item->getBySeqno() == toFlush.range.getEnd()) {
-                        completedSnapshotEndSeqno = toFlush.range.getEnd();
+                        completedSnapshotEndSeqno = std::max((int64_t)toFlush.range.getEnd(), completedSnapshotEndSeqno.value_or(0));
+                        range->setStart(*completedSnapshotEndSeqno);
                     }
+                    if (item->getBySeqno() == vbstate.lastSnapEnd) {
+                        completedSnapshotEndSeqno = std::max((int64_t)vbstate.lastSnapEnd, completedSnapshotEndSeqno.value_or(0));
+                        range->setStart(*completedSnapshotEndSeqno);
+                    }
+
+                    std::cerr << "flushing:" << item->getBySeqno() << std::endl;
 
                 } else {
                     // Item is the same key as the previous[1] one - don't need
@@ -578,6 +587,7 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                 // only update the snapshot range if items were flushed, i.e.
                 // don't appear to be in a snapshot when you have no data for it
                 if (range) {
+                    std::cerr << "setPersistedSnapshot:" << *range << std::endl;
                     vb->setPersistedSnapshot(range->getStart(),
                                              range->getEnd());
                 }
@@ -585,8 +595,10 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                 // seqno so it can correctly initialise the range.start on the
                 // next flush
                 if (completedSnapshotEndSeqno) {
+                    std::cerr << "setAbsoluteSnapshotEnd:" << *completedSnapshotEndSeqno << std::endl;
                     vb->setAbsoluteSnapshotEnd(completedSnapshotEndSeqno.get());
                 }
+                std::cerr << "Fin\n";
 
                 uint64_t highSeqno = rwUnderlying->getLastPersistedSeqno(vbid);
                 if (highSeqno > 0 && highSeqno != vb->getPersistenceSeqno()) {
