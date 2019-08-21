@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 /*
- *     Copyright 2016 Couchbase, Inc
+ *     Copyright 2019 Couchbase, Inc
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -15,26 +15,17 @@
  *   limitations under the License.
  */
 
-/* The "nobucket" is a bucket that just returnes "ENGINE_NO_BUCKET". This
- * bucket may be set as the "default" bucket for connections to avoid
- * having to check if a bucket is selected or not.
+/**
+ * Publicly visible symbols for default_engine.so
  */
 #pragma once
-
-#include <memcached/visibility.h>
 #include <memcached/engine.h>
+#include <memcached/visibility.h>
 
-#ifdef __cplusplus
 extern "C" {
-#endif
-
-    MEMCACHED_PUBLIC_API
-    ENGINE_ERROR_CODE create_no_bucket_instance(GET_SERVER_API get_server_api,
-                                                EngineIface** handle);
-
-    MEMCACHED_PUBLIC_API
-    void destroy_engine(void);
-
-#ifdef __cplusplus
+MEMCACHED_PUBLIC_API
+ENGINE_ERROR_CODE create_memcache_instance(GET_SERVER_API get_server_api,
+                                           EngineIface** handle);
+MEMCACHED_PUBLIC_API
+void destroy_default_engine();
 }
-#endif

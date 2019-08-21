@@ -9,8 +9,8 @@ extern "C" {
 #endif
 
     MEMCACHED_PUBLIC_API
-    ENGINE_ERROR_CODE create_instance(GET_SERVER_API get_server_api,
-                                      EngineIface** handle);
+    ENGINE_ERROR_CODE create_memcache_instance(GET_SERVER_API get_server_api,
+                                               EngineIface** handle);
 
 #ifdef __cplusplus
 }
