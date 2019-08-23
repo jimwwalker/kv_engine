@@ -51,7 +51,7 @@ class PreLinkDocumentContext;
 class RollbackResult;
 class VBucketBGFetchItem;
 struct VBQueueItemCtx;
-struct vbucket_state;
+struct set_vbucket_state;
 struct vb_bgfetch_item_ctx_t;
 using vb_bgfetch_queue_t =
         std::unordered_map<DiskDocKey, vb_bgfetch_item_ctx_t>;
@@ -420,7 +420,7 @@ public:
 
     vbucket_state_t getInitialState(void) { return initialState; }
 
-    vbucket_state getVBucketState() const;
+    set_vbucket_state getVBucketState() const;
 
     /**
      * @return the replication topology set for this VBucket
@@ -494,6 +494,7 @@ public:
         snapshot_range_t range{0, 0};
         bool moreAvailable = false;
         boost::optional<uint64_t> highCompletedSeqno = {};
+        uint64_t checkpointId;
     };
 
     /**
@@ -666,12 +667,6 @@ public:
     uint64_t getRollbackItemCount(void) {
         return rollbackItemCount.load(std::memory_order_relaxed);
     }
-
-    // Return the persistence checkpoint ID
-    uint64_t getPersistenceCheckpointId() const;
-
-    // Set the persistence checkpoint ID to the given value.
-    void setPersistenceCheckpointId(uint64_t checkpointId);
 
     // Mark the value associated with the given key as dirty
     void markDirty(const DocKey& key);
@@ -2322,8 +2317,6 @@ private:
 
     HLC hlc;
     std::string statPrefix;
-    // The persistence checkpoint ID for this vbucket.
-    std::atomic<uint64_t> persistenceCheckpointId;
     // Flag to indicate the vbucket is being created
     std::atomic<bool> bucketCreation;
     // Flag to indicate the vbucket deletion is deferred

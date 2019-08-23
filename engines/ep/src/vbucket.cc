@@ -219,7 +219,6 @@ VBucket::VBucket(Vbid i,
           std::chrono::microseconds(config.getHlcDriftAheadThresholdUs()),
           std::chrono::microseconds(config.getHlcDriftBehindThresholdUs())),
       statPrefix("vb_" + std::to_string(i.get())),
-      persistenceCheckpointId(0),
       bucketCreation(false),
       deferredDeletion(false),
       deferredDeletionCookie(nullptr),
@@ -410,6 +409,7 @@ VBucket::ItemsToFlush VBucket::getItemsToPersist(size_t approxLimit) {
                 result.items, ckptMgrLimit);
         result.range = ckptItems.range;
         result.highCompletedSeqno = ckptItems.highCompletedSeqno;
+        result.checkpointId = ckptItems.checkpointId;
         ckptItemsAvailable = ckptItems.moreAvailable;
         stats.persistenceCursorGetItemsHisto.add(
                 std::chrono::duration_cast<std::chrono::microseconds>(
@@ -420,6 +420,8 @@ VBucket::ItemsToFlush VBucket::getItemsToPersist(size_t approxLimit) {
         // more data to follow (leaving ckptItemsAvailable true). We also must
         // ensure the valid snapshot range is returned
         result.range = checkpointManager->getSnapshotInfo().range;
+
+        // checkpointId needs to be optional? If we go through this case?
     }
 
     // Check if there's any more items remaining.
@@ -560,27 +562,13 @@ void VBucket::setState_UNLOCKED(
                                         : meta.at("topology"));
 }
 
-vbucket_state VBucket::getVBucketState() const {
-     auto persisted_range = getPersistedSnapshot();
+set_vbucket_state VBucket::getVBucketState() const {
+    nlohmann::json topology;
+    if (getState() == vbucket_state_active) {
+        topology = getReplicationTopology();
+    }
 
-     nlohmann::json topology;
-     if (getState() == vbucket_state_active) {
-         topology = getReplicationTopology();
-     }
-
-     return vbucket_state{getState(),
-                          getPersistenceCheckpointId(),
-                          0,
-                          getHighSeqno(),
-                          getPurgeSeqno(),
-                          persisted_range.getStart(),
-                          persisted_range.getEnd(),
-                          getMaxCas(),
-                          hlc.getEpochSeqno(),
-                          mightContainXattrs(),
-                          failovers->toJSON(),
-                          true /*supportsNamespaces*/,
-                          topology};
+    return set_vbucket_state{failovers->toJSON(), topology, getState()};
 }
 
 nlohmann::json VBucket::getReplicationTopology() const {
@@ -998,14 +986,6 @@ bool VBucket::addPendingOp(const void* cookie) {
     ++stats.pendingOps;
     ++stats.pendingOpsTotal;
     return true;
-}
-
-uint64_t VBucket::getPersistenceCheckpointId() const {
-    return persistenceCheckpointId.load();
-}
-
-void VBucket::setPersistenceCheckpointId(uint64_t checkpointId) {
-    persistenceCheckpointId.store(checkpointId);
 }
 
 void VBucket::markDirty(const DocKey& key) {

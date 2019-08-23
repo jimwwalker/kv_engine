@@ -468,8 +468,8 @@ ActiveDurabilityMonitor::ActiveDurabilityMonitor(
         const vbucket_state& vbs,
         std::vector<queued_item>&& outstandingPrepares)
     : ActiveDurabilityMonitor(stats, vb) {
-    if (!vbs.replicationTopology.is_null()) {
-        setReplicationTopology(vbs.replicationTopology);
+    if (!vbs.svb.replicationTopology.is_null()) {
+        setReplicationTopology(vbs.svb.replicationTopology);
     }
     auto s = state.wlock();
     for (auto& prepare : outstandingPrepares) {

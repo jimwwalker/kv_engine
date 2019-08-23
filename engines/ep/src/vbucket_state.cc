@@ -18,6 +18,11 @@
 #include "vbucket_state.h"
 #include "vbucket.h"
 
+void set_vbucket_state::reset() {
+    failovers.clear();
+    replicationTopology.clear();
+}
+
 bool vbucket_state::needsToBePersisted(const vbucket_state& vbstate) {
     /*
      * The vbucket state information is to be persisted only if a change is
@@ -28,8 +33,9 @@ bool vbucket_state::needsToBePersisted(const vbucket_state& vbstate) {
      * - the high completed seqno or
      * - the high prepared seqno
      */
-    return (state != vbstate.state || failovers != vbstate.failovers ||
-            replicationTopology != vbstate.replicationTopology ||
+    return (svb.state != vbstate.svb.state ||
+            svb.failovers != vbstate.svb.failovers ||
+            svb.replicationTopology != vbstate.svb.replicationTopology ||
             highCompletedSeqno != vbstate.highCompletedSeqno ||
             highPreparedSeqno != vbstate.highPreparedSeqno);
 }
@@ -44,13 +50,12 @@ void vbucket_state::reset() {
     maxCas = 0;
     hlcCasEpochSeqno = HlcCasSeqnoUninitialised;
     mightContainXattrs = false;
-    failovers.clear();
     supportsNamespaces = true;
-    replicationTopology.clear();
     version = CurrentVersion;
     highCompletedSeqno = 0;
     highPreparedSeqno = 0;
     onDiskPrepares = 0;
+    svb.reset();
 }
 
 void to_json(nlohmann::json& json, const vbucket_state& vbs) {
@@ -61,7 +66,6 @@ void to_json(nlohmann::json& json, const vbucket_state& vbs) {
     // 64bit precision for integers, let's not rely on that for
     // all future uses.
     json = nlohmann::json{
-            {"state", VBucket::toString(vbs.state)},
             {"checkpoint_id", std::to_string(vbs.checkpointId)},
             {"max_deleted_seqno", std::to_string(vbs.maxDeletedSeqno)},
             {"high_seqno", std::to_string(vbs.highSeqno)},
@@ -77,19 +81,14 @@ void to_json(nlohmann::json& json, const vbucket_state& vbs) {
             {"high_prepared_seqno", std::to_string(vbs.highPreparedSeqno)},
             {"on_disk_prepares", std::to_string(vbs.onDiskPrepares)}};
 
-    // Insert optional fields.
-    if (!vbs.failovers.empty()) {
-        json["failover_table"] = nlohmann::json::parse(vbs.failovers);
-    }
-    if (!vbs.replicationTopology.empty()) {
-        json["replication_topology"] = vbs.replicationTopology;
-    }
+    to_json(json, vbs.svb);
 }
 
 void from_json(const nlohmann::json& j, vbucket_state& vbs) {
     // Parse required fields. Note that integers are stored as strings to avoid
     // any undesired rounding - see comment in to_json().
-    vbs.state = VBucket::fromString(j.at("state").get<std::string>().c_str());
+    vbs.svb.state =
+            VBucket::fromString(j.at("state").get<std::string>().c_str());
     vbs.checkpointId = std::stoull(j.at("checkpoint_id").get<std::string>());
     vbs.maxDeletedSeqno =
             std::stoull(j.at("max_deleted_seqno").get<std::string>());
@@ -105,12 +104,12 @@ void from_json(const nlohmann::json& j, vbucket_state& vbs) {
     // Now parse optional fields.
     auto failoverIt = j.find("failover_table");
     if (failoverIt != j.end()) {
-        vbs.failovers = failoverIt->dump();
+        vbs.svb.failovers = failoverIt->dump();
     }
 
     auto topologyIt = j.find("replication_topology");
     if (topologyIt != j.end()) {
-        vbs.replicationTopology = *topologyIt;
+        vbs.svb.replicationTopology = *topologyIt;
     }
 
     auto version = j.find("version");
@@ -138,9 +137,53 @@ void from_json(const nlohmann::json& j, vbucket_state& vbs) {
 
     // Note: We don't track on disk prepares pre-6.5
     vbs.onDiskPrepares = std::stoll(j.value("on_disk_prepares", "0"));
+
+    from_json(j, vbs.svb);
+}
+
+void to_json(nlohmann::json& json, const set_vbucket_state& vbs) {
+    // First add all required fields.
+    // Note that integers are stored as strings to avoid any undesired
+    // rounding (JSON in general only guarantees ~2^53 precision on integers).
+    // While the current JSON library (nlohmann::json) _does_ support full
+    // 64bit precision for integers, let's not rely on that for
+    // all future uses.
+    json["state"] = VBucket::toString(vbs.state);
+
+    // Insert optional fields.
+    if (!vbs.failovers.empty()) {
+        json["failover_table"] = nlohmann::json::parse(vbs.failovers);
+    }
+    if (!vbs.replicationTopology.empty()) {
+        json["replication_topology"] = vbs.replicationTopology;
+    }
+}
+
+void from_json(const nlohmann::json& j, set_vbucket_state& vbs) {
+    // Parse required fields. Note that integers are stored as strings to avoid
+    // any undesired rounding - see comment in to_json().
+    vbs.state = VBucket::fromString(j.at("state").get<std::string>().c_str());
+
+    // Now parse optional fields.
+    auto failoverIt = j.find("failover_table");
+    if (failoverIt != j.end()) {
+        vbs.failovers = failoverIt->dump();
+    }
+
+    auto topologyIt = j.find("replication_topology");
+    if (topologyIt != j.end()) {
+        vbs.replicationTopology = *topologyIt;
+    }
 }
 
 std::ostream& operator<<(std::ostream& os, const vbucket_state& vbs) {
+    nlohmann::json j;
+    to_json(j, vbs);
+    os << j;
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const set_vbucket_state& vbs) {
     nlohmann::json j;
     to_json(j, vbs);
     os << j;

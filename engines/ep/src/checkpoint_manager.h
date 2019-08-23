@@ -72,6 +72,9 @@ public:
         // HCS that should be flushed. Currently should only be set for Disk
         // Checkpoint runs.
         boost::optional<uint64_t> highCompletedSeqno = {};
+
+        /// @todo current id, pre id? closed id?
+        uint64_t checkpointId = 0;
     };
 
     /// Return type of expelUnreferencedCheckpointItems()

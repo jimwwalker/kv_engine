@@ -26,6 +26,7 @@
 #include "stats.h"
 #include "statwriter.h"
 #include "vbucket.h"
+#include "vbucket_state.h"
 
 #include <gsl.h>
 
@@ -816,6 +817,12 @@ void CheckpointManager::queueSetVBState(VBucket& vb) {
     queued_item item = createCheckpointItem(/*id*/0, vbucketId,
                                             queue_op::set_vbucket_state);
 
+    // Place the entire current vbucket state into the new item
+    auto vbstate = vb.getVBucketState();
+    nlohmann::json j = vbstate;
+    std::string jsonState = j.dump();
+    item->replaceValue(Blob::New(jsonState.data(), jsonState.size()));
+
     auto& openCkpt = getOpenCheckpoint_UNLOCKED(lh);
     const auto result = openCkpt.queueDirty(item, this);
 
@@ -897,6 +904,8 @@ CheckpointManager::ItemsForCursor CheckpointManager::getItemsForCursor(
         // May have moved into a new checkpoint - update range.end.
         result.range.setEnd((*cursor.currentCheckpoint)->getSnapshotEndSeqno());
     }
+
+    result.checkpointId = cursor.getId() > 0 ? cursor.getId() - 1 : 0;
 
     EP_LOG_DEBUG(
             "CheckpointManager::getNextItemsForCursor() "

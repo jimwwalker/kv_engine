@@ -368,7 +368,7 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
         moreAvailable = toFlush.moreAvailable;
 
         KVStore* rwUnderlying = getRWUnderlying(vb->getId());
-
+        vbucket_state vbstate;
         if (!items.empty()) {
             while (!rwUnderlying->begin(
                     std::make_unique<EPTransactionContext>(stats, *vb))) {
@@ -386,7 +386,10 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
             // in-memory vbucket_state may be ahead of what we are flushing.
             const auto* persistedVbState =
                     rwUnderlying->getVBucketState(vb->getId());
-            vbucket_state vbstate;
+
+            // if checkpointId - need an optional? could use value 0?
+
+            vbstate.checkpointId = toFlush.checkpointId;
             // The first flush we do populates the cachedVBStates of the KVStore
             // so we may not (if this is the first flush) have a state returned
             // from the KVStore.
@@ -395,11 +398,6 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                 vbstate = *persistedVbState;
             }
             // We need to set a few values from the in-memory state.
-            auto inMemoryVbState = vb->getVBucketState();
-            vbstate.replicationTopology = inMemoryVbState.replicationTopology;
-            vbstate.failovers = inMemoryVbState.failovers;
-            vbstate.state = inMemoryVbState.state;
-
             uint64_t maxSeqno = 0;
             auto minSeqno = std::numeric_limits<uint64_t>::max();
 
@@ -466,6 +464,31 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                     // no 'real' items in the checkpoint.
                     mustCheckpointVBState = true;
 
+                    // updateVBStateFromSetVBState(item, vbstate);
+                    {
+                        std::string jsonState(item->getData(),
+                                              item->getNBytes());
+                        nlohmann::json json;
+                        try {
+                            json = nlohmann::json::parse(jsonState);
+                        } catch (const nlohmann::json::exception& e) {
+                            throw std::logic_error("cannot decode json " +
+                                                   jsonState);
+                        }
+                        set_vbucket_state vbState;
+                        try {
+                            vbState = json;
+                        } catch (const nlohmann::json::exception& e) {
+                            throw std::logic_error("cannot convert json " +
+                                                   jsonState);
+                        }
+
+                        vbstate.svb.failovers = std::move(vbState.failovers);
+                        vbstate.svb.replicationTopology =
+                                std::move(vbState.replicationTopology);
+                        vbstate.svb.state = vbState.state;
+                    }
+
                     // Update queuing stats how this item has logically been
                     // processed.
                     --stats.diskQueueSize;
@@ -475,6 +498,12 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
                     // This is an item we must persist.
                     prev = item.get();
                     ++items_flushed;
+
+                    if (!vbstate.mightContainXattrs &&
+                        mcbp::datatype::is_xattr(item->getDataType())) {
+                        vbstate.mightContainXattrs = true;
+                    }
+
                     flushOneDelOrSet(item, vb.getVB());
 
                     maxSeqno = std::max(maxSeqno, (uint64_t)item->getBySeqno());
@@ -534,6 +563,92 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
 
                 // Track if the VB has xattrs present
                 vbstate.mightContainXattrs = vb->mightContainXattrs();
+
+#if 0
+                 if (persistedVbState) {
+                // Copies, we don't actually modify the value at the pointer.
+                vbstate2 = *persistedVbState;
+            }
+                vbucket_state_t state = vbucket_state_dead;
+    uint64_t checkpointId = 0; // never assigned - kill it
+    cb::uint48_t maxDeletedSeqno = 0; // calculated in flush from items :)
+    int64_t highSeqno = 0; // should be maxSeqno
+    uint64_t purgeSeqno = 0; // hmm have to read this, probably ok, really compaction should write this when updating the new file
+
+    /**
+     * Start seqno of the last snapshot persisted.
+     * First GA'd in v3.0
+     */
+    uint64_t lastSnapStart = 0; // flusher derived already
+
+    /**
+     * End seqno of the last snapshot persisted.
+     * First GA'd in v3.0
+     */
+    uint64_t lastSnapEnd = 0; // flusher derived already
+
+    /**
+     * Maximum CAS value in this vBucket.
+     * First GA'd in v4.0
+     */
+    uint64_t maxCas = 0; // should be max of items flushed
+
+    /**
+     * The seqno at which CAS started to be encoded as a hybrid logical clock.
+     * First GA'd in v5.0
+     */
+    int64_t hlcCasEpochSeqno = HlcCasSeqnoUninitialised; // flusher derived
+
+    /**
+     * True if this vBucket _might_ contain documents with eXtended Attributes.
+     * first GA'd in v5.0
+     */
+    bool mightContainXattrs = false; // need to scan Item datatype
+
+    std::string failovers = ""; // set vbucket state
+
+    /**
+     * Does this vBucket file support namespaces (leb128 prefix on keys).
+     * First GA'd in v6.5
+     */
+    bool supportsNamespaces = true; // always true for this version
+
+    /**
+     * The replication topology for the vBucket. Can be empty if not yet set,
+     * otherwise encoded as a JSON array of chains, each chain is a array of
+     * node names - e.g.
+     *
+     *     [ ["active", "replica_1"], ["active", "replica_1", "replica_2"]]
+     *
+     * First GA'd in 6.5
+     */
+    nlohmann::json replicationTopology; // set vbucket state
+
+    /**
+     * Version of vbucket_state. See comments against CurrentVersion for
+     * details.
+     */
+    int version = CurrentVersion; // always the same for the software
+
+    /**
+     * Stores the seqno of the last completed (Committed or Aborted) Prepare.
+     * Added for SyncReplication in 6.5.
+     */
+    uint64_t highCompletedSeqno = 0; // flusher dereived
+
+    /**
+     * Stores the seqno of the last prepare (Pending SyncWrite). Added for
+     * SyncReplication in 6.5.
+     */
+    uint64_t highPreparedSeqno = 0; // flusher dereived
+
+    /**
+     * Number of on disk prepares (Pending SyncWrites). Required to correct the
+     * vBucket level on disk document counts (for Full Eviction). Added for
+     * SyncReplication in 6.5.
+     */
+    uint64_t onDiskPrepares = 0; // flusher derived? updated by saveDocs
+#endif
 
                 // Do we need to trigger a persist of the state?
                 // If there are no "real" items to flush, and we encountered
@@ -647,15 +762,12 @@ std::pair<bool, size_t> EPBucket::flushVBucket(Vbid vbid) {
         if (vb->rejectQueue.empty()) {
             vb->checkpointManager->itemsPersisted();
             uint64_t seqno = vb->getPersistenceSeqno();
-            uint64_t chkid =
-                    vb->checkpointManager->getPersistenceCursorPreChkId();
             vb->notifyHighPriorityRequests(
                     engine, seqno, HighPriorityVBNotify::Seqno);
             vb->notifyHighPriorityRequests(
-                    engine, chkid, HighPriorityVBNotify::ChkPersistence);
-            if (chkid > 0 && chkid != vb->getPersistenceCheckpointId()) {
-                vb->setPersistenceCheckpointId(chkid);
-            }
+                    engine,
+                    vbstate.checkpointId,
+                    HighPriorityVBNotify::ChkPersistence);
         } else {
             return {true, items_flushed};
         }
@@ -1043,7 +1155,9 @@ void EPBucket::updateCompactionTasks(Vbid db_file_id) {
 std::pair<uint64_t, bool> EPBucket::getLastPersistedCheckpointId(Vbid vb) {
     auto vbucket = vbMap.getBucket(vb);
     if (vbucket) {
-        return {vbucket->getPersistenceCheckpointId(), true};
+        uint64_t chkid =
+                vbucket->checkpointManager->getPersistenceCursorPreChkId();
+        return {chkid > 0 ? chkid : chkid, true};
     } else {
         return {0, true};
     }

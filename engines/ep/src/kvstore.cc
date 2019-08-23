@@ -139,9 +139,9 @@ bool KVStore::updateCachedVBState(Vbid vbid, const vbucket_state& newState) {
     if (vbState != nullptr) {
         //Check if there's a need for persistence
         if (vbState->needsToBePersisted(newState)) {
-            vbState->state = newState.state;
-            vbState->failovers = newState.failovers;
-            vbState->replicationTopology = newState.replicationTopology;
+            vbState->svb.state = newState.svb.state;
+            vbState->svb.failovers = newState.svb.failovers;
+            vbState->svb.replicationTopology = newState.svb.replicationTopology;
             vbState->highCompletedSeqno = newState.highCompletedSeqno;
             vbState->highPreparedSeqno = newState.highPreparedSeqno;
             vbState->onDiskPrepares = newState.onDiskPrepares;
@@ -164,7 +164,7 @@ bool KVStore::updateCachedVBState(Vbid vbid, const vbucket_state& newState) {
         vbState->mightContainXattrs = newState.mightContainXattrs;
     } else {
         cachedVBStates[vbid.get()] = std::make_unique<vbucket_state>(newState);
-        if (cachedVBStates[vbid.get()]->state != vbucket_state_dead) {
+        if (cachedVBStates[vbid.get()]->svb.state != vbucket_state_dead) {
             cachedValidVBCount++;
         }
     }

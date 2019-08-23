@@ -967,7 +967,7 @@ TEST_P(DurabilityWarmupTest, ReplicationTopologyMissing) {
     // Remove the replicationTopology and re-persist.
     auto* kvstore = engine->getKVBucket()->getRWUnderlying(vbid);
     auto vbstate = *kvstore->getVBucketState(vbid);
-    vbstate.replicationTopology.clear();
+    vbstate.svb.replicationTopology.clear();
     kvstore->snapshotVBucket(
             vbid, vbstate, VBStatePersist::VBSTATE_PERSIST_WITH_COMMIT);
 

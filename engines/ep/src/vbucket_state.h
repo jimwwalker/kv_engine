@@ -24,6 +24,26 @@
 #include <cstdint>
 #include <string>
 
+// Data applicable to a vbucket state change
+struct set_vbucket_state {
+    void reset();
+
+    std::string failovers = "";
+
+    /**
+     * The replication topology for the vBucket. Can be empty if not yet set,
+     * otherwise encoded as a JSON array of chains, each chain is a array of
+     * node names - e.g.
+     *
+     *     [ ["active", "replica_1"], ["active", "replica_1", "replica_2"]]
+     *
+     * First GA'd in 6.5
+     */
+    nlohmann::json replicationTopology;
+
+    vbucket_state_t state = vbucket_state_dead;
+};
+
 /**
  * Describes the detailed state of a VBucket, including it's high-level 'state'
  * (active, replica, etc), and the various seqnos and other properties it has.
@@ -63,7 +83,6 @@ struct vbucket_state {
 
     void reset();
 
-    vbucket_state_t state = vbucket_state_dead;
     uint64_t checkpointId = 0;
     cb::uint48_t maxDeletedSeqno = 0;
     int64_t highSeqno = 0;
@@ -99,24 +118,11 @@ struct vbucket_state {
      */
     bool mightContainXattrs = false;
 
-    std::string failovers = "";
-
     /**
      * Does this vBucket file support namespaces (leb128 prefix on keys).
      * First GA'd in v6.5
      */
     bool supportsNamespaces = true;
-
-    /**
-     * The replication topology for the vBucket. Can be empty if not yet set,
-     * otherwise encoded as a JSON array of chains, each chain is a array of
-     * node names - e.g.
-     *
-     *     [ ["active", "replica_1"], ["active", "replica_1", "replica_2"]]
-     *
-     * First GA'd in 6.5
-     */
-    nlohmann::json replicationTopology;
 
     /**
      * Version of vbucket_state. See comments against CurrentVersion for
@@ -142,6 +148,8 @@ struct vbucket_state {
      * SyncReplication in 6.5.
      */
     uint64_t onDiskPrepares = 0;
+
+    set_vbucket_state svb;
 };
 
 /// Method to allow nlohmann::json to convert vbucket_state to JSON.
@@ -150,4 +158,12 @@ void to_json(nlohmann::json& json, const vbucket_state& vbs);
 /// Method to allow nlohmann::json to convert from JSON to vbucket_state.
 void from_json(const nlohmann::json& j, vbucket_state& vbs);
 
+/// Method to allow nlohmann::json to convert set_vbucket_state to JSON.
+void to_json(nlohmann::json& json, const set_vbucket_state& vbs);
+
+/// Method to allow nlohmann::json to convert from JSON to set_vbucket_state.
+void from_json(const nlohmann::json& j, set_vbucket_state& vbs);
+
 std::ostream& operator<<(std::ostream& os, const vbucket_state& vbs);
+
+std::ostream& operator<<(std::ostream& os, const set_vbucket_state& vbs);
