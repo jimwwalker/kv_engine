@@ -508,6 +508,52 @@ TEST_F(WarmupTest, MB_32577) {
     shutdownAndPurgeTasks(engine.get());
 }
 
+class WarmupVbState : public WarmupTest {};
+
+// Demonstrate vbstate {"checkpoint_id" : n}
+TEST_F(WarmupVbState, CheckpointId) {
+    auto active = vbid;
+    Vbid replica(vbid.get() + 1);
+
+    // create an active and replica vbucket, don't flush
+    EXPECT_EQ(ENGINE_SUCCESS,
+              store->setVBucketState(active, vbucket_state_active));
+    EXPECT_EQ(ENGINE_SUCCESS,
+              store->setVBucketState(replica, vbucket_state_replica));
+
+    auto check = [this, active, replica](uint64_t activeId,
+                                         uint64_t replicaId) {
+        auto lastPersisted = store->getLastPersistedCheckpointId(active);
+        EXPECT_EQ(activeId, lastPersisted.first);
+        EXPECT_TRUE(lastPersisted.second);
+        lastPersisted = store->getLastPersistedCheckpointId(replica);
+        EXPECT_EQ(replicaId, lastPersisted.first);
+        EXPECT_TRUE(lastPersisted.second);
+    };
+
+    SCOPED_TRACE("new vbuckets, nothing flushed");
+    check(0, 0);
+
+    // flush vb states
+    flush_vbucket_to_disk(active);
+    flush_vbucket_to_disk(replica);
+
+    SCOPED_TRACE("new vbuckets, vbstate flushed");
+    check(0, 0);
+
+    // Store an item to the vbucket
+    store_item(vbid, makeStoredDocKey("key"), "value");
+    // flush all document to disk
+    flush_vbucket_to_disk(active);
+    SCOPED_TRACE("active has 1 item");
+    check(0, 0);
+
+    resetEngineAndWarmup();
+
+    SCOPED_TRACE("post warmup 1");
+    check(0, 0);
+}
+
 // Test fixture for Durability-related Warmup tests.
 class DurabilityWarmupTest : public DurabilityKVBucketTest {
 protected:
