@@ -251,7 +251,7 @@ FUNCTION(ADD_TESTSUITE name timeout)
 
     SET(_cmdline
             ${Memcached_BINARY_DIR}/engine_testapp
-            -E $<TARGET_FILE:ep>
+            -E ep
             -T $<TARGET_FILE:${name}>)
 
     # MB-34445: To attempt to identify the cause of the intermittent timeouts in
@@ -326,7 +326,7 @@ ADD_TESTSUITE(ep_testsuite_checkpoint 120)
 ADD_TESTSUITE(ep_testsuite_xdcr 120)
 
 # ================================ PERF_TESTS ================================ #
-SET(_ep_perfsuite_cmdline $<TARGET_FILE:engine_testapp> -E $<TARGET_FILE:ep> -T $<TARGET_FILE:ep_perfsuite> -v)
+SET(_ep_perfsuite_cmdline $<TARGET_FILE:engine_testapp> -E ep -T $<TARGET_FILE:ep_perfsuite> -v)
 
 # Micro perf tests: value-only eviction mode. Note that it makes no sense to run
 # these tests in full-eviction mode as we disable persistence - see MB-19504.

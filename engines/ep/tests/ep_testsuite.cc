@@ -86,10 +86,10 @@ public:
     int extra;
 };
 
-enum class BucketType { EP, Ephemeral };
+enum class EPBucketType { EP, Ephemeral };
 
 static void check_observe_seqno(bool failover,
-                                BucketType bucket_type,
+                                EPBucketType bucket_type,
                                 uint8_t format_type,
                                 Vbid vb_id,
                                 uint64_t vb_uuid,
@@ -114,13 +114,13 @@ static void check_observe_seqno(bool failover,
     memcpy(&recv_last_persisted_seqno, last_body.data() + 11, sizeof(uint64_t));
 
     switch (bucket_type) {
-    case BucketType::EP:
+    case EPBucketType::EP:
         // Should get the "real" persisted seqno:
         checkeq(last_persisted_seqno,
                 ntohll(recv_last_persisted_seqno),
                 "Wrong persisted seqno in result (EP)");
         break;
-    case BucketType::Ephemeral:
+    case EPBucketType::Ephemeral:
         // For ephemeral, this should always be zero, as there is no
         // persistence.
         checkeq(uint64_t(0),
@@ -291,7 +291,7 @@ static int checkCurrItemsAfterShutdown(EngineIface* h,
 
     // shutdown engine force and restart
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                shutdownForce);
@@ -361,7 +361,7 @@ static enum test_result test_shutdown_snapshot_range(EngineIface* h) {
 
     /* restart the engine */
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -389,7 +389,7 @@ static enum test_result test_restart(EngineIface* h) {
     checkeq(ENGINE_SUCCESS, ret, "Failed set.");
 
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -454,7 +454,7 @@ static enum test_result test_specialKeys(EngineIface* h) {
     if (isWarmupEnabled(h)) {
         // Check that after warmup the keys are still present.
         testHarness->reload_engine(&h,
-                                   testHarness->engine_path,
+
                                    testHarness->get_current_testcase()->cfg,
                                    true,
                                    false);
@@ -506,7 +506,7 @@ static enum test_result test_binKeys(EngineIface* h) {
 
     if (isWarmupEnabled(h)) {
         testHarness->reload_engine(&h,
-                                   testHarness->engine_path,
+
                                    testHarness->get_current_testcase()->cfg,
                                    true,
                                    false);
@@ -542,7 +542,7 @@ static enum test_result test_restart_bin_val(EngineIface* h) {
             "Failed set.");
 
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -659,7 +659,7 @@ static enum test_result test_expiry_pager_settings(EngineIface* h) {
 
     // Reload engine
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -913,7 +913,7 @@ static enum test_result test_expiry_loader(EngineIface* h) {
 
     // Restart the engine to ensure the above expired item is not loaded
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -1087,7 +1087,7 @@ static enum test_result test_expiration_on_warmup(EngineIface* h) {
 
     // Restart the engine to ensure the above item is expired
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -1195,7 +1195,7 @@ static enum test_result test_bug3454(EngineIface* h) {
 
     // Restart the engine to ensure the above unexpired new item is loaded
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -1278,7 +1278,7 @@ static enum test_result test_bug3522(EngineIface* h) {
 
     // Restart the engine.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -1844,7 +1844,7 @@ static enum test_result vbucket_destroy_restart(EngineIface* h,
 
     // Reload to get a flush forced.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -1870,7 +1870,7 @@ static enum test_result vbucket_destroy_restart(EngineIface* h,
           "vbucket 1 was not missing after deleting it.");
 
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -2295,7 +2295,7 @@ static enum test_result test_vb_file_stats_after_warmup(EngineIface* h) {
 
     // Restart the engine.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -2591,8 +2591,7 @@ static enum test_result test_warmup_conf(EngineIface* h) {
     // Restart the server.
     std::string config(testHarness->get_current_testcase()->cfg);
     config = config + "warmup_min_memory_threshold=0";
-    testHarness->reload_engine(
-            &h, testHarness->engine_path, config.c_str(), true, false);
+    testHarness->reload_engine(&h, config.c_str(), true, false);
 
     wait_for_warmup_complete(h);
 
@@ -3167,8 +3166,7 @@ static enum test_result test_access_scanner_settings(EngineIface* h) {
     std::string newconfig =
             std::string(testHarness->get_current_testcase()->cfg) + alog_path;
 
-    testHarness->reload_engine(
-            &h, testHarness->engine_path, newconfig.c_str(), true, false);
+    testHarness->reload_engine(&h, newconfig.c_str(), true, false);
 
     wait_for_warmup_complete(h);
 
@@ -3264,8 +3262,7 @@ static enum test_result test_access_scanner(EngineIface* h) {
             std::string(testHarness->get_current_testcase()->cfg) + alog_path +
             ";" + alog_task_time;
 
-    testHarness->reload_engine(
-            &h, testHarness->engine_path, newconfig.c_str(), true, false);
+    testHarness->reload_engine(&h, newconfig.c_str(), true, false);
 
     wait_for_warmup_complete(h);
 
@@ -3419,7 +3416,7 @@ static enum test_result test_warmup_stats(EngineIface* h) {
 
     // Restart the server.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -3495,7 +3492,7 @@ static enum test_result test_warmup_with_threshold(EngineIface* h) {
 
     // Restart the server.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -3577,7 +3574,7 @@ static enum test_result test_warmup_accesslog(EngineIface *h, EngineIface *h1) {
 
     // Restart the server.
     testHarness->reload_engine(&h, &h1,
-                              testHarness->engine_path,
+
                               testHarness->get_current_testcase()->cfg,
                               true, false);
 
@@ -3618,8 +3615,7 @@ static enum test_result test_warmup_oom(EngineIface* h) {
     std::string config(testHarness->get_current_testcase()->cfg);
     config = config + "max_size=2097152;item_eviction_policy=value_only";
 
-    testHarness->reload_engine(
-            &h, testHarness->engine_path, config.c_str(), true, false);
+    testHarness->reload_engine(&h, config.c_str(), true, false);
 
     wait_for_warmup_complete(h);
 
@@ -3652,7 +3648,7 @@ static enum test_result test_cbd_225(EngineIface* h) {
     // reload the engine
     testHarness->time_travel(10);
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -4149,7 +4145,7 @@ static enum test_result test_duplicate_items_disk(EngineIface* h) {
     wait_for_flusher_to_settle(h);
 
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -4378,7 +4374,7 @@ static enum test_result test_kill9_bucket(EngineIface* h) {
 
     // Last parameter indicates the force shutdown for the engine.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                true);
@@ -4495,7 +4491,7 @@ static enum test_result test_observe_seqno_basic_tests(EngineIface* h) {
             "Expected success");
 
     const auto bucket_type =
-            isPersistentBucket(h) ? BucketType::EP : BucketType::Ephemeral;
+            isPersistentBucket(h) ? EPBucketType::EP : EPBucketType::Ephemeral;
     check_observe_seqno(
             false, bucket_type, 0, Vbid(1), vb_uuid, high_seqno, high_seqno);
 
@@ -4633,7 +4629,7 @@ static enum test_result test_observe_seqno_failover(EngineIface* h) {
 
     // restart
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                true);
@@ -4647,7 +4643,7 @@ static enum test_result test_observe_seqno_failover(EngineIface* h) {
             "Expected success");
 
     const auto bucket_type =
-            isPersistentBucket(h) ? BucketType::EP : BucketType::Ephemeral;
+            isPersistentBucket(h) ? EPBucketType::EP : EPBucketType::Ephemeral;
     check_observe_seqno(true,
                         bucket_type,
                         1,
@@ -5789,7 +5785,7 @@ static enum test_result test_multiple_set_delete_with_metas_full_eviction(
     if (isWarmupEnabled(h)) {
         // Restart, and check data is warmed up correctly.
         testHarness->reload_engine(&h,
-                                   testHarness->engine_path,
+
                                    testHarness->get_current_testcase()->cfg,
                                    true,
                                    true);
@@ -6227,7 +6223,7 @@ static enum test_result test_failover_log_behavior(EngineIface* h) {
 
     // restart
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                true);
@@ -6253,7 +6249,7 @@ static enum test_result test_failover_log_behavior(EngineIface* h) {
 
     // restart
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                true);
@@ -6422,7 +6418,7 @@ static enum test_result test_mb19635_upgrade_from_25x(EngineIface* h) {
 
     // Now shutdown engine force and restart to warmup from the 2.5.x data.
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -6499,7 +6495,7 @@ static enum test_result test_MB34173_warmup(EngineIface* h) {
 
     // Warmup
     testHarness->reload_engine(&h,
-                               testHarness->engine_path,
+
                                testHarness->get_current_testcase()->cfg,
                                true,
                                false);
@@ -7876,7 +7872,7 @@ static enum test_result test_vbucket_compact_no_purge(EngineIface* h) {
     if (isWarmupEnabled(h)) {
         /* Reload the engine */
         testHarness->reload_engine(&h,
-                                   testHarness->engine_path,
+
                                    testHarness->get_current_testcase()->cfg,
                                    true,
                                    false);

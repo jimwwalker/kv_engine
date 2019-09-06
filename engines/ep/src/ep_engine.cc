@@ -1733,6 +1733,7 @@ void destroy_ep_engine() {
     // and must be destroyed before unloading the shared object.
     MemoryTracker::destroyInstance();
     ObjectRegistry::reset();
+    globalBucketLogger.reset();
 }
 
 bool EventuallyPersistentEngine::get_item_info(
