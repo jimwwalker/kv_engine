@@ -305,6 +305,11 @@ add_sanitizers(ep_objs)
 ADD_LIBRARY(ep SHARED $<TARGET_OBJECTS:ep_objs>)
 
 SET_TARGET_PROPERTIES(ep PROPERTIES PREFIX "")
+
+# Enable the more efficient ThreadLocalStorage model
+SET_TARGET_PROPERTIES(ep
+                      PROPERTIES COMPILE_FLAGS -ftls-model=initial-exec)
+
 TARGET_LINK_LIBRARIES(ep JSON_checker ${EP_STORAGE_LIBS}
                       engine_utilities ep-engine_collections dirutils cbcompress
                       hdr_histogram_static mcbp mcd_util platform phosphor
