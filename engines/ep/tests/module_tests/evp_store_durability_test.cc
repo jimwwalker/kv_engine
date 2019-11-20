@@ -343,6 +343,35 @@ protected:
     };
 };
 
+class PersistedMaxVisibleTest : public DurabilityEPBucketTest {
+public:
+    void SetUp() override {
+        DurabilityEPBucketTest::SetUp();
+        // The maxVisibleSeqno should only advance on mutations, deletions or
+        // commits, not prepares or aborts.
+        setVBucketToActiveWithValidTopology();
+
+        vb = store->getVBucket(vbid);
+        ASSERT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
+
+        KVStore* rwUnderlying = store->getRWUnderlying(vbid);
+        const auto* persistedVbState = rwUnderlying->getVBucketState(vbid);
+
+        maxVisibleSeqno = &persistedVbState->maxVisibleSeqno;
+        // no commits or mutations have occurred
+        EXPECT_EQ(0, *maxVisibleSeqno);
+    }
+
+    void TearDown() override {
+        vb.reset();
+        DurabilityEPBucketTest::TearDown();
+    };
+
+    const uint64_t* maxVisibleSeqno = nullptr;
+    const StoredDocKey key = makeStoredDocKey("key");
+    VBucketPtr vb;
+};
+
 void DurabilityEPBucketTest::testPersistPrepare(DocumentState docState) {
     setVBucketStateAndRunPersistTask(
             vbid,
@@ -3254,6 +3283,227 @@ TEST_P(DurabilityEPBucketTest, ActivePersistedDurabilitySeqnosAdvanceOnSyncWrite
     EXPECT_EQ(1, hps);
 }
 
+TEST_P(PersistedMaxVisibleTest, Mutation) {
+    using namespace cb::durability;
+    // mutation
+    ASSERT_EQ(ENGINE_SUCCESS,
+              store->set(*makeCommittedItem(key, "value"), cookie));
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // should move on mutation
+    EXPECT_EQ(1, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, Deletion) {
+    using namespace cb::durability;
+
+    // mutation
+    ASSERT_EQ(ENGINE_SUCCESS,
+              store->set(*makeCommittedItem(key, "value"), cookie));
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // should move on mutation
+    EXPECT_EQ(1, *maxVisibleSeqno);
+
+    // deletion
+    uint64_t cas = 0;
+    mutation_descr_t delInfo;
+
+    ASSERT_EQ(ENGINE_SUCCESS,
+              store->deleteItem(key, cas, vbid, cookie, {}, nullptr, delInfo));
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // should move on deletion
+    EXPECT_EQ(2, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, Expiry) {
+    using namespace cb::durability;
+    // mutation
+    auto mutation = makeCommittedItem(key, "value");
+
+    mutation->setExpTime(1);
+    ASSERT_EQ(ENGINE_SUCCESS, store->set(*mutation, cookie));
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    TimeTraveller susan{2};
+
+    // perform get to confirm expired and trigger writing a deletion
+    auto gv = store->get(key, vbid, cookie, {});
+    EXPECT_EQ(ENGINE_KEY_ENOENT, gv.getStatus());
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // should move on expiry
+    EXPECT_EQ(2, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, PrepareCommit) {
+    using namespace cb::durability;
+
+    // test with prepare & commit
+    ASSERT_EQ(
+            ENGINE_SYNC_WRITE_PENDING,
+            store->set(*makePendingItem(
+                               key, "value", {Level::Majority, Timeout(10000)}),
+                       cookie));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // prepare should not move maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+
+    ASSERT_EQ(1, vb->getDurabilityMonitor().getNumTracked());
+
+    // ACK, locally and remotely
+    EXPECT_EQ(ENGINE_SUCCESS,
+              vb->seqnoAcknowledged(
+                      folly::SharedMutex::ReadHolder(vb->getStateLock()),
+                      "replica",
+                      1 /*preparedSeqno*/));
+    vb->notifyActiveDMOfLocalSyncWrite();
+    vb->processResolvedSyncWrites();
+
+    ASSERT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // commit should move maxVisibleSeqno
+    EXPECT_EQ(2, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, PrepareAbort) {
+    using namespace cb::durability;
+
+    // test with prepare & abort
+    ASSERT_EQ(
+            ENGINE_SYNC_WRITE_PENDING,
+            store->set(*makePendingItem(
+                               key, "value", {Level::Majority, Timeout(10000)}),
+                       cookie));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // prepare should not move maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+
+    ASSERT_EQ(1, vb->getDurabilityMonitor().getNumTracked());
+
+    // time out to abort
+    vb->processDurabilityTimeout(std::chrono::steady_clock::now() +
+                                 std::chrono::milliseconds(10001));
+    vb->processResolvedSyncWrites();
+
+    ASSERT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // abort should not maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, PrepareDeleteCommit) {
+    using namespace cb::durability;
+
+    // test with prepare & commit
+    auto pendingItem =
+            makePendingItem(key, "value", {Level::Majority, Timeout(10000)});
+    pendingItem->setDeleted(DeleteSource::Explicit);
+    ASSERT_EQ(ENGINE_SYNC_WRITE_PENDING, store->set(*pendingItem, cookie));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // prepare should not move maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+
+    ASSERT_EQ(1, vb->getDurabilityMonitor().getNumTracked());
+
+    // ACK, locally and remotely
+    EXPECT_EQ(ENGINE_SUCCESS,
+              vb->seqnoAcknowledged(
+                      folly::SharedMutex::ReadHolder(vb->getStateLock()),
+                      "replica",
+                      1 /*preparedSeqno*/));
+    vb->notifyActiveDMOfLocalSyncWrite();
+    vb->processResolvedSyncWrites();
+
+    ASSERT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // commit should move maxVisibleSeqno
+    EXPECT_EQ(2, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, PrepareDeleteAbort) {
+    using namespace cb::durability;
+
+    // test with prepare & abort
+    auto pendingItem =
+            makePendingItem(key, "value", {Level::Majority, Timeout(10000)});
+    pendingItem->setDeleted(DeleteSource::Explicit);
+    ASSERT_EQ(ENGINE_SYNC_WRITE_PENDING, store->set(*pendingItem, cookie));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // prepare should not move maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+
+    ASSERT_EQ(1, vb->getDurabilityMonitor().getNumTracked());
+
+    // time out to abort
+    vb->processDurabilityTimeout(std::chrono::steady_clock::now() +
+                                 std::chrono::milliseconds(10001));
+    vb->processResolvedSyncWrites();
+
+    ASSERT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // abort should not maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+}
+
+TEST_P(PersistedMaxVisibleTest, PrepareCommitExpire) {
+    using namespace cb::durability;
+
+    // test with prepare & commit and expire
+    auto prepare =
+            makePendingItem(key, "value", {Level::Majority, Timeout(10000)});
+
+    prepare->setExpTime(1);
+
+    ASSERT_EQ(ENGINE_SYNC_WRITE_PENDING, store->set(*prepare, cookie));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // prepare should not move maxVisibleSeqno
+    EXPECT_EQ(0, *maxVisibleSeqno);
+
+    ASSERT_EQ(1, vb->getDurabilityMonitor().getNumTracked());
+
+    // ACK, locally and remotely
+    EXPECT_EQ(ENGINE_SUCCESS,
+              vb->seqnoAcknowledged(
+                      folly::SharedMutex::ReadHolder(vb->getStateLock()),
+                      "replica",
+                      1 /*preparedSeqno*/));
+    vb->notifyActiveDMOfLocalSyncWrite();
+    vb->processResolvedSyncWrites();
+
+    ASSERT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // commit should move maxVisibleSeqno
+    EXPECT_EQ(2, *maxVisibleSeqno);
+
+    TimeTraveller barbara{2};
+
+    // perform get to confirm expired and trigger writing a deletion
+    auto gv = store->get(key, vbid, cookie, {});
+    EXPECT_EQ(ENGINE_KEY_ENOENT, gv.getStatus());
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // should move on expiry
+    EXPECT_EQ(3, *maxVisibleSeqno);
+}
+
 // Test cases which run against couchstore
 INSTANTIATE_TEST_CASE_P(AllBackends,
                         DurabilityCouchstoreBucketTest,
@@ -3278,3 +3528,10 @@ INSTANTIATE_TEST_CASE_P(AllBackends,
                         DurabilityBucketTest,
                         STParameterizedBucketTest::allConfigValues(),
                         STParameterizedBucketTest::PrintToStringParamName);
+
+// maxVisibleSeqno tests run against all persistent storage backends.
+INSTANTIATE_TEST_CASE_P(
+        AllBackends,
+        PersistedMaxVisibleTest,
+        STParameterizedBucketTest::persistentAllBackendsConfigValues(),
+        STParameterizedBucketTest::PrintToStringParamName);
