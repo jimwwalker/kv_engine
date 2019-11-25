@@ -271,6 +271,8 @@ public:
          * streams a disk-snapshot from memory.
          */
         boost::optional<uint64_t> highCompletedSeqno;
+
+        uint64_t maxVisibleSeqno{0};
     };
 
     /**
@@ -429,10 +431,12 @@ private:
      * @param checkpointType The type of checkpoint (Disk/Memory)
      * @param snapshot The items to be streamed
      * @param highCompletedSeqno (optional) Required for CheckpointType::Disk
+     * @param maxVisibleSeqno the maximum visible seq (not prepare/abort)
      */
     void snapshot(CheckpointType checkpointType,
                   std::deque<std::unique_ptr<DcpResponse>>& snapshot,
-                  boost::optional<uint64_t> highCompletedSeqno);
+                  boost::optional<uint64_t> highCompletedSeqno,
+                  uint64_t maxVisibleSeqno);
 
     void endStream(end_stream_status_t reason);
 

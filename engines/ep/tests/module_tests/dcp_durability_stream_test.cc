@@ -138,6 +138,11 @@ void DurabilityActiveStreamTest::testSendDcpPrepare() {
     auto resp = stream->public_nextQueuedItem();
     ASSERT_TRUE(resp);
     EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    // Only a prepare exists, so maxVisible remains 0
+    EXPECT_EQ(
+            0,
+            dynamic_cast<SnapshotMarker&>(*resp).getMaxVisibleSeqno().value_or(
+                    ~0));
 
     // Simulate the Replica ack'ing the SnapshotMarker's bytes
     auto bytesOutstanding = producer->getBytesOutstanding();
@@ -273,8 +278,10 @@ void DurabilityActiveStreamTest::testSendCompleteSyncWrite(Resolution res) {
 
     // Fetch items via DCP stream.
     auto outstandingItemsResult = stream->public_getOutstandingItems(*vb);
+    uint64_t expectedVisibleSeqno = 0;
     switch (res) {
     case Resolution::Commit:
+        expectedVisibleSeqno = 2;
         ASSERT_EQ(1, outstandingItemsResult.items.size())
                 << "Expected 1 item (Commit)";
         EXPECT_EQ(queue_op::commit_sync_write,
@@ -304,6 +311,10 @@ void DurabilityActiveStreamTest::testSendCompleteSyncWrite(Resolution res) {
     auto resp = stream->public_nextQueuedItem();
     ASSERT_TRUE(resp);
     EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_EQ(expectedVisibleSeqno, marker.getMaxVisibleSeqno().value_or(~0));
+    EXPECT_FALSE(marker.getHighCompletedSeqno().is_initialized());
+    EXPECT_EQ(2, marker.getEndSeqno());
 
     // Simulate the Replica ack'ing the SnapshotMarker's bytes
     auto bytesOutstanding = producer->getBytesOutstanding();
@@ -413,8 +424,16 @@ TEST_P(DurabilityActiveStreamTest, BackfillDurabilityLevel) {
     const auto& readyQ = stream->public_readyQ();
     EXPECT_EQ(2, readyQ.size());
 
-    // First item is a snapshot marker so just skip it
     auto resp = stream->public_popFromReadyQ();
+    EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_TRUE(marker.getFlags() & MARKER_FLAG_DISK);
+    // @todo wire through for disk
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
+    EXPECT_FALSE(marker.getHighCompletedSeqno().is_initialized());
+    EXPECT_EQ(0, marker.getStartSeqno());
+    EXPECT_EQ(1, marker.getEndSeqno());
+
     resp = stream->public_popFromReadyQ();
     ASSERT_TRUE(resp);
     EXPECT_EQ(DcpResponse::Event::Prepare, resp->getEvent());
@@ -498,6 +517,15 @@ TEST_P(DurabilityActiveStreamTest, AbortWithBackfillPrepare) {
     // First item is a snapshot marker so just skip it
     auto resp = stream->public_popFromReadyQ();
     EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_TRUE(marker.getFlags() & MARKER_FLAG_DISK);
+    // @todo wire through for disk
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
+    if (persistent()) {
+        EXPECT_EQ(1, marker.getHighCompletedSeqno().value_or(~0));
+    }
+    EXPECT_EQ(0, marker.getStartSeqno());
+    EXPECT_EQ(2, marker.getEndSeqno());
 
     // We don't receive the prepare, just the abort as it de-dupes the
     // prepare.
@@ -546,8 +574,16 @@ TEST_P(DurabilityActiveStreamTest, BackfillAbort) {
     const auto& readyQ = stream->public_readyQ();
     EXPECT_EQ(2, readyQ.size());
 
-    // First item is a snapshot marker so just skip it
     auto resp = stream->public_popFromReadyQ();
+    EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_TRUE(marker.getFlags() & MARKER_FLAG_DISK);
+    // @todo wire through for disk
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
+    EXPECT_FALSE(marker.getHighCompletedSeqno().is_initialized());
+    EXPECT_EQ(0, marker.getStartSeqno());
+    EXPECT_EQ(2, marker.getEndSeqno());
+
     resp = stream->public_popFromReadyQ();
     ASSERT_TRUE(resp);
     EXPECT_EQ(DcpResponse::Event::Abort, resp->getEvent());
@@ -732,6 +768,17 @@ TEST_P(DurabilityActiveStreamTest, SendSetInsteadOfCommitForReconnectWindow) {
     auto resp = stream->public_popFromReadyQ();
     ASSERT_TRUE(resp);
     EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_TRUE(marker.getFlags() & MARKER_FLAG_DISK);
+    // @todo wire through for disk the maxVisibleSeqno
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
+    if (persistent()) {
+        EXPECT_EQ(3, marker.getHighCompletedSeqno().value_or(~0));
+    } else {
+        EXPECT_EQ(1, marker.getStartSeqno());
+    }
+    EXPECT_EQ(1, marker.getStartSeqno());
+    EXPECT_EQ(5, marker.getEndSeqno());
 
     // Followed by a mutation instead of a commit
     resp = stream->public_popFromReadyQ();
@@ -780,7 +827,18 @@ TEST_P(DurabilityActiveStreamTest, SendSetInsteadOfCommitForNewVB) {
     ASSERT_EQ(3, stream->public_readyQSize());
     auto resp = stream->public_popFromReadyQ();
     ASSERT_TRUE(resp);
-    EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_TRUE(marker.getFlags() & MARKER_FLAG_DISK);
+    // @todo wire through for disk the maxVisibleSeqno
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
+    if (persistent()) {
+        EXPECT_EQ(3, marker.getHighCompletedSeqno().value_or(~0));
+
+    } else {
+        EXPECT_FALSE(marker.getHighCompletedSeqno().is_initialized());
+    }
+    EXPECT_EQ(0, marker.getStartSeqno());
+    EXPECT_EQ(5, marker.getEndSeqno());
 
     // Followed by a mutation instead of a commit
     resp = stream->public_popFromReadyQ();
@@ -883,7 +941,16 @@ TEST_P(DurabilityActiveStreamTest,
     bfm.backfill();
     bfm.backfill();
     EXPECT_EQ(3, stream->public_readyQSize());
-    stream->consumeBackfillItems(3);
+
+    auto resp = stream->public_nextQueuedItem();
+    ASSERT_TRUE(resp);
+    auto marker = dynamic_cast<SnapshotMarker&>(*resp);
+    // @todo: not yet set in backfill
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
+    EXPECT_EQ(3, marker.getHighCompletedSeqno().value_or(~0));
+    EXPECT_EQ(4, marker.getEndSeqno());
+
+    stream->consumeBackfillItems(2);
 
     EXPECT_EQ(ENGINE_SUCCESS, simulateStreamSeqnoAck(replica, 1));
 
@@ -940,6 +1007,7 @@ TEST_P(DurabilityActiveStreamTest, DiskSnapshotSendsHCSWithSyncRepSupport) {
     ASSERT_TRUE(marker.getFlags() & MARKER_FLAG_DISK);
     ASSERT_TRUE(marker.getHighCompletedSeqno());
     EXPECT_EQ(1, *marker.getHighCompletedSeqno());
+    EXPECT_FALSE(marker.getMaxVisibleSeqno().is_initialized());
 
     producer->cancelCheckpointCreatorTask();
 }

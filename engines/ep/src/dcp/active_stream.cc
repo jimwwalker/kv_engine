@@ -923,7 +923,7 @@ ActiveStream::OutstandingItemsResult ActiveStream::getOutstandingItems(
 
     result.checkpointType = itemsForCursor.checkpointType;
     result.highCompletedSeqno = itemsForCursor.highCompletedSeqno;
-
+    result.maxVisibleSeqno = itemsForCursor.maxVisibleSeqno;
     if (vb.checkpointManager->hasClosedCheckpointWhichCanBeRemoved()) {
         engine->getKVBucket()->wakeUpCheckpointRemover();
     }
@@ -1101,6 +1101,7 @@ void ActiveStream::processItems(OutstandingItemsResult& outstandingItemsResult,
         // SnapshotMarker), we can use nextSnapshotIsCheckpoint to snapshot
         // it correctly.
         std::deque<std::unique_ptr<DcpResponse>> mutations;
+        uint64_t maxVisibleSeqno = outstandingItemsResult.maxVisibleSeqno;
         for (auto& qi : outstandingItemsResult.items) {
             if (shouldProcessItem(*qi)) {
                 curChkSeqno = qi->getBySeqno();
@@ -1108,6 +1109,9 @@ void ActiveStream::processItems(OutstandingItemsResult& outstandingItemsResult,
                 // Check if the item is allowed on the stream, note the filter
                 // updates itself for collection deletion events
                 if (filter.checkAndUpdate(*qi)) {
+                    if (qi->isVisible()) {
+                        maxVisibleSeqno = qi->getBySeqno();
+                    }
                     mutations.push_back(makeResponseFromItem(
                             qi, SendCommitSyncWriteAs::Commit));
                 }
@@ -1119,7 +1123,8 @@ void ActiveStream::processItems(OutstandingItemsResult& outstandingItemsResult,
                 if (!mutations.empty()) {
                     snapshot(outstandingItemsResult.checkpointType,
                              mutations,
-                             outstandingItemsResult.highCompletedSeqno);
+                             outstandingItemsResult.highCompletedSeqno,
+                             maxVisibleSeqno);
                     /* clear out all the mutations since they are already put
                        onto the readyQ */
                     mutations.clear();
@@ -1132,7 +1137,8 @@ void ActiveStream::processItems(OutstandingItemsResult& outstandingItemsResult,
         if (!mutations.empty()) {
             snapshot(outstandingItemsResult.checkpointType,
                      mutations,
-                     outstandingItemsResult.highCompletedSeqno);
+                     outstandingItemsResult.highCompletedSeqno,
+                     maxVisibleSeqno);
         }
     }
 
@@ -1166,7 +1172,8 @@ bool ActiveStream::shouldProcessItem(const Item& item) {
 
 void ActiveStream::snapshot(CheckpointType checkpointType,
                             std::deque<std::unique_ptr<DcpResponse>>& items,
-                            boost::optional<uint64_t> highCompletedSeqno) {
+                            boost::optional<uint64_t> highCompletedSeqno,
+                            uint64_t maxVisibleSeqno) {
     if (items.empty()) {
         return;
     }
@@ -1232,7 +1239,8 @@ void ActiveStream::snapshot(CheckpointType checkpointType,
                 snapEnd,
                 flags,
                 hcsToSend,
-                boost::none /*maxVisibleSeqno*/,
+                boost::optional<uint64_t>{supportSyncReplication(),
+                                          maxVisibleSeqno},
                 sid));
         lastSentSnapEndSeqno.store(snapEnd, std::memory_order_relaxed);
 
