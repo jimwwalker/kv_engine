@@ -1664,6 +1664,20 @@ public:
      */
     void setUpAllowedDuplicatePrepareThreshold();
 
+    /**
+     * Return the correct high-seqno depending on if the caller wants to see
+     * seqnos of prepare/abort etc... or just plain mutation/deletion
+     * @return the high-seqno for the caller
+     */
+    uint64_t getHighSeqno(bool supportsSyncWrites) const;
+
+    /**
+     * Return the correct end-seqno depending on if the caller wants to see
+     * seqnos of prepare/abort etc... or just plain mutation/deletion
+     * @return the snapshot end seqno
+     */
+    uint64_t getCurrentSnapshotEnd(bool supportsSyncWrites) const;
+
     std::queue<queued_item> rejectQueue;
     std::unique_ptr<FailoverTable> failovers;
 

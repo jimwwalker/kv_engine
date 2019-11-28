@@ -3970,3 +3970,16 @@ void VBucket::addSyncWriteForRollback(const Item& item) {
 bool VBucket::isReceivingDiskSnapshot() const {
     return checkpointManager->isOpenCheckpointDisk();
 }
+
+uint64_t VBucket::getHighSeqno(bool supportsSyncWrites) const {
+    if (supportsSyncWrites) {
+        return getHighSeqno();
+    } else {
+        return checkpointManager->getMaxVisibleSeqno();
+    }
+}
+
+uint64_t VBucket::getCurrentSnapshotEnd(bool supportsSyncWrites) const {
+    return checkpointManager->getSnapshotInfo(supportsSyncWrites)
+            .range.getEnd();
+}

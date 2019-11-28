@@ -820,9 +820,14 @@ void DurabilityWarmupTest::testPendingSyncWrite(
     // Store the given pending SyncWrites/Deletes (without committing) and then
     // restart
 
+    // Move seqno away from 0 to validate getHighSeqno(sync_rep:on/off)
+    store_item(vbid, makeStoredDocKey("testPendingSyncWrite"), "value");
+    flush_vbucket_to_disk(vbid, 1);
+
     auto vb = engine->getVBucket(vbid);
     auto numTracked = vb->getDurabilityMonitor().getNumTracked();
 
+    uint64_t expectedSeqno = 1;
     for (const auto& k : keys) {
         // Previous runs could have left the VB into a non-active state - must
         // be active to perform set().
@@ -836,6 +841,7 @@ void DurabilityWarmupTest::testPendingSyncWrite(
             item->setDeleted(DeleteSource::Explicit);
         }
         ASSERT_EQ(ENGINE_SYNC_WRITE_PENDING, store->set(*item, cookie));
+        ++expectedSeqno;
         flush_vbucket_to_disk(vbid);
 
         // Set the state that we want to test
@@ -843,10 +849,16 @@ void DurabilityWarmupTest::testPendingSyncWrite(
             setVBucketStateAndRunPersistTask(vbid, vbState);
         }
 
+        EXPECT_EQ(expectedSeqno, vb->getHighSeqno(true));
+        EXPECT_EQ(1, vb->getHighSeqno(false));
+
         // About to destroy engine; reset vb shared_ptr.
         vb.reset();
         resetEngineAndWarmup();
         vb = engine->getVBucket(vbid);
+
+        EXPECT_EQ(expectedSeqno, vb->getHighSeqno(true));
+        EXPECT_EQ(1, vb->getHighSeqno(false));
 
         // Check that attempts to read this key via frontend are blocked.
         auto gv = store->get(key, vbid, cookie, {});
@@ -865,7 +877,7 @@ void DurabilityWarmupTest::testPendingSyncWrite(
 
         EXPECT_EQ(numTracked,
                   store->getEPEngine().getEpStats().warmedUpPrepares);
-        EXPECT_EQ(numTracked,
+        EXPECT_EQ(1 + numTracked,
                   store->getEPEngine()
                           .getEpStats()
                           .warmupItemsVisitedWhilstLoadingPrepares);

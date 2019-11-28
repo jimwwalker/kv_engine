@@ -6383,6 +6383,9 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::getAllVBucketSequenceNumbers(
         reqCollection = CollectionID::Default;
     }
 
+    bool supportsSyncWrites = getConnHandler(cookie) &&
+                              getConnHandler(cookie)->isSyncWritesEnabled();
+
     std::vector<uint8_t> payload;
     auto vbuckets = kvBucket->getVBuckets().getBuckets();
 
@@ -6432,11 +6435,10 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::getAllVBucketSequenceNumbers(
                 }
             } else {
                 if (vb->getState() == vbucket_state_active) {
-                    highSeqno = htonll(vb->getHighSeqno());
+                    highSeqno = htonll(vb->getHighSeqno(supportsSyncWrites));
                 } else {
-                    snapshot_info_t info =
-                            vb->checkpointManager->getSnapshotInfo();
-                    highSeqno = htonll(info.range.getEnd());
+                    highSeqno = htonll(
+                            vb->getCurrentSnapshotEnd(supportsSyncWrites));
                 }
             }
             auto offset = payload.size();

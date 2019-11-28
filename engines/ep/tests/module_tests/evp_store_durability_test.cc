@@ -507,6 +507,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbort(DocumentState docState) {
     EXPECT_EQ(2, ckptMgr.getNumItemsForPersistence());
     EXPECT_EQ(2, stats.diskQueueSize);
 
+    EXPECT_EQ(2, vb.getHighSeqno(true));
+    EXPECT_EQ(0, vb.getHighSeqno(false));
+
     // Note: Prepare and Abort are in the same key-space, so they will be
     //     deduplicated at Flush
     flushVBucketToDiskIfPersistent(vbid, 1);
@@ -575,6 +578,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbortPrepare(
                       queue_op::pending_sync_write);
     EXPECT_EQ(3, ckptMgr.getNumItemsForPersistence());
 
+    EXPECT_EQ(3, vb.getHighSeqno(true));
+    EXPECT_EQ(0, vb.getHighSeqno(false));
+
     // Note: Prepare and Abort are in the same key-space, so they will be
     //     deduplicated at Flush
     flushVBucketToDiskIfPersistent(vbid, 1);
@@ -639,6 +645,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbortX2(DocumentState docState) {
               (*(--ckptList.back()->end()))->getOperation() ==
                       queue_op::abort_sync_write);
     EXPECT_EQ(4, ckptMgr.getNumItemsForPersistence());
+
+    EXPECT_EQ(4, vb.getHighSeqno(true));
+    EXPECT_EQ(0, vb.getHighSeqno(false));
 
     // Note: Prepare and Abort are in the same key-space and hence are
     //       deduplicated at Flush.
@@ -729,6 +738,9 @@ TEST_P(DurabilityEPBucketTest, PersistSyncWriteSyncDelete) {
     ASSERT_EQ(2, ckptList.size());
     ASSERT_EQ(2, ckptList.back()->getNumItems());
     EXPECT_EQ(1, ckptMgr.getNumItemsForPersistence());
+
+    EXPECT_EQ(4, vb.getHighSeqno(true));
+    EXPECT_EQ(4, vb.getHighSeqno(false));
 
     flushVBucketToDiskIfPersistent(vbid, 1);
 
@@ -826,6 +838,9 @@ TEST_P(DurabilityBucketTest, SyncWriteSyncDelete) {
                         3 /*prepareSeqno*/,
                         {} /*commitSeqno*/,
                         vb.lockCollections(key)));
+
+    EXPECT_EQ(4, vb.getHighSeqno(true));
+    EXPECT_EQ(4, vb.getHighSeqno(false));
 
     flushVBucketToDiskIfPersistent(vbid, 1);
 
