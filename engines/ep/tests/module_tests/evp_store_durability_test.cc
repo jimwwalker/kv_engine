@@ -299,8 +299,11 @@ protected:
 
         auto seqno = vb.getHighSeqno() + 1;
 
-        vb.checkpointManager->createSnapshot(
-                seqno, seqno, {} /*HCS*/, CheckpointType::Memory);
+        vb.checkpointManager->createSnapshot(seqno,
+                                             seqno,
+                                             {} /*HCS*/,
+                                             CheckpointType::Memory,
+                                             vb.getHighSeqno());
 
         auto item = *makePendingItem(
                 key, value, Requirements(Level::Majority, Timeout::Infinity()));
@@ -378,6 +381,23 @@ public:
     const StoredDocKey key = makeStoredDocKey("key");
     VBucketPtr vb;
 };
+
+static void validateHighAndVisibleSeqno(VBucket& vb,
+                                        uint64_t expectedHigh,
+                                        uint64_t expectedVisible) {
+    auto& ckptMgr = *vb.checkpointManager;
+    EXPECT_EQ(expectedHigh, ckptMgr.getHighSeqno());
+    EXPECT_EQ(expectedVisible, ckptMgr.getMaxVisibleSeqno());
+    if (vb.getState() == vbucket_state_active) {
+        EXPECT_EQ(expectedHigh, ckptMgr.getSnapshotEndSeqno(true));
+        EXPECT_EQ(expectedVisible, ckptMgr.getSnapshotEndSeqno(false));
+    } else if (vb.getState() == vbucket_state_replica) {
+        // Check that getOpenSnapshotEndSeqno works as expected as a replacement
+        // in getAllVBSeqnos (which did use getSnaphotInfo)
+        EXPECT_EQ(ckptMgr.getSnapshotInfo().range.getEnd(),
+                  ckptMgr.getSnapshotEndSeqno(true));
+    }
+}
 
 void DurabilityEPBucketTest::testPersistPrepare(DocumentState docState) {
     setVBucketStateAndRunPersistTask(
@@ -510,6 +530,7 @@ void DurabilityEPBucketTest::testPersistPrepareAbort(DocumentState docState) {
                       queue_op::abort_sync_write);
     EXPECT_EQ(2, ckptMgr.getNumItemsForPersistence());
     EXPECT_EQ(2, stats.diskQueueSize);
+    validateHighAndVisibleSeqno(vb, 2, 0);
 
     // Note: Prepare and Abort are in the same key-space, so they will be
     //     deduplicated at Flush
@@ -578,6 +599,7 @@ void DurabilityEPBucketTest::testPersistPrepareAbortPrepare(
               (*(--ckptList.back()->end()))->getOperation() ==
                       queue_op::pending_sync_write);
     EXPECT_EQ(3, ckptMgr.getNumItemsForPersistence());
+    validateHighAndVisibleSeqno(vb, 3, 0);
 
     // Note: Prepare and Abort are in the same key-space, so they will be
     //     deduplicated at Flush
@@ -643,6 +665,7 @@ void DurabilityEPBucketTest::testPersistPrepareAbortX2(DocumentState docState) {
               (*(--ckptList.back()->end()))->getOperation() ==
                       queue_op::abort_sync_write);
     EXPECT_EQ(4, ckptMgr.getNumItemsForPersistence());
+    validateHighAndVisibleSeqno(vb, 4, 0);
 
     // Note: Prepare and Abort are in the same key-space and hence are
     //       deduplicated at Flush.
@@ -733,6 +756,7 @@ TEST_P(DurabilityEPBucketTest, PersistSyncWriteSyncDelete) {
     ASSERT_EQ(2, ckptList.size());
     ASSERT_EQ(2, ckptList.back()->getNumItems());
     EXPECT_EQ(1, ckptMgr.getNumItemsForPersistence());
+    validateHighAndVisibleSeqno(vb, 4, 4);
 
     flushVBucketToDiskIfPersistent(vbid, 1);
 
@@ -830,6 +854,7 @@ TEST_P(DurabilityBucketTest, SyncWriteSyncDelete) {
                         3 /*prepareSeqno*/,
                         {} /*commitSeqno*/,
                         vb.lockCollections(key)));
+    validateHighAndVisibleSeqno(vb, 4, 4);
 
     flushVBucketToDiskIfPersistent(vbid, 1);
 
@@ -867,6 +892,7 @@ TEST_P(DurabilityBucketTest, SyncDeleteSyncWriteDelayedPersistence) {
             ENGINE_SYNC_WRITE_PENDING,
             store->deleteItem(key, cas, vbid, cookie, reqs, nullptr, delInfo));
 
+    validateHighAndVisibleSeqno(vb, 2, 1);
     // Setup: Persist SyncDelete prepare.
     flushVBucketToDiskIfPersistent(vbid, 2);
 
@@ -877,9 +903,13 @@ TEST_P(DurabilityBucketTest, SyncDeleteSyncWriteDelayedPersistence) {
                         {} /*commitSeqno*/,
                         vb.lockCollections(key)));
 
+    validateHighAndVisibleSeqno(vb, 3, 3);
+
     // Setuo: Prepare SyncWrite
     auto pending = makePendingItem(key, "value");
     ASSERT_EQ(ENGINE_SYNC_WRITE_PENDING, store->set(*pending, cookie));
+
+    validateHighAndVisibleSeqno(vb, 4, 3);
 
     // Test: flush items to disk. The flush of the Committed SyncDelete will
     // attempt to remove that item from the HashTable; check the correct item
@@ -895,6 +925,7 @@ TEST_P(DurabilityBucketTest, SyncDeleteSyncWriteDelayedPersistence) {
                         {} /*commitSeqno*/,
                         vb.lockCollections(key)))
             << "SyncWrite commit should be possible";
+    validateHighAndVisibleSeqno(vb, 5, 5);
 }
 
 /// Test delete on top of SyncWrite
@@ -1834,7 +1865,7 @@ void DurabilityBucketTest::testTakeoverDestinationHandlesPreparedSyncWrites(
 
     auto& vb = *store->getVBucket(vbid);
     vb.checkpointManager->createSnapshot(
-            1, 1, {} /*HCS*/, CheckpointType::Memory);
+            1, 1, {} /*HCS*/, CheckpointType::Memory, 0);
     using namespace cb::durability;
     auto requirements = Requirements(level, Timeout::Infinity());
     auto pending =
@@ -2741,6 +2772,7 @@ TEST_P(DurabilityBucketTest, ActiveToReplicaAndCommit) {
                        cookie));
 
     flushVBucketToDiskIfPersistent(vbid, 2);
+    validateHighAndVisibleSeqno(*store->getVBucket(vbid), 2, 0);
 
     // Now switch over to being a replica, via dead for realism
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_dead, {});
@@ -2750,7 +2782,7 @@ TEST_P(DurabilityBucketTest, ActiveToReplicaAndCommit) {
 
     // Now drive the VB as if a passive stream is receiving data.
     vb.checkpointManager->createSnapshot(
-            1, 3, {} /*HCS*/, CheckpointType::Memory);
+            1, 3, {} /*HCS*/, CheckpointType::Memory, 0 /*MVS*/);
 
     // seqno:3 A new prepare
     auto key1 = makeStoredDocKey("crikey3");
@@ -2764,7 +2796,7 @@ TEST_P(DurabilityBucketTest, ActiveToReplicaAndCommit) {
 
     // seqno:4 the prepare at seqno:1 is committed
     vb.checkpointManager->createSnapshot(
-            4, 4, {} /*HCS*/, CheckpointType::Memory);
+            4, 4, {} /*HCS*/, CheckpointType::Memory, 0);
     ASSERT_EQ(ENGINE_SUCCESS, vb.commit(key, 1, 4, vb.lockCollections(key)));
 }
 
@@ -2794,7 +2826,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
     uint64_t seqno = 1;
     // PREPARE
     vbucket->checkpointManager->createSnapshot(
-            seqno, seqno, {}, CheckpointType::Memory);
+            seqno, seqno, {}, CheckpointType::Memory, 0);
 
     const std::string value(1024, 'x'); // 1KB value to use for documents.
 
@@ -2822,7 +2854,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
     ++seqno;
     // COMMIT
     vbucket->checkpointManager->createSnapshot(
-            seqno, seqno, {}, CheckpointType::Memory);
+            seqno, seqno, {}, CheckpointType::Memory, seqno);
 
     ASSERT_EQ(ENGINE_SUCCESS,
               vbucket->commit(key,
@@ -2841,7 +2873,9 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
     ++seqno;
     // Try to deleteWithMeta
     vbucket->checkpointManager->createSnapshot(
-            seqno, seqno, {}, CheckpointType::Memory);
+            seqno, seqno, {}, CheckpointType::Memory, seqno);
+    // expect the seqnos to be  @ the commit (which is seqno - 1)
+    validateHighAndVisibleSeqno(*store->getVBucket(vbid), seqno - 1, seqno - 1);
 
     uint64_t cas = 0;
     ItemMetaData metadata;
