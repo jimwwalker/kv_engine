@@ -85,10 +85,12 @@ public:
         }
         ItemsForCursor(CheckpointType checkpointType,
                        boost::optional<uint64_t> maxDeletedRevSeqno,
-                       boost::optional<uint64_t> highCompletedSeqno)
+                       boost::optional<uint64_t> highCompletedSeqno,
+                       uint64_t maxVisibleSeqno)
             : checkpointType(checkpointType),
               maxDeletedRevSeqno(maxDeletedRevSeqno),
-              highCompletedSeqno(highCompletedSeqno) {
+              highCompletedSeqno(highCompletedSeqno),
+              maxVisibleSeqno(maxVisibleSeqno) {
         }
         std::vector<CheckpointSnapshotRange> ranges;
         bool moreAvailable = {false};
@@ -121,6 +123,11 @@ public:
          * ActiveStream.
          */
         boost::optional<uint64_t> highCompletedSeqno;
+
+        /**
+         * The maximum visible seqno for the entire set of items for cursor.
+         */
+        uint64_t maxVisibleSeqno;
     };
 
     /// Return type of expelUnreferencedCheckpointItems()
@@ -135,6 +142,7 @@ public:
                       int64_t lastSeqno,
                       uint64_t lastSnapStart,
                       uint64_t lastSnapEnd,
+                      uint64_t maxVisibleSeqno,
                       FlusherCallback cb);
 
     uint64_t getOpenCheckpointId();
@@ -389,18 +397,17 @@ public:
      */
     bool hasClosedCheckpointWhichCanBeRemoved() const;
 
-    void setBackfillPhase(uint64_t start, uint64_t end);
-
     void createSnapshot(uint64_t snapStartSeqno,
                         uint64_t snapEndSeqno,
                         boost::optional<uint64_t> highCompletedSeqno,
-                        CheckpointType checkpointType);
+                        CheckpointType checkpointType,
+                        uint64_t maxVisibleSnapEnd);
 
-    void resetSnapshotRange();
+    void updateCurrentSnapshot(uint64_t snapEnd,
+                               uint64_t maxVisibleSnapEnd,
+                               CheckpointType checkpointType);
 
-    void updateCurrentSnapshot(uint64_t snapEnd, CheckpointType checkpointType);
-
-    snapshot_info_t getSnapshotInfo();
+    snapshot_info_t getSnapshotInfo(bool supportsSyncWrites = true);
 
     uint64_t getOpenSnapshotStartSeqno() const;
 
@@ -411,6 +418,8 @@ public:
     int64_t getHighSeqno() const;
 
     int64_t nextBySeqno();
+
+    uint64_t getMaxVisibleSeqno() const;
 
     /// @return the persistence cursor which can be null
     CheckpointCursor* getPersistenceCursor() const {
@@ -495,6 +504,7 @@ protected:
      * @param id for the new checkpoint
      * @param snapStartSeqno for the new checkpoint
      * @param snapEndSeqno for the new checkpoint
+     * @param visibleSnapEnd for the new checkpoint
      * @param highCompletedSeqno optional SyncRep HCS to be flushed to disk
      * @param checkpointType is the checkpoint created from a replica receiving
      *                       a disk snapshot?
@@ -502,6 +512,7 @@ protected:
     void addNewCheckpoint_UNLOCKED(uint64_t id,
                                    uint64_t snapStartSeqno,
                                    uint64_t snapEndSeqno,
+                                   uint64_t visibleSnapEnd,
                                    boost::optional<uint64_t> highCompletedSeqno,
                                    CheckpointType checkpointType);
 
@@ -528,6 +539,7 @@ protected:
     void addOpenCheckpoint(uint64_t id,
                            uint64_t snapStart,
                            uint64_t snapEnd,
+                           uint64_t visibleSnapEnd,
                            boost::optional<uint64_t> highCompletedSeqno,
                            CheckpointType checkpointType);
 
@@ -572,6 +584,14 @@ protected:
     // by this object.
     std::atomic<size_t>      numItems;
     Monotonic<int64_t>       lastBySeqno;
+    /**
+     * The highest seqno of all items that are visible, i.e. normal mutations or
+     * mutations which have been prepared->committed. The main use of this value
+     * is to give clients that don't support sync-replication a view of the
+     * vbucket which they can receive (via dcp), i.e this value would not change
+     * to the seqno of a prepare.
+     */
+    Monotonic<int64_t> maxVisibleSeqno;
     uint64_t                 pCursorPreCheckpointId;
 
     /**

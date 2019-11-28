@@ -299,8 +299,11 @@ protected:
 
         auto seqno = vb.getHighSeqno() + 1;
 
-        vb.checkpointManager->createSnapshot(
-                seqno, seqno, {} /*HCS*/, CheckpointType::Memory);
+        vb.checkpointManager->createSnapshot(seqno,
+                                             seqno,
+                                             {} /*HCS*/,
+                                             CheckpointType::Memory,
+                                             vb.getHighSeqno());
 
         auto item = *makePendingItem(
                 key, value, Requirements(Level::Majority, Timeout::Infinity()));
@@ -1827,7 +1830,7 @@ void DurabilityBucketTest::testTakeoverDestinationHandlesPreparedSyncWrites(
 
     auto& vb = *store->getVBucket(vbid);
     vb.checkpointManager->createSnapshot(
-            1, 1, {} /*HCS*/, CheckpointType::Memory);
+            1, 1, {} /*HCS*/, CheckpointType::Memory, 0);
     using namespace cb::durability;
     auto requirements = Requirements(level, Timeout::Infinity());
     auto pending =
@@ -2743,7 +2746,7 @@ TEST_P(DurabilityBucketTest, ActiveToReplicaAndCommit) {
 
     // Now drive the VB as if a passive stream is receiving data.
     vb.checkpointManager->createSnapshot(
-            1, 3, {} /*HCS*/, CheckpointType::Memory);
+            1, 3, {} /*HCS*/, CheckpointType::Memory, 0);
 
     // seqno:3 A new prepare
     auto key1 = makeStoredDocKey("crikey3");
@@ -2757,7 +2760,7 @@ TEST_P(DurabilityBucketTest, ActiveToReplicaAndCommit) {
 
     // seqno:4 the prepare at seqno:1 is committed
     vb.checkpointManager->createSnapshot(
-            4, 4, {} /*HCS*/, CheckpointType::Memory);
+            4, 4, {} /*HCS*/, CheckpointType::Memory, 0);
     ASSERT_EQ(ENGINE_SUCCESS, vb.commit(key, 1, 4, vb.lockCollections(key)));
 }
 
@@ -2787,7 +2790,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
     uint64_t seqno = 1;
     // PREPARE
     vbucket->checkpointManager->createSnapshot(
-            seqno, seqno, {}, CheckpointType::Memory);
+            seqno, seqno, {}, CheckpointType::Memory, 0);
 
     const std::string value(1024, 'x'); // 1KB value to use for documents.
 
@@ -2815,7 +2818,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
     ++seqno;
     // COMMIT
     vbucket->checkpointManager->createSnapshot(
-            seqno, seqno, {}, CheckpointType::Memory);
+            seqno, seqno, {}, CheckpointType::Memory, seqno);
 
     ASSERT_EQ(ENGINE_SUCCESS,
               vbucket->commit(key,
@@ -2834,7 +2837,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
     ++seqno;
     // Try to deleteWithMeta
     vbucket->checkpointManager->createSnapshot(
-            seqno, seqno, {}, CheckpointType::Memory);
+            seqno, seqno, {}, CheckpointType::Memory, seqno);
 
     uint64_t cas = 0;
     ItemMetaData metadata;

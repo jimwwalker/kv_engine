@@ -423,6 +423,7 @@ public:
                uint64_t id,
                uint64_t snapStart,
                uint64_t snapEnd,
+               uint64_t visibleSnapEnd,
                boost::optional<uint64_t> highCompletedSeqno,
                Vbid vbid,
                CheckpointType checkpointType);
@@ -548,8 +549,13 @@ public:
         return snapEndSeqno;
     }
 
-    void setSnapshotEndSeqno(uint64_t seqno) {
+    uint64_t getSnapshotVisibleEndSeqno() const {
+        return visibleSnapEndSeqno;
+    }
+
+    void setSnapshotEndSeqno(uint64_t seqno, uint64_t visibleSnapEnd) {
         snapEndSeqno = seqno;
+        visibleSnapEndSeqno = visibleSnapEnd;
     }
 
     void setCheckpointType(CheckpointType type) {
@@ -672,6 +678,10 @@ public:
         return queuedItemsMemUsage;
     }
 
+    uint64_t getVisibleSnapEndSeqno() const {
+        return visibleSnapEndSeqno;
+    }
+
     void addStats(const AddStatFn& add_stat, const void* cookie);
 
 private:
@@ -690,6 +700,7 @@ private:
     uint64_t                       checkpointId;
     uint64_t                       snapStartSeqno;
     uint64_t                       snapEndSeqno;
+    Monotonic<uint64_t> visibleSnapEndSeqno = 0;
     /// The seqno of the highest expelled item.
     Monotonic<int64_t> highestExpelledSeqno = 0;
     Vbid vbucketId;
