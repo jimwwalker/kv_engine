@@ -322,6 +322,10 @@ bool EphemeralVBucket::isKeyLogicallyDeleted(const DocKey& key,
     return false;
 }
 
+uint64_t EphemeralVBucket::getMaxVisibleSeqno() const {
+    return seqList->getMaxVisibleSeqno();
+}
+
 size_t EphemeralVBucket::purgeStaleItems(std::function<bool()> shouldPauseCbk) {
     // Iterate over the sequence list and delete any stale items. But we do
     // not want to delete the last element in the vbucket, hence we pass
@@ -362,7 +366,7 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
     StoredValue* newSv = nullptr;
     MutationStatus status(MutationStatus::WasClean);
 
-    std::lock_guard<std::mutex> lh(sequenceLock);
+    std::lock_guard<std::mutex> seqLock(sequenceLock);
 
     const bool wasTemp = v.isTempItem();
     const bool oldValueDeleted = v.isDeleted();
@@ -379,8 +383,8 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
 
         /* Update in the Ordered data structure (seqList) first and then update
            in the hash table */
-        SequenceList::UpdateStatus res =
-                modifySeqList(lh, listWriteLg, *(v.toOrderedStoredValue()));
+        SequenceList::UpdateStatus res = modifySeqList(
+                seqLock, listWriteLg, *(v.toOrderedStoredValue()));
 
         switch (res) {
         case SequenceList::UpdateStatus::Success: {
@@ -407,7 +411,7 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
             newSv = ht.unlocked_addNewStoredValue(hbl, itm);
 
             seqList->appendToList(
-                    lh, listWriteLg, *(newSv->toOrderedStoredValue()));
+                    seqLock, listWriteLg, *(newSv->toOrderedStoredValue()));
         } break;
         }
 
@@ -417,6 +421,8 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
         /* Update the high seqno in the sequential storage */
         auto& osv = *(newSv->toOrderedStoredValue());
         seqList->updateHighSeqno(listWriteLg, osv);
+
+        seqList->updateMaxVisibleSeqno(seqLock, listWriteLg, osv);
 
         /* Temp items are never added to the seqList, hence updating a temp
            item should not update the deduped seqno */
@@ -464,7 +470,7 @@ std::pair<StoredValue*, VBNotifyCtx> EphemeralVBucket::addNewStoredValue(
         updateRevSeqNoOfNewStoredValue(*v);
     }
 
-    std::lock_guard<std::mutex> lh(sequenceLock);
+    std::lock_guard<std::mutex> seqLock(sequenceLock);
 
     OrderedStoredValue* osv;
     try {
@@ -483,13 +489,15 @@ std::pair<StoredValue*, VBNotifyCtx> EphemeralVBucket::addNewStoredValue(
         std::lock_guard<std::mutex> listWriteLg(seqList->getListWriteLock());
 
         /* Add to the sequential storage */
-        seqList->appendToList(lh, listWriteLg, *osv);
+        seqList->appendToList(seqLock, listWriteLg, *osv);
 
         /* Put on checkpoint mgr */
         notifyCtx = queueDirty(hbl, *v, queueItmCtx);
 
         /* Update the high seqno in the sequential storage */
         seqList->updateHighSeqno(listWriteLg, *osv);
+
+        seqList->updateMaxVisibleSeqno(seqLock, listWriteLg, *osv);
     }
     if (itm.isCommitted()) {
         if (!itm.isDeleted()) {
@@ -510,7 +518,7 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
                                         const VBQueueItemCtx& queueItmCtx,
                                         uint64_t bySeqno,
                                         DeleteSource deleteSource) {
-    std::lock_guard<std::mutex> lh(sequenceLock);
+    std::lock_guard<std::mutex> seqLock(sequenceLock);
 
     StoredValue* newSv = &v;
     StoredValue::UniquePtr ownedSv;
@@ -528,8 +536,8 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
 
         /* Update the in the Ordered data structure (seqList) first and then
            update in the hash table */
-        SequenceList::UpdateStatus res =
-                modifySeqList(lh, listWriteLg, *(v.toOrderedStoredValue()));
+        SequenceList::UpdateStatus res = modifySeqList(
+                seqLock, listWriteLg, *(v.toOrderedStoredValue()));
 
         switch (res) {
         case SequenceList::UpdateStatus::Success:
@@ -551,7 +559,7 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
             std::tie(newSv, ownedSv) = ht.unlocked_replaceByCopy(hbl, v);
 
             seqList->appendToList(
-                    lh, listWriteLg, *(newSv->toOrderedStoredValue()));
+                    seqLock, listWriteLg, *(newSv->toOrderedStoredValue()));
         } break;
         }
 
@@ -581,6 +589,8 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
         /* Update the high seqno in the sequential storage */
         auto& osv = *(newSv->toOrderedStoredValue());
         seqList->updateHighSeqno(listWriteLg, osv);
+
+        seqList->updateMaxVisibleSeqno(seqLock, listWriteLg, osv);
 
         /* Temp items are never added to the seqList, hence updating a temp
            item should not update the deduped seqno */
