@@ -246,11 +246,12 @@ void ActiveStream::registerCursor(CheckpointManager& chkptmgr,
     }
 }
 
-void ActiveStream::markDiskSnapshot(
+bool ActiveStream::markDiskSnapshot(
         uint64_t startSeqno,
         uint64_t endSeqno,
         boost::optional<uint64_t> highCompletedSeqno,
-        uint64_t maxVisibleSeqno) {
+        uint64_t maxVisibleSeqno,
+        uint64_t documentCount) {
     {
         LockHolder lh(streamMutex);
         uint64_t chkCursorSeqno = endSeqno;
@@ -261,7 +262,28 @@ void ActiveStream::markDiskSnapshot(
                 "markDiskSnapshot: Unexpected state_:{}",
                 logPrefix,
                 to_string(state_.load()));
-            return;
+            // TODO: logically, this should return false as
+            //  no snapshot marker will be sent, and backfilled items
+            //  will be rejected in backfillReceived.
+            //  Returning true to maintain existing behaviour pending
+            //  further testing
+            return true;
+        }
+
+        if (!supportSyncWrites()) {
+            endSeqno = maxVisibleSeqno;
+            if (endSeqno < startSeqno) {
+                // no visible items in backfill, should not send
+                // a snapshot marker at all (no data will be sent)
+                log(spdlog::level::level_enum::info,
+                    "(} "
+                    "ActiveStream::markDiskSnapshot not sending snapshot "
+                    "because"
+                    "it contains no visible items",
+                    logPrefix);
+                setBackfillRemaining_UNLOCKED(0, lh);
+                return false;
+            }
         }
 
         /* We need to send the requested 'snap_start_seqno_' as the snapshot
@@ -279,7 +301,9 @@ void ActiveStream::markDiskSnapshot(
                 "ActiveStream::markDiskSnapshot, vbucket "
                 "does not exist",
                 logPrefix);
-            return;
+            // TODO: logically, this should return false
+            //  returning true to maintain existing behaviour
+            return true;
         }
         // An atomic read of vbucket state without acquiring the
         // reader lock for state should suffice here.
@@ -330,8 +354,11 @@ void ActiveStream::markDiskSnapshot(
             // snapshots
             registerCursor(*vb->checkpointManager, chkCursorSeqno);
         }
+        // TODO: documentCount is inaccurate if non-syncWrite aware
+        setBackfillRemaining_UNLOCKED(documentCount, lh);
     }
     notifyStreamReady();
+    return true;
 }
 
 bool ActiveStream::backfillReceived(std::unique_ptr<Item> itm,
@@ -482,6 +509,10 @@ void ActiveStream::setVBucketStateAckRecieved() {
 
 void ActiveStream::setBackfillRemaining(size_t value) {
     std::lock_guard<std::mutex> guard(streamMutex);
+    setBackfillRemaining_UNLOCKED(value, guard);
+}
+
+void ActiveStream::setBackfillRemaining_UNLOCKED(size_t value, LockHolder& lh) {
     backfillRemaining = value;
 }
 
@@ -1501,28 +1532,10 @@ void ActiveStream::scheduleBackfill_UNLOCKED(bool reschedule) {
              * therefore did not re-register a cursor in markDiskSnapshot) we
              * must re-register the cursor here.
              */
-            try {
-                CursorRegResult result =
-                        vbucket->checkpointManager->registerCursorBySeqno(
-                                name_, lastReadSeqno.load());
-                log(spdlog::level::level_enum::info,
-                    "{} ActiveStream::scheduleBackfill_UNLOCKED "
-                    "Rescheduling. Register cursor with name \"{}\", "
-                    "backfill:{}, seqno:{}",
-                    logPrefix,
-                    name_,
-                    result.tryBackfill,
-                    result.seqno);
-                curChkSeqno = result.seqno;
-                cursor = result.cursor;
-            } catch (std::exception& error) {
-                log(spdlog::level::level_enum::warn,
-                    "{} Failed to register "
-                    "cursor: {}",
-                    logPrefix,
-                    error.what());
-                endStream(END_STREAM_STATE);
-            }
+            // TODO: check if closed checkpoint removal might race with
+            //  re-registering cursor, what happens if registering this
+            //  cursor returns result.tryBackfill == true ?
+            notifyEmptyBackfill(lastReadSeqno.load());
         }
         if (flags_ & DCP_ADD_STREAM_FLAG_DISKONLY) {
             endStream(END_STREAM_OK);
@@ -1542,6 +1555,34 @@ void ActiveStream::scheduleBackfill_UNLOCKED(bool reschedule) {
              * yet in producer conn list of streams.
              */
             notifyStreamReady();
+        }
+    }
+}
+
+void ActiveStream::notifyEmptyBackfill(uint64_t lastSeenSeqno) {
+    auto vbucket = engine->getVBucket(vb_);
+    if (!cursor.lock()) {
+        try {
+            CursorRegResult result =
+                    vbucket->checkpointManager->registerCursorBySeqno(
+                            name_, lastReadSeqno);
+            log(spdlog::level::level_enum::info,
+                "{} ActiveStream::notifyEmptyBackfill "
+                "Re-registering dropped cursor with name \"{}\", "
+                "backfill:{}, seqno:{}",
+                logPrefix,
+                name_,
+                result.tryBackfill,
+                result.seqno);
+            curChkSeqno = result.seqno;
+            cursor = result.cursor;
+        } catch (std::exception& error) {
+            log(spdlog::level::level_enum::warn,
+                "{} Failed to register "
+                "cursor: {}",
+                logPrefix,
+                error.what());
+            endStream(END_STREAM_STATE);
         }
     }
 }

@@ -177,10 +177,11 @@ public:
      * @param maxVisibleSeqno seqno of last visible (commit/mutation/system
      * event) item
      */
-    void markDiskSnapshot(uint64_t startSeqno,
+    bool markDiskSnapshot(uint64_t startSeqno,
                           uint64_t endSeqno,
                           boost::optional<uint64_t> highCompletedSeqno,
-                          uint64_t maxVisibleSeqno);
+                          uint64_t maxVisibleSeqno,
+                          uint64_t documentCount);
 
     bool backfillReceived(std::unique_ptr<Item> itm,
                           backfill_source_t backfill_source,
@@ -282,6 +283,18 @@ public:
                                uint64_t preparedSeqno);
 
     static std::string to_string(StreamState type);
+
+    /**
+     * Notifies the stream that a scheduled backfill completed
+     * without providing any items to backfillReceived, and
+     * without marking a disk snapshot.
+     *
+     * If the cursor has been dropped, re-registers it to allow the stream
+     * to transition to memory.
+     *
+     * @param lastReadSeqno last seqno in backfill range
+     */
+    void notifyEmptyBackfill(uint64_t lastSeenSeqno);
 
 protected:
     /**

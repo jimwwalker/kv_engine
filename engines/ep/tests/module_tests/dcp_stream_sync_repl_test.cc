@@ -18,6 +18,7 @@
 #include "../mock/gmock_dcp_msg_producers.h"
 #include "checkpoint_manager.h"
 #include "dcp/active_stream_checkpoint_processor_task.h"
+#include "dcp/backfill-manager.h"
 #include "dcp/response.h"
 #include "dcp_stream_test.h"
 #include "ep_engine.h"
@@ -127,6 +128,31 @@ protected:
      */
     void testBackfillPrepare(DocumentState docState,
                              cb::durability::Level level);
+
+    /**
+     * Test that backfill for a stream which has not negotiated sync write
+     * support sends a snapshot end seqno corresponding to an item which will
+     * be sent - not the seqno of a prepare or abort.
+     */
+    void testBackfillNoSyncWriteSupport(DocumentState docState,
+                                        cb::durability::Level level);
+
+    /**
+     * Test that backfill for a stream which has not negotiated sync write
+     * does not send an empty snapshot if backfill finds only prepares/aborts
+     * and the stream transitions to in-memory correctly.
+     */
+    void testEmptyBackfillNoSyncWriteSupport(DocumentState docState,
+                                             cb::durability::Level level);
+
+    /**
+     * Test that backfill for a stream which has not negotiated sync write
+     * does not send an empty snapshot if cursor dropping triggers backfill,
+     * which finds only prepares/aborts, and the stream transitions back to
+     * in-memory correctly.
+     */
+    void testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+            DocumentState docState, cb::durability::Level level);
 
     /**
      * Test that backfill of a prepared (Write or Delete) with the given level
@@ -606,6 +632,304 @@ TEST_P(DcpStreamSyncReplPersistentTest,
 TEST_P(DcpStreamSyncReplPersistentTest, BackfillPersistMajorityPrepareDelete) {
     using cb::durability::Level;
     testBackfillPrepare(DocumentState::Deleted, Level::PersistToMajority);
+}
+
+void DcpStreamSyncReplTest::testBackfillNoSyncWriteSupport(
+        DocumentState docState, cb::durability::Level level) {
+    // Store
+    //   Mutation
+    //   Prepare
+    //   Abort
+    auto mutation = store_item(vbid, "mutation", "value");
+    auto prepare = storePending(docState, "syncwrite", "value", {level, {}});
+    ASSERT_EQ(ENGINE_SUCCESS,
+              vb0->abort(prepare->getKey(),
+                         prepare->getBySeqno(),
+                         {},
+                         vb0->lockCollections(prepare->getKey())));
+    removeCheckpoint(3);
+
+    // Create NON sync repl DCP stream
+    setup_dcp_stream(0,
+                     IncludeValue::Yes,
+                     IncludeXattrs::Yes,
+                     {{"consumer_name", "test_consumer"}});
+
+    ExecutorPool::get()->setNumAuxIO(0);
+    stream->transitionStateToBackfilling();
+
+    auto& manager = producer->getBFM();
+
+    EXPECT_EQ(backfill_success, manager.backfill()); // init
+    EXPECT_EQ(backfill_success, manager.backfill()); // scan
+    EXPECT_EQ(backfill_success, manager.backfill()); // completing
+    EXPECT_EQ(backfill_success, manager.backfill()); // done
+    EXPECT_EQ(backfill_finished, manager.backfill()); // nothing else to run
+
+    ASSERT_EQ(2, stream->public_readyQSize());
+
+    auto item = stream->public_nextQueuedItem();
+    EXPECT_EQ(DcpResponse::Event::SnapshotMarker, item->getEvent());
+    auto snapMarker = dynamic_cast<SnapshotMarker&>(*item);
+    EXPECT_EQ(0, snapMarker.getStartSeqno());
+    EXPECT_EQ(1, snapMarker.getEndSeqno());
+
+    item = stream->public_nextQueuedItem();
+
+    EXPECT_EQ(DcpResponse::Event::Mutation, item->getEvent());
+}
+
+/// TODO: MB-36948 Re-enable for ephemeral when fixed
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillPrepareNoSyncWriteSupport_Alive_Majority) {
+    using cb::durability::Level;
+    testBackfillNoSyncWriteSupport(DocumentState::Alive, Level::Majority);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillPrepareNoSyncWriteSupport_Alive_MajorityAndPersist) {
+    using cb::durability::Level;
+    testBackfillNoSyncWriteSupport(DocumentState::Alive,
+                                   Level::MajorityAndPersistOnMaster);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillPrepareNoSyncWriteSupport_Alive_Persist) {
+    using cb::durability::Level;
+    testBackfillNoSyncWriteSupport(DocumentState::Alive,
+                                   Level::PersistToMajority);
+}
+
+/// TODO: MB-36948 Re-enable for ephemeral when fixed
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillPrepareNoSyncWriteSupport_Delete_Majority) {
+    using cb::durability::Level;
+    testBackfillNoSyncWriteSupport(DocumentState::Deleted, Level::Majority);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillPrepareNoSyncWriteSupport_Delete_MajorityAndPersist) {
+    using cb::durability::Level;
+    testBackfillNoSyncWriteSupport(DocumentState::Deleted,
+                                   Level::MajorityAndPersistOnMaster);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillPrepareNoSyncWriteSupport_Delete_Persist) {
+    using cb::durability::Level;
+    testBackfillNoSyncWriteSupport(DocumentState::Deleted,
+                                   Level::PersistToMajority);
+}
+
+void DcpStreamSyncReplTest::testEmptyBackfillNoSyncWriteSupport(
+        DocumentState docState, cb::durability::Level level) {
+    // Store
+    //   Prepare
+    //   Abort
+    auto prepare = storePending(docState, "1", "X", {level, {}});
+    ASSERT_EQ(ENGINE_SUCCESS,
+              vb0->abort(prepare->getKey(),
+                         prepare->getBySeqno(),
+                         {},
+                         vb0->lockCollections(prepare->getKey())));
+    removeCheckpoint(2);
+
+    // Create NON sync repl DCP stream
+    setup_dcp_stream(0,
+                     IncludeValue::Yes,
+                     IncludeXattrs::Yes,
+                     {{"consumer_name", "test_consumer"}});
+
+    ExecutorPool::get()->setNumAuxIO(0);
+    stream->transitionStateToBackfilling();
+    EXPECT_EQ(ActiveStream::StreamState::Backfilling, stream->getState());
+
+    auto& manager = producer->getBFM();
+
+    EXPECT_EQ(backfill_success, manager.backfill()); // init
+    // scan phase skipped because there are no items to backfill
+    EXPECT_EQ(backfill_success, manager.backfill()); // completing
+    EXPECT_EQ(backfill_success, manager.backfill()); // done
+    EXPECT_EQ(backfill_finished, manager.backfill()); // nothing else to run
+
+    ASSERT_EQ(0, stream->public_readyQSize());
+
+    auto resp = stream->next();
+    EXPECT_FALSE(resp);
+    EXPECT_EQ(ActiveStream::StreamState::InMemory, stream->getState());
+}
+
+/// TODO: MB-36948 Re-enable for ephemeral when fixed
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotNoSyncWriteSupport_Alive_Majority) {
+    using cb::durability::Level;
+    testEmptyBackfillNoSyncWriteSupport(DocumentState::Alive, Level::Majority);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotNoSyncWriteSupport_Alive_MajorityAndPersist) {
+    using cb::durability::Level;
+    testEmptyBackfillNoSyncWriteSupport(DocumentState::Alive,
+                                        Level::MajorityAndPersistOnMaster);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotNoSyncWriteSupport_Alive_Persist) {
+    using cb::durability::Level;
+    testEmptyBackfillNoSyncWriteSupport(DocumentState::Alive,
+                                        Level::PersistToMajority);
+}
+
+/// TODO: MB-36948 Re-enable for ephemeral when fixed
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotNoSyncWriteSupport_Delete_Majority) {
+    using cb::durability::Level;
+    testEmptyBackfillNoSyncWriteSupport(DocumentState::Deleted,
+                                        Level::Majority);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotNoSyncWriteSupport_Delete_MajorityAndPersist) {
+    using cb::durability::Level;
+    testEmptyBackfillNoSyncWriteSupport(DocumentState::Deleted,
+                                        Level::MajorityAndPersistOnMaster);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotNoSyncWriteSupport_Delete_Persist) {
+    using cb::durability::Level;
+    testEmptyBackfillNoSyncWriteSupport(DocumentState::Deleted,
+                                        Level::PersistToMajority);
+}
+
+void DcpStreamSyncReplTest::
+        testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+                DocumentState docState, cb::durability::Level level) {
+    ExecutorPool::get()->setNumAuxIO(0);
+    // Store Mutation
+    auto mutation = store_item(vbid, "mutation", "value");
+    // drop the checkpoint to cause initial backfill
+    removeCheckpoint(1);
+
+    // Create NON sync repl DCP stream
+    setup_dcp_stream(0,
+                     IncludeValue::Yes,
+                     IncludeXattrs::Yes,
+                     {{"consumer_name", "test_consumer"}});
+
+    EXPECT_EQ(ActiveStream::StreamState::Backfilling, stream->getState());
+
+    auto& manager = producer->getBFM();
+
+    // backfill the mutation
+    EXPECT_EQ(backfill_success, manager.backfill()); // init
+    EXPECT_EQ(backfill_success, manager.backfill()); // scan
+    EXPECT_EQ(backfill_success, manager.backfill()); // completing
+    EXPECT_EQ(backfill_success, manager.backfill()); // done
+    EXPECT_EQ(backfill_finished, manager.backfill()); // nothing else to run
+
+    // snapshot marker + mutation
+    EXPECT_EQ(2, stream->public_readyQSize());
+
+    EXPECT_EQ(ActiveStream::StreamState::Backfilling, stream->getState());
+
+    auto resp = stream->next();
+    EXPECT_TRUE(resp);
+
+    // snap marker
+    EXPECT_EQ(DcpResponse::Event::SnapshotMarker, resp->getEvent());
+    auto snapMarker = dynamic_cast<SnapshotMarker&>(*resp);
+    EXPECT_EQ(0, snapMarker.getStartSeqno());
+    EXPECT_EQ(1, snapMarker.getEndSeqno());
+
+    EXPECT_EQ(ActiveStream::StreamState::Backfilling, stream->getState());
+
+    // receive the mutation. Last item from backfill, stream transitions to
+    // in memory.
+    resp = stream->next();
+    EXPECT_TRUE(resp);
+    EXPECT_EQ(DcpResponse::Event::Mutation, resp->getEvent());
+
+    EXPECT_EQ(ActiveStream::StreamState::InMemory, stream->getState());
+
+    // drop the cursor
+    stream->handleSlowStream();
+
+    // Store
+    //   Prepare
+    //   Abort
+    auto prepare = storePending(docState, "1", "X", {level, {}});
+    ASSERT_EQ(ENGINE_SUCCESS,
+              vb0->abort(prepare->getKey(),
+                         prepare->getBySeqno(),
+                         {},
+                         vb0->lockCollections(prepare->getKey())));
+    // remove checkpoint to ensure stream backfills from disk
+    removeCheckpoint(2);
+
+    // stream transitions back to backfilling because the cursor was dropped
+    resp = stream->next();
+    EXPECT_FALSE(resp);
+
+    EXPECT_EQ(ActiveStream::StreamState::Backfilling, stream->getState());
+
+    EXPECT_EQ(backfill_success, manager.backfill()); // init
+    // scan phase skipped because there are no items to backfill
+    EXPECT_EQ(backfill_success, manager.backfill()); // completing
+    EXPECT_EQ(backfill_success, manager.backfill()); // done
+    EXPECT_EQ(backfill_finished, manager.backfill()); // nothing else to run
+
+    ASSERT_EQ(0, stream->public_readyQSize());
+
+    // No items should have been added to the ready queue, they are all
+    // aborts/prepares and the stream did not negotiate for sync writes
+    resp = stream->next();
+    EXPECT_FALSE(resp);
+    EXPECT_EQ(ActiveStream::StreamState::InMemory, stream->getState());
+}
+
+/// TODO: MB-36948 Re-enable for ephemeral when fixed
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotAfterCursorDroppingNoSyncWriteSupport_Alive_Majority) {
+    using cb::durability::Level;
+    testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(DocumentState::Alive,
+                                                           Level::Majority);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotAfterCursorDroppingNoSyncWriteSupport_Alive_MajorityAndPersist) {
+    using cb::durability::Level;
+    testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+            DocumentState::Alive, Level::MajorityAndPersistOnMaster);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotAfterCursorDroppingNoSyncWriteSupport_Alive_Persist) {
+    using cb::durability::Level;
+    testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+            DocumentState::Alive, Level::PersistToMajority);
+}
+
+/// TODO: MB-36948 Re-enable for ephemeral when fixed
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotAfterCursorDroppingNoSyncWriteSupport_Delete_Majority) {
+    using cb::durability::Level;
+    testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+            DocumentState::Deleted, Level::Majority);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotAfterCursorDroppingNoSyncWriteSupport_Delete_MajorityAndPersist) {
+    using cb::durability::Level;
+    testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+            DocumentState::Deleted, Level::MajorityAndPersistOnMaster);
+}
+
+TEST_P(DcpStreamSyncReplPersistentTest,
+       BackfillEmptySnapshotAfterCursorDroppingNoSyncWriteSupport_Delete_Persist) {
+    using cb::durability::Level;
+    testEmptyBackfillAfterCursorDroppingNoSyncWriteSupport(
+            DocumentState::Deleted, Level::PersistToMajority);
 }
 
 void DcpStreamSyncReplTest::testBackfillPrepareCommit(

@@ -150,12 +150,6 @@ backfill_status_t DCPBackfillMemoryBuffered::create() {
        remaining count */
     while (rangeItr.curr() != rangeItr.end()) {
         if (static_cast<uint64_t>((*rangeItr).getBySeqno()) >= startSeqno) {
-            /* Set backfill remaining
-               [EPHE TODO]: This will be inaccurate if do not backfill till end
-                            of the iterator
-             */
-            stream->setBackfillRemaining(rangeItr.count());
-
             /* Determine the endSeqno of the current snapshot.
                We want to send till requested endSeqno, but if that cannot
                constitute a snapshot then we need to send till the point
@@ -170,12 +164,24 @@ backfill_status_t DCPBackfillMemoryBuffered::create() {
                     std::min(endSeqno, static_cast<uint64_t>(rangeItr.back()));
 
             /* Mark disk snapshot */
+            // TODO: markDiskSnapshot now returns a bool indicating whether
+            //  a snapshot marker was actually created. If no items in the
+            //  backfill range would be sent, this will return false and the
+            //  backfill can end immediately. This is implemented for disk
+            //  backfills but not yet for ephemeral.
+            // TODO: Could move common logic to DCPBackfill parent class
+
+            /* Also sets backfill remaining docCount
+               [EPHE TODO]: This will be inaccurate if do not backfill till end
+                            of the iterator
+             */
             stream->markDiskSnapshot(
                     startSeqno,
                     endSeqno,
                     evb->getHighCompletedSeqno(),
                     // @todo: Use proper value, not yet propagated by DCP
-                    endSeqno /*maxVisibleSeqno*/);
+                    endSeqno, /*maxVisibleSeqno*/
+                    rangeItr.count());
 
             /* Change the backfill state */
             transitionState(BackfillState::Scanning);
