@@ -532,6 +532,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbort(DocumentState docState) {
     EXPECT_EQ(2, stats.diskQueueSize);
     validateHighAndVisibleSeqno(vb, 2, 0);
 
+    EXPECT_EQ(2, vb.getHighSeqno(true));
+    EXPECT_EQ(0, vb.getHighSeqno(false));
+
     // Note: Prepare and Abort are in the same key-space, so they will be
     //     deduplicated at Flush
     flushVBucketToDiskIfPersistent(vbid, 1);
@@ -601,6 +604,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbortPrepare(
     EXPECT_EQ(3, ckptMgr.getNumItemsForPersistence());
     validateHighAndVisibleSeqno(vb, 3, 0);
 
+    EXPECT_EQ(3, vb.getHighSeqno(true));
+    EXPECT_EQ(0, vb.getHighSeqno(false));
+
     // Note: Prepare and Abort are in the same key-space, so they will be
     //     deduplicated at Flush
     flushVBucketToDiskIfPersistent(vbid, 1);
@@ -666,6 +672,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbortX2(DocumentState docState) {
                       queue_op::abort_sync_write);
     EXPECT_EQ(4, ckptMgr.getNumItemsForPersistence());
     validateHighAndVisibleSeqno(vb, 4, 0);
+
+    EXPECT_EQ(4, vb.getHighSeqno(true));
+    EXPECT_EQ(0, vb.getHighSeqno(false));
 
     // Note: Prepare and Abort are in the same key-space and hence are
     //       deduplicated at Flush.
@@ -757,6 +766,9 @@ TEST_P(DurabilityEPBucketTest, PersistSyncWriteSyncDelete) {
     ASSERT_EQ(2, ckptList.back()->getNumItems());
     EXPECT_EQ(1, ckptMgr.getNumItemsForPersistence());
     validateHighAndVisibleSeqno(vb, 4, 4);
+
+    EXPECT_EQ(4, vb.getHighSeqno(true));
+    EXPECT_EQ(4, vb.getHighSeqno(false));
 
     flushVBucketToDiskIfPersistent(vbid, 1);
 
@@ -855,6 +867,9 @@ TEST_P(DurabilityBucketTest, SyncWriteSyncDelete) {
                         {} /*commitSeqno*/,
                         vb.lockCollections(key)));
     validateHighAndVisibleSeqno(vb, 4, 4);
+
+    EXPECT_EQ(4, vb.getHighSeqno(true));
+    EXPECT_EQ(4, vb.getHighSeqno(false));
 
     flushVBucketToDiskIfPersistent(vbid, 1);
 
