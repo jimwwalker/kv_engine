@@ -61,10 +61,14 @@ bool DefragmenterTask::run(void) {
                 ss << " resuming from " << epstore_position << ", ";
                 ss << prAdapter->getHashtablePosition() << ".";
             }
+            auto fragStats = cb::ArenaMalloc::getFragmentationStats(
+                    engine->getArenaMallocClient());
             ss << " Using chunk_duration=" << getChunkDuration().count()
                << " ms."
                << " mem_used=" << stats.getEstimatedTotalMemoryUsed()
-               << ", mapped_bytes=" << getMappedBytes();
+               << ", allocated=" << fragStats.first
+               << ", resident:" << fragStats.second << " utilisation:"
+               << double(fragStats.second) / double(fragStats.first);
             EP_LOG_DEBUG("{}", ss.str());
         }
 
@@ -118,12 +122,16 @@ bool DefragmenterTask::run(void) {
             std::chrono::microseconds duration =
                     std::chrono::duration_cast<std::chrono::microseconds>(
                             end - start);
+            auto fragStats = cb::ArenaMalloc::getFragmentationStats(
+                    engine->getArenaMallocClient());
             ss << " Took " << duration.count() << " us."
                << " moved " << visitor.getDefragCount() << "/"
                << visitor.getVisitedCount() << " visited documents."
                << " mem_used=" << stats.getEstimatedTotalMemoryUsed()
-               << ", mapped_bytes=" << getMappedBytes() << ". Sleeping for "
-               << getSleepTime() << " seconds.";
+               << ", allocated=" << fragStats.first
+               << ", resident:" << fragStats.second << " utilisation:"
+               << double(fragStats.second) / double(fragStats.first)
+               << ". Sleeping for " << getSleepTime() << " seconds.";
             EP_LOG_DEBUG("{}", ss.str());
         }
 

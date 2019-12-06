@@ -3208,14 +3208,27 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::doMemoryStats(
             "ep_storedval_num", stats.getNumStoredVal(), add_stat, cookie);
     add_casted_stat("ep_item_num", stats.getNumItem(), add_stat, cookie);
 
-    std::map<std::string, size_t> alloc_stats;
-    MemoryTracker::getInstance(*getServerApiFunc()->alloc_hooks)->
-        getAllocatorStats(alloc_stats);
-
+    std::unordered_map<std::string, size_t> alloc_stats;
+    bool missing = cb::ArenaMalloc::getStats(arena, alloc_stats);
     for (const auto& it : alloc_stats) {
-        add_casted_stat(it.first.c_str(), it.second, add_stat, cookie);
+        add_prefixed_stat(
+                "ep_arena", it.first.c_str(), it.second, add_stat, cookie);
     }
-
+    if (missing) {
+        add_casted_stat("ep_arena_missing_some_keys", true, add_stat, cookie);
+    }
+    missing = cb::ArenaMalloc::getGlobalStats(alloc_stats);
+    for (const auto& it : alloc_stats) {
+        add_prefixed_stat("ep_arena_global",
+                          it.first.c_str(),
+                          it.second,
+                          add_stat,
+                          cookie);
+    }
+    if (missing) {
+        add_casted_stat(
+                "ep_arena_global_missing_some_keys", true, add_stat, cookie);
+    }
     return ENGINE_SUCCESS;
 }
 
@@ -4624,9 +4637,8 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::getStats(
         return ENGINE_SUCCESS;
     }
     if (key == "allocator"_ccb) {
-        char buffer[64 * 1024];
-        MemoryTracker::getInstance(*getServerApiFunc()->alloc_hooks)->
-                getDetailedStats(buffer, sizeof(buffer));
+        char buffer[64 * 1024]; // @todo: just not big enough with arena details
+        cb::ArenaMalloc::getDetailedStats({buffer, sizeof(buffer)});
         add_casted_stat("detailed", buffer, add_stat, cookie);
         return ENGINE_SUCCESS;
     }
