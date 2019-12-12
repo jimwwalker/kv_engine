@@ -40,7 +40,6 @@
 #include "flusher.h"
 #include "hash_table_stat_visitor.h"
 #include "htresizer.h"
-#include "memory_tracker.h"
 #include "replicationthrottle.h"
 #include "server_document_iface_border_guard.h"
 #include "stats-info.h"
@@ -1772,9 +1771,6 @@ ENGINE_ERROR_CODE create_ep_engine_instance(GET_SERVER_API get_server_api,
 */
 void destroy_ep_engine() {
     ExecutorPool::shutdown();
-    // A single MemoryTracker exists for *all* buckets
-    // and must be destroyed before unloading the shared object.
-    MemoryTracker::destroyInstance();
     ObjectRegistry::reset();
     globalBucketLogger.reset();
 }
