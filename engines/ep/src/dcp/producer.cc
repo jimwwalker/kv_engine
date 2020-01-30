@@ -1297,6 +1297,13 @@ bool DcpProducer::scheduleBackfillManager(VBucket& vb,
     return false;
 }
 
+bool DcpProducer::scheduleBackfillManager(VBucket& vb,
+                                          std::shared_ptr<ActiveStream> s,
+                                          CollectionID cid) {
+    backfillMgr->schedule(vb, s, cid);
+    return true;
+}
+
 void DcpProducer::addStats(const AddStatFn& add_stat, const void* c) {
     ConnHandler::addStats(add_stat, c);
 

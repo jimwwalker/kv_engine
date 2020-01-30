@@ -1512,6 +1512,18 @@ std::unique_ptr<BySeqnoScanContext> MagmaKVStore::initScanContext(
     return mctx;
 }
 
+std::unique_ptr<ByIdScanContext> MagmaKVStore::initScanContext(
+        StatusCallback<GetValue>& cb,
+        StatusCallback<CacheLookup>& cl,
+        Vbid vbid,
+        const std::vector<ByIdRange>& ranges,
+        DocumentFilter options,
+        ValueFilter valOptions) {
+    throw std::runtime_error(
+            "MagmaKVStore::initScanContext (id scan) unimplemented");
+    return {};
+}
+
 scan_error_t MagmaKVStore::scan(BySeqnoScanContext& ctx) {
     if (ctx.lastReadSeqno == ctx.maxSeqno) {
         logger->TRACE("MagmaKVStore::scan {} lastReadSeqno:{} == maxSeqno:{}",
@@ -1649,6 +1661,12 @@ scan_error_t MagmaKVStore::scan(BySeqnoScanContext& ctx) {
     }
 
     return scan_success;
+}
+
+scan_error_t MagmaKVStore::scan(ByIdScanContext& ctx) {
+    throw std::runtime_error(
+            "MagmaKVStore::initScanContext (id scan) unimplemented");
+    return scan_failed;
 }
 
 vbucket_state* MagmaKVStore::getVBucketState(Vbid vbid) {

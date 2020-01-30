@@ -868,7 +868,7 @@ TEST_P(StreamTest, BackfillSmallBuffer) {
     /* Backfill can only read 1 as its buffer will become full after that */
     {
         std::chrono::microseconds uSleepTime(128);
-        while ((numItems - 1) != stream->getLastReadSeqno()) {
+        while ((numItems - 1) != stream->getLastBackfilledSeqno()) {
             uSleepTime = decayingSleep(uSleepTime);
         }
     }

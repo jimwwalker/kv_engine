@@ -349,7 +349,16 @@ public:
             DocumentFilter options,
             ValueFilter valOptions) override;
 
+    std::unique_ptr<ByIdScanContext> initScanContext(
+            StatusCallback<GetValue>& cb,
+            StatusCallback<CacheLookup>& cl,
+            Vbid vbid,
+            const std::vector<ByIdRange>& ranges,
+            DocumentFilter options,
+            ValueFilter valOptions) override;
+
     scan_error_t scan(BySeqnoScanContext& sctx) override;
+    scan_error_t scan(ByIdScanContext& sctx) override;
 
     std::unique_ptr<KVFileHandle> makeFileHandle(Vbid vbid) override;
 

@@ -122,11 +122,11 @@ public:
     UniqueDCPBackfillPtr createDCPBackfill(EventuallyPersistentEngine& e,
                                            std::shared_ptr<ActiveStream> stream,
                                            uint64_t startSeqno,
-                                           uint64_t endSeqno) override {
-        /* create a disk backfill object */
-        return std::make_unique<DCPBackfillBySeqnoDisk>(
-                *e.getKVBucket(), stream, startSeqno, endSeqno);
-    }
+                                           uint64_t endSeqno) override;
+
+    UniqueDCPBackfillPtr createDCPBackfill(EventuallyPersistentEngine& e,
+                                           std::shared_ptr<ActiveStream> stream,
+                                           CollectionID cid) override;
 
     uint64_t getPersistenceSeqno() const override {
         return persistenceSeqno.load();

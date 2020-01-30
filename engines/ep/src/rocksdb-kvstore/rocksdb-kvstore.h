@@ -288,7 +288,20 @@ public:
             DocumentFilter options,
             ValueFilter valOptions) override;
 
+    std::unique_ptr<ByIdScanContext> initScanContext(
+            StatusCallback<GetValue>& cb,
+            StatusCallback<CacheLookup>& cl,
+            Vbid vbid,
+            const std::vector<ByIdRange>& ranges,
+            DocumentFilter options,
+            ValueFilter valOptions) override {
+        throw std::runtime_error("RocksDB no support for byID initScanContext");
+    }
+
     scan_error_t scan(BySeqnoScanContext& sctx) override;
+    scan_error_t scan(ByIdScanContext& sctx) override {
+        throw std::runtime_error("RocksDB no support for byID scan");
+    }
 
     std::unique_ptr<KVFileHandle> makeFileHandle(Vbid vbid) override;
 

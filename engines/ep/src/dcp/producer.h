@@ -181,6 +181,9 @@ public:
                                          std::shared_ptr<ActiveStream> s,
                                          uint64_t start,
                                          uint64_t end);
+    bool scheduleBackfillManager(VBucket& vb,
+                                 std::shared_ptr<ActiveStream> s,
+                                 CollectionID cid);
 
     bool isExtMetaDataEnabled () {
         return enableExtMetaData;

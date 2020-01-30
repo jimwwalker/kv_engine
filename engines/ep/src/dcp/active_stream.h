@@ -186,11 +186,15 @@ public:
                           boost::optional<uint64_t> highCompletedSeqno,
                           uint64_t maxVisibleSeqno);
 
+    bool markOSODiskSnapshot();
+
     bool backfillReceived(std::unique_ptr<Item> itm,
                           backfill_source_t backfill_source,
                           bool force);
 
     void completeBackfill();
+
+    void completeOSOBackfill();
 
     bool isCompressionEnabled();
 
@@ -216,6 +220,8 @@ public:
     uint64_t getLastReadSeqno() const;
 
     uint64_t getLastSentSeqno() const;
+
+    uint64_t getLastBackfilledSeqno() const;
 
     // Defined in active_stream_impl.h to remove the need to include the
     // producer header here
@@ -386,6 +392,8 @@ protected:
         return syncReplication != SyncReplication::No;
     }
 
+    bool tryAndScheduleOSOBackfill(DcpProducer& producer, VBucket& vb);
+
     // The current state the stream is in.
     // Atomic to allow reads without having to acquire the streamMutex.
     std::atomic<StreamState> state_{StreamState::Pending};
@@ -410,7 +418,8 @@ protected:
 
     /* The last sequence number queued from disk or memory and is
        snapshotted and put onto readyQ */
-    AtomicMonotonic<uint64_t, ThrowExceptionPolicy> lastReadSeqno;
+    AtomicWeaklyMonotonic<uint64_t, ThrowExceptionPolicy> lastReadSeqno;
+    uint64_t lastBackfilledSeqno{0};
 
     /* backfillRemaining is a stat recording the amount of items remaining to
      * be read from disk.
