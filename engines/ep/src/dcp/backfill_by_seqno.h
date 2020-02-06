@@ -1,6 +1,6 @@
 /* -*- Mode: C++; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 /*
- *     Copyright 2017 Couchbase, Inc
+ *     Copyright 2020 Couchbase, Inc
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -14,14 +14,27 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  */
-#include "dcp/active_stream.h"
-#include "dcp/backfill.h"
 
-DCPBackfill::DCPBackfill(std::shared_ptr<ActiveStream> s)
-    : streamPtr(s), vbid(s->getVBucket()) {
-}
+#pragma once
 
-bool DCPBackfill::isStreamDead() const {
-    auto stream = streamPtr.lock();
-    return !stream || !stream->isActive();
-}
+#include "backfill.h"
+
+class DCPBackfillBySeqno : public virtual DCPBackfill {
+public:
+    DCPBackfillBySeqno(std::shared_ptr<ActiveStream> s,
+                       uint64_t start,
+                       uint64_t end)
+        : DCPBackfill(s), startSeqno(start), endSeqno(end) {
+    }
+
+protected:
+    /**
+     * Start seqno of the backfill
+     */
+    const uint64_t startSeqno{0};
+
+    /**
+     * End seqno of the backfill
+     */
+    uint64_t endSeqno{0};
+};

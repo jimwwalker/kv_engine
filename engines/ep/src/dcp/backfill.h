@@ -35,9 +35,9 @@ enum backfill_status_t {
 
 class DCPBackfill {
 public:
-    DCPBackfill(std::shared_ptr<ActiveStream> s,
-                uint64_t startSeqno,
-                uint64_t endSeqno);
+    DCPBackfill() = default;
+
+    DCPBackfill(std::shared_ptr<ActiveStream> s);
 
     virtual ~DCPBackfill() {
     }
@@ -82,19 +82,9 @@ protected:
     std::weak_ptr<ActiveStream> streamPtr;
 
     /**
-     * Start seqno of the backfill
-     */
-    const uint64_t startSeqno;
-
-    /**
-     * End seqno of the backfill
-     */
-    uint64_t endSeqno;
-
-    /**
      * Id of the vbucket on which the backfill is running
      */
-    const Vbid vbid;
+    const Vbid vbid{0};
 };
 
 using UniqueDCPBackfillPtr = std::unique_ptr<DCPBackfill>;

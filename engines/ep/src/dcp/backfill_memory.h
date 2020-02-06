@@ -18,7 +18,7 @@
 #pragma once
 
 #include "callbacks.h"
-#include "dcp/backfill.h"
+#include "dcp/backfill_by_seqno.h"
 #include "ephemeral_vb.h"
 
 /**
@@ -29,7 +29,7 @@
  * during scan() reads items one by one, passing to the given ActiveStream
  * for disk snapshot, backfill items and backfill completion.
  */
-class DCPBackfillMemoryBuffered : public DCPBackfill {
+class DCPBackfillMemoryBuffered : public DCPBackfillBySeqno {
 public:
     DCPBackfillMemoryBuffered(EphemeralVBucketPtr evb,
                               std::shared_ptr<ActiveStream> s,

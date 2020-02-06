@@ -16,7 +16,8 @@
  */
 #pragma once
 
-#include "dcp/backfill_disk.h"
+#include "dcp/backfill_by_seqno_disk.h"
+#include "ep_engine.h"
 #include "vbucket.h"
 #include "vbucket_bgfetch_item.h"
 
@@ -123,8 +124,8 @@ public:
                                            uint64_t startSeqno,
                                            uint64_t endSeqno) override {
         /* create a disk backfill object */
-        return std::make_unique<DCPBackfillDisk>(
-                e, stream, startSeqno, endSeqno);
+        return std::make_unique<DCPBackfillBySeqnoDisk>(
+                *e.getKVBucket(), stream, startSeqno, endSeqno);
     }
 
     uint64_t getPersistenceSeqno() const override {

@@ -1,6 +1,6 @@
 /* -*- Mode: C++; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 /*
- *     Copyright 2017 Couchbase, Inc
+ *     Copyright 2020 Couchbase, Inc
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
  */
 
 #pragma once
-
 #include "callbacks.h"
 #include "dcp/backfill.h"
 
 #include <mutex>
 
-class EventuallyPersistentEngine;
-class ScanContext;
+class ActiveStream;
+class KVBucket;
 class VBucket;
 
 /* The possible states of the DCPBackfillDisk */
@@ -37,8 +36,7 @@ enum backfill_state_t {
 /* Callback to get the items that are found to be in the cache */
 class CacheCallback : public StatusCallback<CacheLookup> {
 public:
-    CacheCallback(EventuallyPersistentEngine& e,
-                  std::shared_ptr<ActiveStream> s);
+    CacheCallback(KVBucket& bucket, std::shared_ptr<ActiveStream> s);
 
     void callback(CacheLookup& lookup);
 
@@ -50,7 +48,7 @@ private:
      */
     GetValue get(VBucket& vb, CacheLookup& lookup, ActiveStream& stream);
 
-    EventuallyPersistentEngine& engine_;
+    KVBucket& bucket;
     std::weak_ptr<ActiveStream> streamPtr;
 };
 
@@ -65,32 +63,22 @@ private:
     std::weak_ptr<ActiveStream> streamPtr;
 };
 
-/**
- * Concrete class that does backfill from the disk and informs the DCP stream
- * of the backfill progress.
- * This class calls asynchronous kvstore apis and manages a state machine to
- * read items in the sequential order from the disk and to call the DCP stream
- * for disk snapshot, backfill items and backfill completion.
- */
-class DCPBackfillDisk : public DCPBackfill {
+class DCPBackfillDisk : public virtual DCPBackfill {
 public:
-    DCPBackfillDisk(EventuallyPersistentEngine& e,
-                    std::shared_ptr<ActiveStream> s,
-                    uint64_t startSeqno,
-                    uint64_t endSeqno);
+    DCPBackfillDisk(KVBucket& bucket, std::shared_ptr<ActiveStream> s);
 
     ~DCPBackfillDisk();
 
+protected:
     backfill_status_t run() override;
-
     void cancel() override;
+    void transitionState(backfill_state_t newState);
 
-private:
     /**
      * Creates a scan context with the KV Store to read items in the sequential
      * order from the disk. Backfill snapshot range is decided here.
      */
-    backfill_status_t create();
+    virtual backfill_status_t create() = 0;
 
     /**
      * Scan the disk (by calling KVStore apis) for the items in the backfill
@@ -98,7 +86,7 @@ private:
      * asynchronous operation, KVStore calls the CacheCallback and DiskCallback
      * to populate the items read in the snapshot of scan.
      */
-    backfill_status_t scan();
+    virtual backfill_status_t scan() = 0;
 
     /**
      * Handles the completion of the backfill.
@@ -107,25 +95,16 @@ private:
      * @param cancelled indicates the if backfill finished fully or was
      *                  cancelled in between; for debug
      */
-    backfill_status_t complete(bool cancelled);
+    virtual backfill_status_t complete(bool cancelled) = 0;
 
-    /**
-     * Makes transitions to the state machine to backfill from the disk
-     * asynchronously and to inform the DCP stream of the backfill progress.
-     */
-    void transitionState(backfill_state_t newState);
+    std::mutex lock;
+    backfill_state_t state = backfill_state_init;
 
-    /**
-     * Ptr to the ep-engine.
-     * [TODO]: Check if ep-engine ptr is really needed or we can do with a
-     *         ptr/ref to kvbucket/vbucket.
-     */
-    EventuallyPersistentEngine& engine;
+    KVBucket& bucket;
 
-    /// Order is important, the scanCtx will reference the disk/cacheCallback
+    // Order is important, the scanCtx (if created) will reference the callbacks
+    // so the scanCtx should destruct before each callback
     std::unique_ptr<ScanContext> scanCtx;
     std::unique_ptr<DiskCallback> diskCallback;
     std::unique_ptr<CacheCallback> cacheCallback;
-    backfill_state_t state;
-    std::mutex lock;
 };
