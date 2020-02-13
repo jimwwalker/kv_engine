@@ -210,7 +210,7 @@ public:
 
     RollbackResult rollback(Vbid vbid,
                             uint64_t rollbackSeqno,
-                            std::shared_ptr<RollbackCB> cb) override;
+                            RollbackCB& cb) override;
 
     void pendingTasks() override;
 
@@ -220,17 +220,15 @@ public:
             uint32_t count,
             std::shared_ptr<Callback<const DiskDocKey&>> cb) override;
 
-    ScanContext* initScanContext(
-            std::shared_ptr<StatusCallback<GetValue>> cb,
-            std::shared_ptr<StatusCallback<CacheLookup>> cl,
+    std::unique_ptr<BySeqnoScanContext> initScanContext(
+            StatusCallback<GetValue>& cb,
+            StatusCallback<CacheLookup>& cl,
             Vbid vbid,
             uint64_t startSeqno,
             DocumentFilter options,
             ValueFilter valOptions) override;
 
-    scan_error_t scan(ScanContext* sctx) override;
-
-    void destroyScanContext(ScanContext* ctx) override;
+    scan_error_t scan(BySeqnoScanContext& sctx) override;
 
     /**
      * The magmaKVHandle protects magma from a kvstore being dropped

@@ -79,6 +79,8 @@ public:
                     uint64_t startSeqno,
                     uint64_t endSeqno);
 
+    ~DCPBackfillDisk();
+
     backfill_status_t run() override;
 
     void cancel() override;
@@ -120,7 +122,10 @@ private:
      */
     EventuallyPersistentEngine& engine;
 
-    ScanContext* scanCtx;
+    /// Order is important, the scanCtx will reference the disk/cacheCallback
+    std::unique_ptr<ScanContext> scanCtx;
+    std::unique_ptr<DiskCallback> diskCallback;
+    std::unique_ptr<CacheCallback> cacheCallback;
     backfill_state_t state;
     std::mutex lock;
 };

@@ -172,24 +172,22 @@ BENCHMARK_DEFINE_F(KVStoreBench, Scan)(benchmark::State& state) {
     while (state.KeepRunning()) {
         // Note: the CacheCallback here just make the code to flow into reading
         // data from disk
-        auto cb = std::make_shared<MockDiskCallback>();
-        auto cl = std::make_shared<MockCacheCallback>();
-        ScanContext* scanContext =
-                kvstore->initScanContext(cb,
-                                         cl,
+        auto cb = std::make_unique<MockDiskCallback>();
+        auto cl = std::make_unique<MockCacheCallback>();
+        auto scanContext =
+                kvstore->initScanContext(*cb,
+                                         *cl,
                                          vbid,
                                          0 /*startSeqno*/,
                                          DocumentFilter::ALL_ITEMS,
                                          ValueFilter::VALUES_COMPRESSED);
         ASSERT_TRUE(scanContext);
 
-        auto scanStatus = kvstore->scan(scanContext);
+        auto scanStatus = kvstore->scan(*scanContext);
         ASSERT_EQ(scanStatus, scan_success);
         auto itemCount = cb->getItemCount();
         ASSERT_EQ(itemCount, numItems);
         itemCountTotal += itemCount;
-
-        kvstore->destroyScanContext(scanContext);
     }
 
     state.SetItemsProcessed(itemCountTotal);

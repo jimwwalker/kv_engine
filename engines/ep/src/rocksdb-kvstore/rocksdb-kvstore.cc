@@ -1429,21 +1429,20 @@ std::unique_ptr<KVFileHandle> RocksDBKVStore::makeFileHandle(Vbid vbid) {
     return std::make_unique<RocksDBHandle>(*this, *rdb);
 }
 
-ScanContext* RocksDBKVStore::initScanContext(
-        std::shared_ptr<StatusCallback<GetValue>> cb,
-        std::shared_ptr<StatusCallback<CacheLookup>> cl,
+std::unique_ptr<BySeqnoScanContext> RocksDBKVStore::initScanContext(
+        StatusCallback<GetValue>& cb,
+        StatusCallback<CacheLookup>& cl,
         Vbid vbid,
         uint64_t startSeqno,
         DocumentFilter options,
         ValueFilter valOptions) {
-
     // As we cannot efficiently determine how many documents this scan will
     // find, we approximate this value with the seqno difference + 1
     // as scan is supposed to be inclusive at both ends,
     // seqnos 2 to 4 covers 3 docs not 4 - 2 = 2
 
     auto& state = cachedVBStates[vbid.get()];
-    return new ScanContext(
+    return std::make_unique<BySeqnoScanContext>(
             cb,
             cl,
             vbid,
@@ -1455,42 +1454,38 @@ ScanContext* RocksDBKVStore::initScanContext(
             valOptions,
             /* documentCount */ state->highSeqno - startSeqno + 1,
             *state,
-            configuration,
-            {/*no collections in rocksdb*/});
+            std::vector<Collections::KVStore::DroppedCollection>{
+                    /*no collections in rocksdb*/});
 }
 
-scan_error_t RocksDBKVStore::scan(ScanContext* ctx) {
-    if (!ctx) {
-        return scan_failed;
-    }
-
-    if (ctx->lastReadSeqno == ctx->maxSeqno) {
+scan_error_t RocksDBKVStore::scan(BySeqnoScanContext& ctx) {
+    if (ctx.lastReadSeqno == ctx.maxSeqno) {
         return scan_success;
     }
 
-    auto startSeqno = ctx->startSeqno;
-    if (ctx->lastReadSeqno != 0) {
-        startSeqno = ctx->lastReadSeqno + 1;
+    auto startSeqno = ctx.startSeqno;
+    if (ctx.lastReadSeqno != 0) {
+        startSeqno = ctx.lastReadSeqno + 1;
     }
 
     TRACE_EVENT2("RocksDBKVStore",
                  "scan",
                  "vbid",
-                 ctx->vbid.get(),
+                 ctx.vbid.get(),
                  "startSeqno",
                  startSeqno);
 
-    GetMetaOnly isMetaOnly = ctx->valFilter == ValueFilter::KEYS_ONLY
+    GetMetaOnly isMetaOnly = ctx.valFilter == ValueFilter::KEYS_ONLY
                                      ? GetMetaOnly::Yes
                                      : GetMetaOnly::No;
 
     rocksdb::ReadOptions snapshotOpts{rocksdb::ReadOptions()};
 
-    auto& handle = static_cast<RocksDBHandle&>(*ctx->handle);
+    auto& handle = static_cast<RocksDBHandle&>(*ctx.handle);
     snapshotOpts.snapshot = handle.snapshot.get();
 
     rocksdb::Slice startSeqnoSlice = getSeqnoSlice(&startSeqno);
-    const auto vbh = getVBHandle(ctx->vbid);
+    const auto vbh = getVBHandle(ctx.vbid);
     std::unique_ptr<rocksdb::Iterator> it(
             rdb->NewIterator(snapshotOpts, vbh->seqnoCFH.get()));
     if (!it) {
@@ -1500,7 +1495,7 @@ scan_error_t RocksDBKVStore::scan(ScanContext* ctx) {
     }
     it->Seek(startSeqnoSlice);
 
-    rocksdb::Slice endSeqnoSlice = getSeqnoSlice(&ctx->maxSeqno);
+    rocksdb::Slice endSeqnoSlice = getSeqnoSlice(&ctx.maxSeqno);
     auto isPastEnd = [&endSeqnoSlice, this](rocksdb::Slice seqSlice) {
         return seqnoComparator.Compare(seqSlice, endSeqnoSlice) == 1;
     };
@@ -1534,7 +1529,7 @@ scan_error_t RocksDBKVStore::scan(ScanContext* ctx) {
         DiskDocKey key{keySlice.data(), keySlice.size()};
 
         std::unique_ptr<Item> itm =
-                makeItem(ctx->vbid, key, valSlice, isMetaOnly);
+                makeItem(ctx.vbid, key, valSlice, isMetaOnly);
 
         if (itm->getBySeqno() > seqno) {
             // TODO RDB: Old seqnos are never removed from the db!
@@ -1549,9 +1544,9 @@ scan_error_t RocksDBKVStore::scan(ScanContext* ctx) {
         }
 
         bool includeDeletes =
-                (ctx->docFilter == DocumentFilter::NO_DELETES) ? false : true;
+                (ctx.docFilter == DocumentFilter::NO_DELETES) ? false : true;
         bool onlyKeys =
-                (ctx->valFilter == ValueFilter::KEYS_ONLY) ? true : false;
+                (ctx.valFilter == ValueFilter::KEYS_ONLY) ? true : false;
 
         // Skip deleted items if they were not requested - apart from
         // Prepared SyncWrites as the "deleted" there refers to the future
@@ -1562,22 +1557,22 @@ scan_error_t RocksDBKVStore::scan(ScanContext* ctx) {
         int64_t byseqno = itm->getBySeqno();
 
         if (!key.getDocKey().getCollectionID().isSystem()) {
-            if (ctx->docFilter !=
+            if (ctx.docFilter !=
                 DocumentFilter::ALL_ITEMS_AND_DROPPED_COLLECTIONS) {
-                if (ctx->collectionsContext.isLogicallyDeleted(key.getDocKey(),
-                                                               byseqno)) {
-                    ctx->lastReadSeqno = byseqno;
+                if (ctx.collectionsContext.isLogicallyDeleted(key.getDocKey(),
+                                                              byseqno)) {
+                    ctx.lastReadSeqno = byseqno;
                     continue;
                 }
             }
 
-            CacheLookup lookup(key, byseqno, ctx->vbid);
+            CacheLookup lookup(key, byseqno, ctx.vbid);
 
-            ctx->lookup->callback(lookup);
+            ctx.lookup.callback(lookup);
 
-            auto status = ctx->lookup->getStatus();
+            auto status = ctx.lookup.getStatus();
             if (status == ENGINE_KEY_EEXISTS) {
-                ctx->lastReadSeqno = byseqno;
+                ctx.lastReadSeqno = byseqno;
                 continue;
             } else if (status == ENGINE_ENOMEM) {
                 return scan_again;
@@ -1585,27 +1580,19 @@ scan_error_t RocksDBKVStore::scan(ScanContext* ctx) {
         }
 
         GetValue rv(std::move(itm), ENGINE_SUCCESS, -1, onlyKeys);
-        ctx->callback->callback(rv);
-        auto status = ctx->callback->getStatus();
+        ctx.callback.callback(rv);
+        auto status = ctx.callback.getStatus();
 
         if (status == ENGINE_ENOMEM) {
             return scan_again;
         }
 
-        ctx->lastReadSeqno = byseqno;
+        ctx.lastReadSeqno = byseqno;
     }
 
     cb_assert(it->status().ok()); // Check for any errors found during the scan
 
     return scan_success;
-}
-
-void RocksDBKVStore::destroyScanContext(ScanContext* ctx) {
-    if (ctx == nullptr) {
-        return;
-    }
-
-    delete ctx;
 }
 
 bool RocksDBKVStore::getStatFromMemUsage(

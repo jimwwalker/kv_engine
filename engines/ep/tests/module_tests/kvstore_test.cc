@@ -269,19 +269,17 @@ TEST_P(KVStoreParamTestSkipRocks, CompressedTest) {
     flush.proposedVBState.lastSnapEnd = 5;
     kvstore->commit(flush);
 
-    auto cb = std::make_shared<GetCallback>(true /*expectcompressed*/);
-    auto cl = std::make_shared<KVStoreTestCacheCallback>(1, 5, Vbid(0));
-    ScanContext* scanCtx;
-    scanCtx = kvstore->initScanContext(cb,
-                                       cl,
-                                       Vbid(0),
-                                       1,
-                                       DocumentFilter::ALL_ITEMS,
-                                       ValueFilter::VALUES_COMPRESSED);
+    auto cb = std::make_unique<GetCallback>(true /*expectcompressed*/);
+    auto cl = std::make_unique<KVStoreTestCacheCallback>(1, 5, Vbid(0));
+    auto scanCtx = kvstore->initScanContext(*cb,
+                                            *cl,
+                                            Vbid(0),
+                                            1,
+                                            DocumentFilter::ALL_ITEMS,
+                                            ValueFilter::VALUES_COMPRESSED);
 
-    ASSERT_NE(nullptr, scanCtx);
-    EXPECT_EQ(scan_success, kvstore->scan(scanCtx));
-    kvstore->destroyScanContext(scanCtx);
+    ASSERT_TRUE(scanCtx);
+    EXPECT_EQ(scan_success, kvstore->scan(*scanCtx));
 }
 
 // Verify the stats returned from operations are accurate.
@@ -528,21 +526,19 @@ TEST_F(CouchKVStoreTest, CollectionsOfflineUpgade) {
     output.commit();
 
     auto kvstore2 = KVStoreFactory::create(config2);
-    auto cb = std::make_shared<CollectionsOfflineGetCallback>(
+    auto cb = std::make_unique<CollectionsOfflineGetCallback>(
             std::pair<int, int>{18, 18 + deletedKeys});
-    auto cl = std::make_shared<CollectionsOfflineUpgadeCallback>(cid);
-    ScanContext* scanCtx;
-    scanCtx = kvstore2.rw->initScanContext(
-            cb,
-            cl,
+    auto cl = std::make_unique<CollectionsOfflineUpgadeCallback>(cid);
+    auto scanCtx = kvstore2.rw->initScanContext(
+            *cb,
+            *cl,
             Vbid(0),
             1,
             DocumentFilter::ALL_ITEMS_AND_DROPPED_COLLECTIONS,
             ValueFilter::VALUES_COMPRESSED);
 
-    ASSERT_NE(nullptr, scanCtx);
-    EXPECT_EQ(scan_success, kvstore2.rw->scan(scanCtx));
-    kvstore2.rw->destroyScanContext(scanCtx);
+    ASSERT_TRUE(scanCtx);
+    EXPECT_EQ(scan_success, kvstore2.rw->scan(*scanCtx));
     EXPECT_EQ(keys, cl->callbacks);
 
     // Check item count
@@ -987,28 +983,25 @@ TEST_F(CouchKVStoreErrorInjectionTest, reset_commit) {
  */
 TEST_F(CouchKVStoreErrorInjectionTest, initScanContext_changes_count) {
     populate_items(1);
-    auto cb(std::make_shared<CustomCallback<GetValue>>());
-    auto cl(std::make_shared<CustomCallback<CacheLookup>>());
+    auto cb(std::make_unique<CustomCallback<GetValue>>());
+    auto cl(std::make_unique<CustomCallback<CacheLookup>>());
     {
         /* Establish FileOps expectation */
         EXPECT_CALL(ops, pread(_, _, _, _, _))
             .WillOnce(Return(COUCHSTORE_ERROR_READ)).RetiresOnSaturation();
         EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(3).RetiresOnSaturation();
 
-        ScanContext* scanCtx = nullptr;
-        scanCtx = kvstore->initScanContext(cb,
-                                           cl,
-                                           Vbid(0),
-                                           0,
-                                           DocumentFilter::ALL_ITEMS,
-                                           ValueFilter::VALUES_DECOMPRESSED);
-        EXPECT_EQ(nullptr, scanCtx)
-                << "kvstore->initScanContext(cb, cl, 0, 0, "
-                   "DocumentFilter::ALL_ITEMS, "
-                   "ValueFilter::VALUES_DECOMPRESSED); should "
-                   "have returned NULL";
-
-        kvstore->destroyScanContext(scanCtx);
+        auto scanCtx =
+                kvstore->initScanContext(*cb,
+                                         *cl,
+                                         Vbid(0),
+                                         0,
+                                         DocumentFilter::ALL_ITEMS,
+                                         ValueFilter::VALUES_DECOMPRESSED);
+        EXPECT_FALSE(scanCtx) << "kvstore->initScanContext(cb, cl, 0, 0, "
+                                 "DocumentFilter::ALL_ITEMS, "
+                                 "ValueFilter::VALUES_DECOMPRESSED); should "
+                                 "have returned NULL";
     }
 }
 
@@ -1017,11 +1010,11 @@ TEST_F(CouchKVStoreErrorInjectionTest, initScanContext_changes_count) {
  */
 TEST_F(CouchKVStoreErrorInjectionTest, scan_changes_since) {
     populate_items(1);
-    auto cb(std::make_shared<CustomCallback<GetValue>>());
-    auto cl(std::make_shared<CustomCallback<CacheLookup>>());
+    auto cb(std::make_unique<CustomCallback<GetValue>>());
+    auto cl(std::make_unique<CustomCallback<CacheLookup>>());
     auto scan_context =
-            kvstore->initScanContext(cb,
-                                     cl,
+            kvstore->initScanContext(*cb,
+                                     *cl,
                                      Vbid(0),
                                      0,
                                      DocumentFilter::ALL_ITEMS,
@@ -1039,10 +1032,8 @@ TEST_F(CouchKVStoreErrorInjectionTest, scan_changes_since) {
         EXPECT_CALL(ops, pread(_, _, _, _, _))
             .WillOnce(Return(COUCHSTORE_ERROR_READ)).RetiresOnSaturation();
 
-        kvstore->scan(scan_context);
+        kvstore->scan(*scan_context);
     }
-
-    kvstore->destroyScanContext(scan_context);
 }
 
 /**
@@ -1050,11 +1041,11 @@ TEST_F(CouchKVStoreErrorInjectionTest, scan_changes_since) {
  */
 TEST_F(CouchKVStoreErrorInjectionTest, recordDbDump_open_doc_with_docinfo) {
     populate_items(1);
-    auto cb(std::make_shared<CustomCallback<GetValue>>());
-    auto cl(std::make_shared<CustomCallback<CacheLookup>>());
+    auto cb(std::make_unique<CustomCallback<GetValue>>());
+    auto cl(std::make_unique<CustomCallback<CacheLookup>>());
     auto scan_context =
-            kvstore->initScanContext(cb,
-                                     cl,
+            kvstore->initScanContext(*cb,
+                                     *cl,
                                      Vbid(0),
                                      0,
                                      DocumentFilter::ALL_ITEMS,
@@ -1073,10 +1064,8 @@ TEST_F(CouchKVStoreErrorInjectionTest, recordDbDump_open_doc_with_docinfo) {
             .WillOnce(Return(COUCHSTORE_ERROR_READ)).RetiresOnSaturation();
         EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(2).RetiresOnSaturation();
 
-        kvstore->scan(scan_context);
+        kvstore->scan(*scan_context);
     }
-
-    kvstore->destroyScanContext(scan_context);
 }
 
 /**
@@ -1091,7 +1080,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_changes_count1) {
         kvstore->commit(flush);
     }
 
-    auto rcb(std::make_shared<CustomRBCallback>());
+    auto rcb(std::make_unique<CustomRBCallback>());
     {
         /* Establish Logger expectation */
         EXPECT_CALL(logger, mlog(_, _)).Times(AnyNumber());
@@ -1106,7 +1095,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_changes_count1) {
             .WillOnce(Return(COUCHSTORE_ERROR_READ)).RetiresOnSaturation();
         EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(3).RetiresOnSaturation();
 
-        kvstore->rollback(Vbid(0), 5, rcb);
+        kvstore->rollback(Vbid(0), 5, *rcb);
     }
 }
 
@@ -1122,7 +1111,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_rewind_header) {
         kvstore->commit(flush);
     }
 
-    auto rcb(std::make_shared<CustomRBCallback>());
+    auto rcb(std::make_unique<CustomRBCallback>());
     {
         /* Establish Logger expectation */
         EXPECT_CALL(logger, mlog(_, _)).Times(AnyNumber());
@@ -1139,7 +1128,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_rewind_header) {
             .WillOnce(Return(COUCHSTORE_ERROR_ALLOC_FAIL)).RetiresOnSaturation();
         EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(9).RetiresOnSaturation();
 
-        kvstore->rollback(Vbid(0), 5, rcb);
+        kvstore->rollback(Vbid(0), 5, *rcb);
     }
 }
 
@@ -1155,7 +1144,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_changes_count2) {
         kvstore->commit(flush);
     }
 
-    auto rcb(std::make_shared<CustomRBCallback>());
+    auto rcb(std::make_unique<CustomRBCallback>());
     {
         /* Establish Logger expectation */
         EXPECT_CALL(logger, mlog(_, _)).Times(AnyNumber());
@@ -1170,7 +1159,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, rollback_changes_count2) {
             .WillOnce(Return(COUCHSTORE_ERROR_READ)).RetiresOnSaturation();
         EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(11).RetiresOnSaturation();
 
-        kvstore->rollback(Vbid(0), 5, rcb);
+        kvstore->rollback(Vbid(0), 5, *rcb);
     }
 }
 
@@ -1188,7 +1177,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, readVBState_open_local_document) {
         kvstore->commit(flush);
     }
 
-    auto rcb(std::make_shared<CustomRBCallback>());
+    auto rcb(std::make_unique<CustomRBCallback>());
     {
         /* Establish Logger expectation */
         EXPECT_CALL(logger, mlog(_, _)).Times(AnyNumber());
@@ -1208,7 +1197,7 @@ TEST_F(CouchKVStoreErrorInjectionTest, readVBState_open_local_document) {
                 .RetiresOnSaturation();
         EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(20).RetiresOnSaturation();
 
-        EXPECT_EQ(false, kvstore->rollback(Vbid(0), 5, rcb).success);
+        EXPECT_EQ(false, kvstore->rollback(Vbid(0), 5, *rcb).success);
     }
 }
 
@@ -2411,18 +2400,15 @@ TEST_P(KVStoreParamTestSkipRocks, DelVBucketConcurrentOperationsTest) {
     auto initScan = [&] {
         tg.threadUp();
         while (!stop.load()) {
-            auto cb = std::make_shared<GetCallback>(true);
-            auto cl = std::make_shared<KVStoreTestCacheCallback>(1, 5, Vbid(0));
-            ScanContext* scanCtx = nullptr;
-            scanCtx = kvstore->initScanContext(cb,
-                                               cl,
-                                               Vbid(0),
-                                               1,
-                                               DocumentFilter::ALL_ITEMS,
-                                               ValueFilter::VALUES_COMPRESSED);
-            if (scanCtx) {
-                kvstore->destroyScanContext(scanCtx);
-            }
+            auto cb = std::make_unique<GetCallback>(true);
+            auto cl = std::make_unique<KVStoreTestCacheCallback>(1, 5, Vbid(0));
+            auto scanCtx =
+                    kvstore->initScanContext(*cb,
+                                             *cl,
+                                             Vbid(0),
+                                             1,
+                                             DocumentFilter::ALL_ITEMS,
+                                             ValueFilter::VALUES_COMPRESSED);
         }
     };
 
@@ -2462,20 +2448,19 @@ TEST_P(KVStoreParamTest, CompactAndScan) {
     auto initScan = [this, &tg] {
         tg.threadUp();
         for (int i = 0; i < 10; i++) {
-            auto cb = std::make_shared<GetCallback>(true /*expectcompressed*/);
-            auto cl = std::make_shared<KVStoreTestCacheCallback>(1, 5, Vbid(0));
-            ScanContext* scanCtx;
-            scanCtx = kvstore->initScanContext(cb,
-                                               cl,
-                                               Vbid(0),
-                                               1,
-                                               DocumentFilter::ALL_ITEMS,
-                                               ValueFilter::VALUES_COMPRESSED);
-            if (scanCtx == nullptr) {
+            auto cb = std::make_unique<GetCallback>(true /*expectcompressed*/);
+            auto cl = std::make_unique<KVStoreTestCacheCallback>(1, 5, Vbid(0));
+            auto scanCtx =
+                    kvstore->initScanContext(*cb,
+                                             *cl,
+                                             Vbid(0),
+                                             1,
+                                             DocumentFilter::ALL_ITEMS,
+                                             ValueFilter::VALUES_COMPRESSED);
+            if (!scanCtx) {
                 FAIL() << "initScanContext returned nullptr";
                 return;
             }
-            kvstore->destroyScanContext(scanCtx);
         }
     };
     auto compact = [this, &tg] {
@@ -2870,8 +2855,8 @@ TEST_F(MagmaKVStoreTest, DISABLED_Rollback) {
     rv = kvstore->get(makeDiskDocKey("key6"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), ENGINE_SUCCESS);
 
-    auto rcb(std::make_shared<CustomRBCallback>());
-    kvstore->rollback(Vbid(0), 5, rcb);
+    auto rcb(std::make_unique<CustomRBCallback>());
+    kvstore->rollback(Vbid(0), 5, *rcb);
 
     rv = kvstore->get(makeDiskDocKey("key1"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), ENGINE_SUCCESS);
@@ -2904,8 +2889,8 @@ TEST_F(MagmaKVStoreTest, DISABLED_RollbackNoValidCommitPoint) {
       kvstore->commit(flush);
     }
 
-    auto rcb(std::make_shared<CustomRBCallback>());
-    auto rollbackResult = kvstore->rollback(Vbid(0), 5, rcb);
+    auto rcb(std::make_unique<CustomRBCallback>());
+    auto rollbackResult = kvstore->rollback(Vbid(0), 5, *rcb);
     ASSERT_FALSE(rollbackResult.success);
 }
 
