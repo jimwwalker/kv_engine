@@ -1358,9 +1358,9 @@ public:
             throw std::invalid_argument(
                     "EPDiskRollbackCB::callback: val is NULL");
         }
-        if (dbHandle == nullptr) {
+        if (!kvFileHandle) {
             throw std::logic_error(
-                    "EPDiskRollbackCB::callback: dbHandle is NULL");
+                    "EPDiskRollbackCB::callback: kvFileHandle is nullptr");
         }
 
         // Skip system keys, they aren't stored in the hashtable
@@ -1405,7 +1405,7 @@ public:
         GetValue preRbSeqnoGetValue =
                 engine.getKVBucket()
                         ->getROUnderlying(postRbSeqnoItem->getVBucketId())
-                        ->getWithHeader(dbHandle,
+                        ->getWithHeader(*kvFileHandle,
                                         DiskDocKey{*postRbSeqnoItem},
                                         postRbSeqnoItem->getVBucketId(),
                                         GetMetaOnly::No);
