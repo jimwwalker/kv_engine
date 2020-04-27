@@ -22,8 +22,10 @@
 #include "collections/events_generated.h"
 #include "collections/kvstore.h"
 #include "collections/manifest.h"
+#include "ep_engine.h"
 #include "ep_time.h"
 #include "item.h"
+#include "kv_bucket.h"
 #include "statwriter.h"
 #include "vbucket.h"
 
@@ -845,11 +847,6 @@ bool Manifest::addScopeStats(Vbid vbid,
     }
 
     // We'll also print the iteration index of each scope and collection.
-    // This is particularly useful for scopes as the ordering of the
-    // container matters when we deal with scope deletion events. It's less
-    // useful for collection stats, but allows us to print the CollectionID
-    // as the value and ensures that we still have unique keys which is a
-    // requirement of stats.
     int i = 0;
     for (auto it = scopes.begin(); it != scopes.end(); it++, i++) {
         checked_snprintf(
