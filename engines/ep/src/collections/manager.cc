@@ -363,7 +363,7 @@ Collections::Manager::doCollectionDetailStats(KVBucket& bucket,
             id = std::stoi(*arg);
         } catch (const std::logic_error& e) {
             EP_LOG_WARN(
-                    "Collections::Manager::doCollectionStats invalid "
+                    "Collections::Manager::doCollectionDetailStats invalid "
                     "vbid:{}, exception:{}",
                     *arg,
                     e.what());
@@ -430,7 +430,7 @@ cb::EngineErrorGetCollectionIDResult Collections::Manager::doOneCollectionStats(
             cid = std::stoi(arg, nullptr, 16);
         } catch (const std::logic_error& e) {
             EP_LOG_WARN(
-                    "Collections::Manager::doCollectionStats invalid "
+                    "Collections::Manager::doOneCollectionStats invalid "
                     "collection arg:{}, exception:{}",
                     arg,
                     e.what());
@@ -442,7 +442,7 @@ cb::EngineErrorGetCollectionIDResult Collections::Manager::doOneCollectionStats(
         auto res = bucket.getCollectionsManager().getCollectionID(arg);
         if (res.result != cb::engine_errc::success) {
             EP_LOG_WARN(
-                    "Collections::Manager::doCollectionStats could not "
+                    "Collections::Manager::doOneCollectionStats could not "
                     "find "
                     "collection arg:{} error:{}",
                     arg,
@@ -457,7 +457,7 @@ cb::EngineErrorGetCollectionIDResult Collections::Manager::doOneCollectionStats(
 
     if (collectionItr == current->end()) {
         EP_LOG_WARN(
-                "Collections::Manager::doCollectionStats unknown "
+                "Collections::Manager::doOneCollectionStats unknown "
                 "collection arg:{} cid:{}",
                 arg,
                 cid.to_string());
@@ -517,7 +517,7 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doScopeDetailStats(
             id = std::stoi(*arg);
         } catch (const std::logic_error& e) {
             EP_LOG_WARN(
-                    "Collections::Manager::doScopeStats invalid "
+                    "Collections::Manager::doScopeDetailStats invalid "
                     "vbid:{}, exception:{}",
                     *arg,
                     e.what());
@@ -573,7 +573,7 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doOneScopeStats(
             scopeID = std::stoi(arg, nullptr, 16);
         } catch (const std::logic_error& e) {
             EP_LOG_WARN(
-                    "Collections::Manager::doScopeStats invalid "
+                    "Collections::Manager::doOneScopeStats invalid "
                     "scope arg:{}, exception:{}",
                     arg,
                     e.what());
@@ -585,7 +585,7 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doOneScopeStats(
         auto res = bucket.getCollectionsManager().getScopeID(arg);
         if (res.result != cb::engine_errc::success) {
             EP_LOG_WARN(
-                    "Collections::Manager::doScopeStats unknown "
+                    "Collections::Manager::doOneScopeStats unknown "
                     "scope arg:{} error:{}",
                     arg,
                     res.result);
@@ -598,7 +598,7 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doOneScopeStats(
 
     if (scopeItr == current->endScopes()) {
         EP_LOG_WARN(
-                "Collections::Manager::doScopeStats unknown "
+                "Collections::Manager::doOneScopeStats unknown "
                 "scope arg:{} sid:{}",
                 arg,
                 scopeID.to_string());
@@ -613,7 +613,7 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doOneScopeStats(
         Expects(itr != current->end());
         const auto& [cid, collection] = *itr;
         cachedStats.addStatsForCollection(
-                scope, cid, collection, add_stat, cookie);
+                {}, cid, collection, add_stat, cookie);
     }
     return {current->getUid(), scopeID};
 }
@@ -647,7 +647,7 @@ Collections::CachedStats::CachedStats(
       accumulatedStats(std::move(accumulatedStats)) {
 }
 void Collections::CachedStats::addStatsForCollection(
-        const Scope& scope,
+        const std::optional<Scope>& scope,
         const CollectionID& cid,
         const Manifest::Collection& collection,
         const AddStatFn& add_stat,
@@ -664,10 +664,13 @@ void Collections::CachedStats::addStatsForCollection(
     format_to(buf, "{}:{}:name", scopeID.to_string(), cid.to_string());
     add_stat({buf.data(), buf.size()}, collection.name, cookie);
 
-    // add scope name stat
-    buf.resize(0);
-    format_to(buf, "{}:{}:scope_name", scopeID.to_string(), cid.to_string());
-    add_stat({buf.data(), buf.size()}, scope.name, cookie);
+    // add scope name stat?
+    if (scope) {
+        buf.resize(0);
+        format_to(
+                buf, "{}:{}:scope_name", scopeID.to_string(), cid.to_string());
+        add_stat({buf.data(), buf.size()}, scope.value().name, cookie);
+    }
 }
 
 void Collections::CachedStats::addStatsForScope(const ScopeID& sid,
