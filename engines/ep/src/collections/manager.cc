@@ -408,11 +408,11 @@ Collections::Manager::doAllCollectionsStats(KVBucket& bucket,
     // do stats for every collection
     for (const auto& entry : *current) {
         // Access check for SimpleStats. Use testPrivilege as it won't log
-        if (bucket.getEPEngine().testPrivilege(cookie,
-                                               cb::rbac::Privilege::SimpleStats,
-                                               entry.second.sid,
-                                               entry.first) !=
-            cb::engine_errc::success) {
+        if (bucket.getEPEngine().testPrivilege(
+                    cookie,
+                    cb::rbac::Privilege::Read, // SimpleStats,
+                    entry.second.sid,
+                    entry.first) != cb::engine_errc::success) {
             continue; // skip this collection
         }
 
@@ -585,8 +585,10 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doAllScopesStats(
          ++itr) {
         // Access check for SimpleStats. Use testPrivilege as it won't log
         if (bucket.getEPEngine().testPrivilege(
-                    cookie, cb::rbac::Privilege::SimpleStats, itr->first, {}) !=
-            cb::engine_errc::success) {
+                    cookie,
+                    cb::rbac::Privilege::Read /*SimpleStats*/,
+                    itr->first,
+                    {}) != cb::engine_errc::success) {
             continue; // skip this collection
         }
         cachedStats.addStatsForScope(itr->first, itr->second, add_stat, cookie);
@@ -634,7 +636,10 @@ cb::EngineErrorGetScopeIDResult Collections::Manager::doOneScopeStats(
 
     // Access check for SimpleStats
     res.result = bucket.getEPEngine().checkPrivilege(
-            cookie, cb::rbac::Privilege::SimpleStats, res.getScopeId(), {});
+            cookie,
+            cb::rbac::Privilege::Read /*SimpleStats*/,
+            res.getScopeId(),
+            {});
     if (res.result != cb::engine_errc::success) {
         return res;
     }

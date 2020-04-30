@@ -333,7 +333,8 @@ void Manifest::addCollectionStats(KVBucket& bucket,
                 // privilege
                 if (bucket.getEPEngine().testPrivilege(
                             cookie,
-                            cb::rbac::Privilege::SimpleStats,
+                            cb::rbac::Privilege::
+                                    Read, // cb::rbac::Privilege::SimpleStats,
                             scope.first,
                             entry.id) != cb::engine_errc::success) {
                     continue; // skip this collection
@@ -376,7 +377,8 @@ void Manifest::addScopeStats(KVBucket& bucket,
             // privilege
             if (bucket.getEPEngine().testPrivilege(
                         cookie,
-                        cb::rbac::Privilege::SimpleStats,
+                        cb::rbac::Privilege::
+                                Read, // cb::rbac::Privilege::SimpleStats,
                         entry.first,
                         {}) != cb::engine_errc::success) {
                 continue; // skip this scope
