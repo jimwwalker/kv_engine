@@ -376,6 +376,7 @@ protected:
 
     bool nextCheckpointItem();
 
+    std::unique_ptr<DcpResponse> nextQueuedItem(DcpProducer& producer);
     std::unique_ptr<DcpResponse> nextQueuedItem();
 
     /**

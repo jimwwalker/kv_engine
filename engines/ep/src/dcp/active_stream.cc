@@ -433,8 +433,8 @@ bool ActiveStream::backfillReceived(std::unique_ptr<Item> itm,
             return false;
         }
 
-        bufferedBackfill.bytes.fetch_add(resp->getApproximateSize());
-        bufferedBackfill.items++;
+        auto size = resp->getApproximateSize();
+
         lastBackfilledSeqno = std::max<uint64_t>(lastBackfilledSeqno,
                                                  uint64_t(*resp->getBySeqno()));
 
@@ -448,6 +448,9 @@ bool ActiveStream::backfillReceived(std::unique_ptr<Item> itm,
         } else {
             backfillItems.disk++;
         }
+
+        bufferedBackfill.bytes.fetch_add(size);
+        bufferedBackfill.items++;
     }
 
     return true;
@@ -652,23 +655,13 @@ void ActiveStream::clearBackfillRemaining() {
 
 std::unique_ptr<DcpResponse> ActiveStream::backfillPhase(
         std::lock_guard<std::mutex>& lh) {
-    auto resp = nextQueuedItem();
+    auto producer = producerPtr.lock();
+    if (!producer) {
+        return nullptr;
+    }
+    auto resp = nextQueuedItem(*producer);
 
     if (resp) {
-        /* It is ok to have recordBackfillManagerBytesSent() and
-           bufferedBackfill.bytes.fetch_sub() for all events because
-           resp->getApproximateSize() is non zero for only certain resp types.
-           (MB-24905 is open to make the accounting cleaner) */
-        auto producer = producerPtr.lock();
-        if (!producer) {
-            throw std::logic_error(
-                    "ActiveStream::backfillPhase: Producer reference null. "
-                    "This should not happen as "
-                    "the function is called from the producer "
-                    "object. " +
-                    logPrefix);
-        }
-
         producer->recordBackfillManagerBytesSent(resp->getApproximateSize());
         bufferedBackfill.bytes.fetch_sub(resp->getApproximateSize());
         if (!resp->isMetaEvent() || resp->isSystemEvent()) {
@@ -692,7 +685,7 @@ std::unique_ptr<DcpResponse> ActiveStream::backfillPhase(
             // After scheduling a backfill we may now have items in readyQ -
             // so re-check if we didn't already have a response.
             if (!resp) {
-                resp = nextQueuedItem();
+                resp = nextQueuedItem(*producer);
             }
         } else {
             if (lastReadSeqno.load() >= end_seqno_) {
@@ -995,13 +988,25 @@ std::unique_ptr<DcpResponse> ActiveStream::nextQueuedItem() {
         if (producer->bufferLogInsert(response->getMessageSize())) {
             auto seqno = response->getBySeqno();
             if (seqno) {
-                lastSentSeqno.store(*seqno);
+                lastSentSeqno.store(*seqno, std::memory_order_release);
+                itemsFromMemoryPhase++;
+            }
 
-                if (isBackfilling()) {
-                    backfillItems.sent++;
-                } else {
-                    itemsFromMemoryPhase++;
-                }
+            return popFromReadyQ();
+        }
+    }
+    return nullptr;
+}
+
+std::unique_ptr<DcpResponse> ActiveStream::nextQueuedItem(
+        DcpProducer& producer) {
+    if (!readyQ.empty()) {
+        auto& response = readyQ.front();
+        if (producer.bufferLogInsert(response->getMessageSize())) {
+            auto seqno = response->getBySeqno();
+            if (seqno) {
+                lastSentSeqno.store(*seqno, std::memory_order_release);
+                backfillItems.sent++;
             }
 
             return popFromReadyQ();
