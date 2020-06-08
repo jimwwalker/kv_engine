@@ -38,6 +38,27 @@ void Collections::VB::Flush::saveCollectionStats(
     }
 }
 
+void Collections::VB::Flush::saveCollectionStats2(
+        std::function<void(CollectionID, std::vector<PersistedStats2>)> cb)
+        const {
+    std::vector<PersistedStats2> encodedStats;
+    encodedStats.reserve(mutated.size());
+    for (const auto c : mutated) {
+        PersistedStats stats;
+        {
+            auto lock = manifest.lock(c);
+            if (!lock.valid()) {
+                // Can be flushing for a dropped collection (no longer in the
+                // manifest)
+                continue;
+            }
+            //  encodedStats.push_back({c,
+            //  lock.getPersistedStats().getLebEncodedStats()});
+        }
+    }
+    //  cb(c, encodedStats);
+}
+
 void Collections::VB::Flush::incrementDiskCount(const DocKey& key) {
     if (key.getCollectionID() != CollectionID::System) {
         mutated.insert(key.getCollectionID());

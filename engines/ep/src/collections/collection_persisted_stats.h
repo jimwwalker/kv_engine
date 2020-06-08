@@ -45,5 +45,10 @@ struct PersistedStats {
     uint64_t itemCount;
     uint64_t highSeqno;
 };
+
+struct PersistedStats2 {
+    int id;
+    std::string encodedStats;
+};
 } // end namespace VB
 } // end namespace Collections

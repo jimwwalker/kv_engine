@@ -29,6 +29,7 @@ namespace VB {
 
 class Manifest;
 struct PersistedStats;
+struct PersistedStats2;
 
 /**
  * The Collections::VB::Flush object maintains data used in a single run of the
@@ -50,6 +51,10 @@ public:
      */
     void saveCollectionStats(
             std::function<void(CollectionID, PersistedStats)> cb) const;
+
+    void saveCollectionStats2(
+            std::function<void(CollectionID, std::vector<PersistedStats2>)> cb)
+            const;
 
     /**
      * Increment the 'disk' count for the collection associated with the key
