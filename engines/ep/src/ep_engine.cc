@@ -2308,6 +2308,7 @@ ENGINE_ERROR_CODE EventuallyPersistentEngine::itemAllocate(
                     expiretime,
                     nullptr,
                     nbytes,
+                    Item::NotASystemEvent{},
                     datatype,
                     0 /*cas*/,
                     -1 /*seq*/,

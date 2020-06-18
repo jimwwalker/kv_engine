@@ -885,6 +885,11 @@ protected:
                                      HideLockedCas hideLockedCas,
                                      IncludeValue includeValue) const;
 
+    /// StoredValue vs OrderedStoredValue use different Item constructors
+    std::unique_ptr<Item> toItemBaseImpl(Vbid vbid,
+                                         HideLockedCas hideLockedCas,
+                                         IncludeValue includeValue) const;
+
     /* Update the value for this SV from the given item.
      * Implementation for StoredValue instances (dispatched to by setValue()).
      */
@@ -1147,6 +1152,11 @@ protected:
      * setValue()).
      */
     void setValueImpl(const Item& itm);
+
+    /// StoredValue vs OrderedStoredValue use different Item constructors
+    std::unique_ptr<Item> toItemBaseImpl(Vbid vbid,
+                                         HideLockedCas hideLockedCas,
+                                         IncludeValue includeValue) const;
 
 private:
     // Constructor. Private, as needs to be carefully created via

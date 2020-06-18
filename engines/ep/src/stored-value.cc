@@ -312,19 +312,32 @@ bool StoredValue::deleteImpl(DeleteSource delSource) {
 std::unique_ptr<Item> StoredValue::toItemBase(Vbid vbid,
                                               HideLockedCas hideLockedCas,
                                               IncludeValue includeValue) const {
+    if (isOrdered()) {
+        return static_cast<const OrderedStoredValue*>(this)->toItemBaseImpl(
+                vbid, hideLockedCas, includeValue);
+    } else {
+        return this->toItemBaseImpl(vbid, hideLockedCas, includeValue);
+    }
+}
+
+std::unique_ptr<Item> StoredValue::toItemBaseImpl(
+        Vbid vbid,
+        HideLockedCas hideLockedCas,
+        IncludeValue includeValue) const {
     auto item = std::make_unique<Item>(
             getKey(),
             getFlags(),
             getExptime(),
             includeValue == IncludeValue::Yes ? value : value_t{},
+            // StoredValue are not system events
+            Item::NotASystemEvent{},
             datatype,
             hideLockedCas == HideLockedCas::Yes ? static_cast<uint64_t>(-1)
                                                 : getCas(),
             bySeqno,
             vbid,
-            getRevSeqno());
-
-    item->setFreqCounterValue(getFreqCounterValue());
+            getRevSeqno(),
+            getFreqCounterValue());
 
     if (isDeleted()) {
         item->setDeleted(getDeletionSource());
@@ -652,4 +665,28 @@ void OrderedStoredValue::setCompletedOrDeletedTime(time_t time) {
                 "Alive item");
     }
     lock_expiry_or_delete_or_complete_time.delete_or_complete_time = time;
+}
+
+std::unique_ptr<Item> OrderedStoredValue::toItemBaseImpl(
+        Vbid vbid,
+        HideLockedCas hideLockedCas,
+        IncludeValue includeValue) const {
+    auto item = std::make_unique<Item>(
+            getKey(),
+            getFlags(),
+            getExptime(),
+            includeValue == IncludeValue::Yes ? value : value_t{},
+            datatype,
+            hideLockedCas == HideLockedCas::Yes ? static_cast<uint64_t>(-1)
+                                                : getCas(),
+            bySeqno,
+            vbid,
+            getRevSeqno(),
+            getFreqCounterValue());
+
+    if (isDeleted()) {
+        item->setDeleted(getDeletionSource());
+    }
+
+    return item;
 }

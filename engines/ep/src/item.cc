@@ -30,81 +30,158 @@
 
 std::atomic<uint64_t> Item::casCounter(1);
 
-Item::Item(const DocKey& k,
-           const uint32_t fl,
-           const time_t exp,
-           const value_t& val,
-           protocol_binary_datatype_t dtype,
-           uint64_t theCas,
-           int64_t i,
+Item::Item(const DocKey& key,
+           const uint32_t flags,
+           const time_t expiry,
+           const value_t& value,
+           protocol_binary_datatype_t datatype,
+           uint64_t cas,
+           int64_t seqno,
            Vbid vbid,
-           uint64_t sno)
-    : metaData(theCas, sno, fl, exp),
-      value(TaggedPtr<Blob>(val.get().get(), initialFreqCount)),
-      key(k),
-      bySeqno(i),
-      vbucketId(vbid),
-      op(k.getCollectionID() == CollectionID::System ? queue_op::system_event
-                                                     : queue_op::mutation),
-      deleted(0), // false
-      maybeVisible(0),
-      preserveTtl(0),
-      datatype(dtype) {
-    if (bySeqno == 0) {
-        throw std::invalid_argument("Item(): bySeqno must be non-zero");
-    }
-
-    ObjectRegistry::onCreateItem(this);
-}
-
-Item::Item(const DocKey& k,
-           const uint32_t fl,
-           const time_t exp,
-           const void* dta,
-           const size_t nb,
-           protocol_binary_datatype_t dtype,
-           uint64_t theCas,
-           int64_t i,
-           Vbid vbid,
-           uint64_t sno,
+           uint64_t revSeqno,
            uint8_t freqCount)
-    : metaData(theCas, sno, fl, exp),
-      value(TaggedPtr<Blob>(nullptr, initialFreqCount)),
-      key(k),
-      bySeqno(i),
+    : metaData(cas, revSeqno, flags, expiry),
+      value(TaggedPtr<Blob>(value.get().get(), initialFreqCount)),
+      key(key),
+      bySeqno(seqno),
       vbucketId(vbid),
-      op(k.getCollectionID() == CollectionID::System ? queue_op::system_event
-                                                     : queue_op::mutation),
+      op(key.getCollectionID() == CollectionID::System ? queue_op::system_event
+                                                       : queue_op::mutation),
       deleted(0), // false
       maybeVisible(0),
       preserveTtl(0),
-      datatype(dtype) {
+      datatype(datatype) {
     if (bySeqno == 0) {
         throw std::invalid_argument("Item(): bySeqno must be non-zero");
     }
-    setData(static_cast<const char*>(dta), nb);
     setFreqCounterValue(freqCount);
     ObjectRegistry::onCreateItem(this);
 }
 
-Item::Item(const DocKey& k,
+Item::Item(const DocKey& key,
+           const uint32_t flags,
+           const time_t expiry,
+           const value_t& value,
+           NotASystemEvent,
+           protocol_binary_datatype_t datatype,
+           uint64_t cas,
+           int64_t seqno,
+           Vbid vbid,
+           uint64_t revSeqno,
+           uint8_t freqCount)
+    : metaData(cas, revSeqno, flags, expiry),
+      value(TaggedPtr<Blob>(value.get().get(), initialFreqCount)),
+      key(key),
+      bySeqno(seqno),
+      vbucketId(vbid),
+      op(queue_op::mutation),
+      deleted(0), // false
+      maybeVisible(0),
+      preserveTtl(0),
+      datatype(datatype) {
+    if (bySeqno == 0) {
+        throw std::invalid_argument("Item(): bySeqno must be non-zero");
+    }
+    setFreqCounterValue(freqCount);
+    ObjectRegistry::onCreateItem(this);
+}
+
+Item::Item(const DocKey& key,
+           const uint32_t flags,
+           const time_t expiry,
+           const void* data,
+           const size_t datasize,
+           protocol_binary_datatype_t datatype,
+           uint64_t cas,
+           int64_t seqno,
+           Vbid vbid,
+           uint64_t revSeqno,
+           uint8_t freqCount)
+    : metaData(cas, revSeqno, flags, expiry),
+      value(TaggedPtr<Blob>(nullptr, initialFreqCount)),
+      key(key),
+      bySeqno(seqno),
+      vbucketId(vbid),
+      op(key.getCollectionID() == CollectionID::System ? queue_op::system_event
+                                                       : queue_op::mutation),
+      deleted(0), // false
+      maybeVisible(0),
+      preserveTtl(0),
+      datatype(datatype) {
+    if (bySeqno == 0) {
+        throw std::invalid_argument("Item(): bySeqno must be non-zero");
+    }
+    setData(static_cast<const char*>(data), datasize);
+    setFreqCounterValue(freqCount);
+    ObjectRegistry::onCreateItem(this);
+}
+
+Item::Item(const DocKey& key,
+           const uint32_t flags,
+           const time_t expiry,
+           const void* data,
+           const size_t datasize,
+           NotASystemEvent tag,
+           protocol_binary_datatype_t datatype,
+           uint64_t cas,
+           int64_t seqno,
+           Vbid vbid,
+           uint64_t revSeqno,
+           uint8_t freqCount)
+    : metaData(cas, revSeqno, flags, expiry),
+      value(TaggedPtr<Blob>(nullptr, initialFreqCount)),
+      key(key),
+      bySeqno(seqno),
+      vbucketId(vbid),
+      op(queue_op::mutation),
+      deleted(0), // false
+      maybeVisible(0),
+      preserveTtl(0),
+      datatype(datatype) {
+    if (bySeqno == 0) {
+        throw std::invalid_argument("Item(): bySeqno must be non-zero");
+    }
+    setData(static_cast<const char*>(data), datasize);
+    setFreqCounterValue(freqCount);
+    ObjectRegistry::onCreateItem(this);
+}
+
+Item::Item(const DocKey& key,
+           const uint32_t flags,
+           cb::const_byte_buffer value,
+           IsSystemEvent)
+    : metaData(0, DEFAULT_REV_SEQ_NUM, flags, 0),
+      value(TaggedPtr<Blob>(nullptr, initialFreqCount)),
+      key(key),
+      bySeqno(-1),
+      vbucketId(0),
+      op(queue_op::system_event),
+      deleted(0),
+      maybeVisible(0),
+      preserveTtl(0) {
+    setData(reinterpret_cast<const char*>(value.data()), value.size());
+    setFreqCounterValue(initialFreqCount);
+    ObjectRegistry::onCreateItem(this);
+}
+
+Item::Item(const DocKey& key,
            const Vbid vb,
-           queue_op o,
-           const uint64_t revSeq,
-           const int64_t bySeq)
+           queue_op operation,
+           const uint64_t revSeqno,
+           const int64_t seqno)
     : metaData(),
       value(TaggedPtr<Blob>(nullptr, ItemEviction::initialFreqCount)),
-      key(k),
-      bySeqno(bySeq),
+      key(key),
+      bySeqno(seqno),
       vbucketId(vb),
-      op(o),
+      op(operation),
       deleted(0), // false
       maybeVisible(0),
       preserveTtl(0) {
     if (bySeqno < 0) {
         throw std::invalid_argument("Item(): bySeqno must be non-negative");
     }
-    metaData.revSeqno = revSeq;
+    metaData.revSeqno = revSeqno;
     ObjectRegistry::onCreateItem(this);
 }
 

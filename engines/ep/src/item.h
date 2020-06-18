@@ -75,48 +75,151 @@ item_info to_item_info(const ItemMetaData& itemMeta,
  */
 class Item : public RCValue {
 public:
-
-    /* Constructor (existing value_t).
-     * Used when a value already exists, and the Item should refer to that
-     * value.
+    /**
+     * Construct an Item and use an existing value
+     *
+     * @param key Item's key
+     * @param flags Item' flags.
+     * @param expiry Item expiry/ttl
+     * @param value a value_t to use
+     * @param datatype type (many can be or'ed) of the data
+     * @param cas cas value for the Item
+     * @param seqno vbucket sequence number of the Item
+     * @param vbid vbucket owning this Item
+     * @param revSeqno the revision of this Item
+     * @param freqCount frequency to initialise with
      */
-    Item(const DocKey& k,
-         const uint32_t fl,
-         const time_t exp,
-         const value_t& val,
-         protocol_binary_datatype_t dtype = PROTOCOL_BINARY_RAW_BYTES,
-         uint64_t theCas = 0,
-         int64_t i = -1,
+    Item(const DocKey& key,
+         const uint32_t flags,
+         const time_t expiry,
+         const value_t& value,
+         protocol_binary_datatype_t datatype = PROTOCOL_BINARY_RAW_BYTES,
+         uint64_t cas = 0,
+         int64_t seqno = -1,
          Vbid vbid = Vbid(0),
-         uint64_t sno = 1);
-
-    /* Constructor (new value).
-     * k         specify the item's DocKey.
-     * fl        Item flags.
-     * exp       Item expiry.
-     * {dta, nb} specify the item's value. nb specifies how much memory will be
-     *           allocated for the value. If dta is non-NULL then the value
-     *           is set from the memory pointed to by dta. If dta is NULL,
-     *           then no data is copied in.
-     *  The remaining arguments specify various optional attributes.
-     */
-    Item(const DocKey& k,
-         const uint32_t fl,
-         const time_t exp,
-         const void* dta,
-         const size_t nb,
-         protocol_binary_datatype_t dtype = PROTOCOL_BINARY_RAW_BYTES,
-         uint64_t theCas = 0,
-         int64_t i = -1,
-         Vbid vbid = Vbid(0),
-         uint64_t sno = 1,
+         uint64_t revSeqno = 1,
          uint8_t freqCount = initialFreqCount);
 
-    Item(const DocKey& k,
+    /**
+     * Construct an Item and use an existing value. This constructor will not
+     * try and determine if the key represents a system event. This constructor
+     * should be used in code paths where you know the result does not need to
+     * have op:system_event
+     *
+     * @param key Item's key
+     * @param flags Item' flags.
+     * @param expiry Item expiry/ttl
+     * @param value a value_t to use
+     * @param tag this constructor will not inspect key's collection
+     * @param datatype type (many can be or'ed) of the data
+     * @param cas cas value for the Item
+     * @param seqno vbucket sequence number of the Item
+     * @param vbid vbucket owning this Item
+     * @param revSeqno the revision of this Item
+     * @param freqCount frequency to initialise with
+     */
+    struct NotASystemEvent {};
+    Item(const DocKey& key,
+         const uint32_t flags,
+         const time_t expiry,
+         const value_t& value,
+         NotASystemEvent tag,
+         protocol_binary_datatype_t datatype = PROTOCOL_BINARY_RAW_BYTES,
+         uint64_t cas = 0,
+         int64_t seqno = -1,
+         Vbid vbid = Vbid(0),
+         uint64_t revSeqno = 1,
+         uint8_t freqCount = initialFreqCount);
+
+    /**
+     * Construct an Item and use data/datasize for the value (creating a new
+     * Blob)
+     *
+     * @param key Item's key
+     * @param flags Item' flags.
+     * @param expiry Item expiry/ttl
+     * @param data pointer to data that will be copied-in, can be null
+     * @param datasize size of data, can be 0,
+     * @param datatype type (many can be or'ed) of the data
+     * @param cas cas value for the Item
+     * @param seqno vbucket sequence number of the Item
+     * @param vbid vbucket owning this Item
+     * @param revSeqno the revision of this Item
+     * @param freqCount frequency to initialise with
+     */
+    Item(const DocKey& key,
+         const uint32_t flags,
+         const time_t expiry,
+         const void* data,
+         const size_t datasize,
+         protocol_binary_datatype_t datatype = PROTOCOL_BINARY_RAW_BYTES,
+         uint64_t cas = 0,
+         int64_t seqno = -1,
+         Vbid vbid = Vbid(0),
+         uint64_t revSeqno = 1,
+         uint8_t freqCount = initialFreqCount);
+
+    /**
+     * Construct an Item and use data/datasize for the value (creating a new
+     * Blob). This constructor will not try and determine if the key represents
+     * a system event. This constructor should be used in code paths where you
+     * know the result does not need to have op:system_event, e.g. a new
+     * mutation.
+     *
+     * @param key Item's key
+     * @param flags Item' flags.
+     * @param expiry Item expiry/ttl
+     * @param data pointer to data that will be copied-in, can be null
+     * @param datasize size of data, can be 0,
+     * @param tag this constructor will not inspect key's collection
+     * @param datatype type (many can be or'ed) of the data
+     * @param cas cas value for the Item
+     * @param seqno vbucket sequence number of the Item
+     * @param vbid vbucket owning this Item
+     * @param revSeqno the revision of this Item
+     * @param freqCount frequency to initialise with
+     */
+    Item(const DocKey& key,
+         const uint32_t flags,
+         const time_t expiry,
+         const void* data,
+         const size_t datasize,
+         NotASystemEvent tag,
+         protocol_binary_datatype_t datatype = PROTOCOL_BINARY_RAW_BYTES,
+         uint64_t cas = 0,
+         int64_t seqno = -1,
+         Vbid vbid = Vbid(0),
+         uint64_t revSeqno = 1,
+         uint8_t freqCount = initialFreqCount);
+
+    /**
+     * Constructor for creating system-events only
+     *
+     * @param key Item's key.
+     * @param flags Item flags.
+     * @param value data for value
+     * @param tag to distinguish this constructor as system-event usage only
+     */
+    struct IsSystemEvent {};
+    Item(const DocKey& key,
+         const uint32_t flags,
+         cb::const_byte_buffer value,
+         IsSystemEvent tag);
+    /**
+     * Constructor for creating an Item with no value but any operation, this
+     * is here for checkpoint meta Items
+     *
+     * @param key Item's key.
+     * @param vb vbucket owning this Item
+     * @param op The type of operation this Item represents data for value
+     * @param revSeq revision for the Item
+     * @param seqno vbucket sequence number of the Item
+     */
+    Item(const DocKey& key,
          const Vbid vb,
-         queue_op o,
-         const uint64_t revSeq,
-         const int64_t bySeq);
+         queue_op operation,
+         const uint64_t revSeqno,
+         const int64_t seqno);
 
     /* Copy constructor */
     Item(const Item& other);

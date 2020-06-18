@@ -29,11 +29,8 @@ std::unique_ptr<Item> SystemEventFactory::make(const DocKey& key,
                                                SystemEvent se,
                                                cb::const_byte_buffer data,
                                                OptionalSeqno seqno) {
-    auto item = std::make_unique<Item>(key,
-                                       uint32_t(se) /*flags*/,
-                                       0 /*exptime*/,
-                                       data.data(),
-                                       data.size());
+    auto item = std::make_unique<Item>(
+            key, uint32_t(se) /*flags*/, data, Item::IsSystemEvent{});
 
     if (seqno) {
         item->setBySeqno(seqno.value());
