@@ -159,6 +159,25 @@ TYPED_TEST(UnsignedLeb128, DecodeInvalidInput) {
     }
 }
 
+TYPED_TEST(UnsignedLeb128, DecodeInvalidInputLong) {
+    // A big buffer with no stop-byte, we stay inside the buffer and return
+    // 'failed' decode (throw for the throw variant)
+
+    // Test was originally written as ASAN flagged invalid shift on long invalid
+    // inputs, because the shift value keeps growing above the bit size of the
+    // type we shift.
+
+    std::array<uint8_t, 32> data;
+    data.fill(0x80); // MSB set on every-byte
+
+    try {
+        cb::mcbp::unsigned_leb128<TypeParam>::decode(
+                {data.data(), data.size()});
+        FAIL() << "Decode didn't throw";
+    } catch (const std::invalid_argument&) {
+    }
+}
+
 // Encode a value and expect the iterators to iterate the encoded bytes
 TYPED_TEST(UnsignedLeb128, iterators) {
     TypeParam value = 1; // Upto 127 and it's 1 byte
@@ -190,7 +209,11 @@ TYPED_TEST(UnsignedLeb128, non_canonical) {
     std::vector<std::pair<TypeParam, std::vector<std::vector<uint8_t>>>>
             testData = {
                     {0, {{0}, {0x80, 0}, {0x80, 0x80, 0}}},
-                    {1, {{1}, {0x81, 0}, {0x81, 0x80, 0}}},
+                    {1,
+                     {{1},
+                      {0x81, 0},
+                      {0x81, 0x80, 0},
+                      {0x81, 0x80, 0x80, 0x80, 0}}},
             };
 
     for (const auto& test : testData) {
@@ -267,6 +290,7 @@ TEST(UnsignedLeb128, collection_ID_encode) {
         EXPECT_EQ(test.value,
                   cb::mcbp::unsigned_leb128<uint32_t>::decode(encoded.get())
                           .first);
+
         int offset = 0;
         for (const auto byte : encoded) {
             // cast away from uint8_t so we get more readable failures
@@ -318,5 +342,30 @@ TYPED_TEST(UnsignedLeb128, canonical_only) {
             test.back() = 0x80;
             test.push_back(0x00);
         }
+    }
+}
+
+template <class T>
+static std::string makeLebPrefixedString(T prefix, std::string_view key) {
+    cb::mcbp::unsigned_leb128<T> leb(prefix);
+    std::string prefixedKey;
+    for (auto c : leb) {
+        prefixedKey.push_back(c);
+    }
+    prefixedKey.append(key);
+    return prefixedKey;
+}
+
+TYPED_TEST(UnsignedLeb128, decode_key) {
+    std::array<TypeParam, 2> ids = {{0, TypeParam(-1)}};
+    for (auto id : ids) {
+        auto key = makeLebPrefixedString<TypeParam>(id, "akey");
+        cb::const_byte_buffer buffer{
+                reinterpret_cast<const uint8_t*>(key.data()), key.size()};
+        auto rv = cb::mcbp::unsigned_leb128<TypeParam>::decode(buffer);
+        EXPECT_EQ(rv.first, id);
+        std::string_view key2{reinterpret_cast<const char*>(rv.second.data()),
+                              rv.second.size()};
+        EXPECT_EQ("akey", key2);
     }
 }

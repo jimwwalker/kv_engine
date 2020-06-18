@@ -102,20 +102,46 @@ static void bench_unsigned_leb128_decodeCanonical(benchmark::State& state) {
     }
 }
 
-static void generateBenchmarkArguments(benchmark::internal::Benchmark* b) {
-    // Test inputs.
-    std::array<int, 5> lebSizes = {{1, 2, 3, 4, 5}};
-    for (auto size : lebSizes) {
-        // Second input is the 'keylen', how many bytes are in the buffer after
-        // the leb128 encoded integer. For now keep the second argument fixed as
-        // 0 as it doesn't affect the current decode - we may in the future want
-        // to change the key len
-        b->Args({size, 0});
+static void bench_unsigned_leb128_decodeCanonical_chunk(
+        benchmark::State& state) {
+    auto range = getTestRange(state.range(0));
+    std::array<std::vector<uint8_t>, numberOfInputs> buffers;
+    size_t value = range.first;
+    for (auto& b : buffers) {
+        b = makeLebPrefixedBuffer(value, state.range(1));
+        if (value == range.second) {
+            value = range.first;
+        } else {
+            value++;
+        }
+    }
+
+    auto itr = buffers.begin();
+    while (state.KeepRunning()) {
+        benchmark::DoNotOptimize(
+                cb::mcbp::unsigned_leb128<uint32_t>::decodeCanonical_chunk(
+                        {*itr}));
+        itr++;
+        if (itr == buffers.end()) {
+            itr = buffers.begin();
+        }
     }
 }
 
-BENCHMARK(bench_unsigned_leb128_decode)->Apply(generateBenchmarkArguments);
+static void generateBenchmarkArguments(benchmark::internal::Benchmark* b) {
+    std::array<int, 5> lebSizes = {{1, 2, 3, 4, 5}};
+    std::array<int, 5> keySizes = {{0, 1, 3, 5, 7}};
+    for (auto size : lebSizes) {
+        for (auto key : keySizes) {
+            b->Args({size, key});
+        }
+    }
+}
+
+// BENCHMARK(bench_unsigned_leb128_decode)->Apply(generateBenchmarkArguments);
 BENCHMARK(bench_unsigned_leb128_decodeCanonical)
+        ->Apply(generateBenchmarkArguments);
+BENCHMARK(bench_unsigned_leb128_decodeCanonical_chunk)
         ->Apply(generateBenchmarkArguments);
 
 BENCHMARK_MAIN()
