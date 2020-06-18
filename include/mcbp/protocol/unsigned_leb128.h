@@ -150,7 +150,10 @@ public:
      *          only a leb128, the returned buffer will point outside of the
      *          input buf, but size will be 0.
      */
-    static std::pair<T, cb::const_byte_buffer> decodeNoThrow(
+    static std::pair<T, cb::const_byte_buffer> decodeNoThrow( cb::const_byte_buffer buf);
+
+    // testing chunk decode
+    static std::pair<T, cb::const_byte_buffer> decodeCanonical_chunk(
             cb::const_byte_buffer buf);
 
 protected:
@@ -164,6 +167,9 @@ protected:
      */
     static std::pair<T, cb::const_byte_buffer> decode(cb::const_byte_buffer buf,
                                                       NoThrow);
+
+    static std::pair<T, cb::const_byte_buffer> decode_chunk(
+            cb::const_byte_buffer buf, NoThrow);
 
     template <typename, typename>
     friend class unsigned_leb128;
@@ -294,6 +300,143 @@ unsigned_leb128<T, typename std::enable_if<std::is_unsigned<T>::value>::type>::
                                   buf.size() - (end + 1)}};
 }
 
+/**
+ * decode_unsigned_leb128 returns the decoded T and a const_byte_buffer
+ * initialised with the data following the leb128 data. This form of the decode
+ * does not throw for invalid input and the caller should always check
+ * second.data() for success or error (see returns info).
+ *
+ * Decode uses a chunk based approach (rather than byte by byte).
+ * The input buf is usually the leb128 prefixed data, thus we may often
+ * be able to load larger chunks and decode the whole leb128 with one load.
+ *
+ * The algorithm works by trying to do the largest load it can based on the
+ * bytes available, this means we may load the entire leb128 and some of the
+ * trailing data. After each load, the leb128 shift/or loop operates on the
+ * single register and stops on the stop-byte. If the single load fails to find
+ * a stop byte, we loop around and try for the next largest chunk possible.
+ *
+ * @param buf buffer containing a leb128 encoded value (of size T). This can be
+ *            a prefix on some other data, the decode will only process upto the
+ *            maximum number of bytes permitted for the type T. E.g. uint32_t
+ *            use 5 bytes maximum.
+ * @returns On error a std::pair where first is set to 0 and second is nullptr/0
+ *          const_byte_buffer. On success a std::pair where first is the decoded
+ *          value and second is a buffer initialised with the data following the
+ *          leb128 data.
+ */
+template <class T>
+std::pair<T, cb::const_byte_buffer>
+unsigned_leb128<T, typename std::enable_if<std::is_unsigned<T>::value>::type>::
+        decode_chunk(cb::const_byte_buffer buf, NoThrow) {
+    // Take a copy of the buffer size, this is used to determine which chunk
+    // can be loaded and is decremented as the leb128 is processed.
+    size_t size = buf.size();
+
+    // A second counter is needed so we can count down the valid bytes of leb128
+    // and fail for long/bad input
+    size_t maxSize = cb::mcbp::unsigned_leb128<T>::getMaxSize();
+    // Take a copy of the data pointer, this is were we load from for each
+    // chunk.
+    const uint8_t* data = buf.data();
+
+    T rv = 0; // return value, the decoded T
+    T shift = 0; // the current shift
+    do {
+        if (size >= sizeof(uint64_t)) {
+            // This block is commented with the general approach. Each chunk
+            // behaves pretty much the same. Only difference is that the chunks
+            // where sizeof(chunk) < 5 have to count down there own size first
+            // so they know when the uint16_t etc... has been fully processed.
+
+            // 1) load the maximum size we can given how many bytes are in buf
+            uint64_t d = *reinterpret_cast<const uint64_t*>(data);
+            size_t chunk = sizeof(uint64_t);
+            do {
+                // 2) Iterate through the bytes of 'd'
+                //    Begin with the LSB, mask off high-bits and shift.
+                rv |= T(d & 0x7Full) << shift;
+
+                // 3) A byte has been processed, so reduce size by 1
+                size--;
+
+                // 4) Is the current byte the stop byte? I.e. high-bit is 0?
+                if ((d & 0x80ull) == 0) {
+                    // stop! return current rv and view of the remaining data.
+                    return {rv, {buf.data() + (buf.size() - size), size}};
+                } else {
+                    // 5) No stop-byte so increase shift, and shift out the byte
+                    // we just processed.
+                    shift += 7;
+                    d >>= 8;
+                    // 5.1) reduce how many bytes remain in the chunk
+                    chunk--;
+                    // 5.2) reduce how many bytes of the max leb128 remain
+                    maxSize--;
+                }
+            } while (size && chunk);
+            // 6) chunk has been exhausted of any valid leb128-data-bytes, move
+            // data pointer by the amount read and loop again for the next chunk
+            data += sizeof(uint64_t);
+        } else if (size >= sizeof(uint32_t)) {
+            uint32_t d = *reinterpret_cast<const uint32_t*>(data);
+            size_t chunk = sizeof(uint32_t);
+            do {
+                rv |= T(d & 0x7Ful) << shift;
+                size--;
+                if ((d & 0x80ull) == 0) {
+                    return {rv, {buf.data() + (buf.size() - size), size}};
+                } else {
+                    shift += 7;
+                    d >>= 8;
+                    chunk--;
+                    maxSize--;
+                }
+            } while (size && chunk);
+            data += sizeof(uint32_t);
+        } else if (size >= sizeof(uint16_t)) {
+            uint16_t d = *reinterpret_cast<const uint16_t*>(data);
+            size_t chunk = sizeof(uint16_t);
+            do {
+                rv |= T(d & 0x7Ful) << shift;
+                size--;
+                if ((d & 0x80ull) == 0) {
+                    return {rv, {buf.data() + (buf.size() - size), size}};
+                } else {
+                    shift += 7;
+                    d >>= 8;
+                    chunk--;
+                    maxSize--;
+                }
+            } while (size && chunk);
+            data += sizeof(uint16_t);
+        } else {
+            uint8_t d = *data;
+            rv |= T(d & 0x7Ful) << shift;
+            size--;
+            if ((d & 0x80) == 0) {
+                return {rv, {buf.data() + (buf.size() - size), size}};
+            } else {
+                shift += 7;
+            }
+            data += sizeof(uint8_t);
+            maxSize--;
+        }
+    } while (size);
+    return {0, cb::const_byte_buffer{}};
+}
+
+/**
+ * decode_unsigned_leb128 returns the decoded T and a const_byte_buffer
+ * initialised with the data following the leb128 data. This form of the decode
+ * throws for invalid input.
+ *
+ * @param buf buffer containing a leb128 encoded value (of size T)
+ * @returns std::pair first is the decoded value and second a buffer for the
+ *          remaining data (size will be 0 for no more data)
+ * @throws std::invalid_argument if buf[0] does not encode a leb128 value with
+ *         a stop byte.
+ */
 template <class T>
 std::pair<T, cb::const_byte_buffer>
 unsigned_leb128<T, typename std::enable_if<std::is_unsigned<T>::value>::type>::
@@ -328,6 +471,20 @@ std::pair<T, cb::const_byte_buffer>
 unsigned_leb128<T, typename std::enable_if<std::is_unsigned<T>::value>::type>::
         decodeNoThrow(cb::const_byte_buffer buf) {
     return unsigned_leb128<T>::decode(buf, NoThrow{});
+}
+
+template <class T>
+std::pair<T, cb::const_byte_buffer>
+unsigned_leb128<T, typename std::enable_if<std::is_unsigned<T>::value>::type>::
+        decodeCanonical_chunk(cb::const_byte_buffer buf) {
+    auto rv = unsigned_leb128<T>::decode_chunk(buf, NoThrow{});
+
+    if (rv.second.data() &&
+        !is_canonical(rv.first, size_t(rv.second.data() - buf.data()))) {
+        return {0, cb::const_byte_buffer{}};
+    }
+
+    return rv;
 }
 
 /**
