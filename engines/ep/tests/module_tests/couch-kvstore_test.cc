@@ -1656,3 +1656,77 @@ TEST_F(CouchKVStoreMetaData, assignment) {
     EXPECT_EQ(deleteSource, copy2->getDeleteSource());
     EXPECT_EQ(PROTOCOL_BINARY_DATATYPE_JSON, copy2->getDataType());
 }
+
+// Test the protected method works as expected for a variety of inputs
+TEST_F(CouchstoreTest, getVbucketRevisions) {
+    std::vector<std::string> filenames = {""};
+
+    auto map = kvstore->public_getVbucketRevisions(filenames);
+    EXPECT_TRUE(map.empty());
+
+    filenames = {"junk"};
+
+    map = kvstore->public_getVbucketRevisions(filenames);
+    EXPECT_TRUE(map.empty());
+
+    filenames = {"x.couch.y"};
+
+    map = kvstore->public_getVbucketRevisions(filenames);
+    EXPECT_TRUE(map.empty());
+
+    filenames = {"/dir/5.couch.16", "/dir/5.couch.16"};
+    map = kvstore->public_getVbucketRevisions(filenames);
+    EXPECT_EQ(1, map.size());
+    EXPECT_EQ(1, map.count(Vbid(5)));
+    EXPECT_EQ(1, map[Vbid(5)].size());
+    EXPECT_EQ(1, map[Vbid(5)].count(16));
+
+    filenames = {
+            "/dir/5.couch.0",
+            "/dir/5.couch.2",
+            "/dir/5.couch.3",
+            "/dir/99.couch.100",
+            "/dir/99.couch.101",
+            "/dir/99.couch.102",
+    };
+    map = kvstore->public_getVbucketRevisions(filenames);
+    EXPECT_EQ(2, map.size());
+    EXPECT_EQ(1, map.count(Vbid(5)));
+    EXPECT_EQ(1, map.count(Vbid(99)));
+
+    EXPECT_EQ(3, map[Vbid(5)].size());
+    EXPECT_EQ(3, map[Vbid(99)].size());
+
+    EXPECT_EQ(1, map[Vbid(5)].count(0));
+    EXPECT_EQ(1, map[Vbid(5)].count(2));
+    EXPECT_EQ(1, map[Vbid(5)].count(3));
+    EXPECT_EQ(1, map[Vbid(99)].count(100));
+    EXPECT_EQ(1, map[Vbid(99)].count(101));
+    EXPECT_EQ(1, map[Vbid(99)].count(102));
+
+    // acceptable limits
+    filenames = {"/dir/65535.couch.18446744073709551615"
+
+    };
+    map = kvstore->public_getVbucketRevisions(filenames);
+    EXPECT_EQ(1, map.size());
+    EXPECT_EQ(1, map.count(Vbid(std::numeric_limits<uint16_t>::max())));
+    EXPECT_EQ(1, map[Vbid(std::numeric_limits<uint16_t>::max())].size());
+    EXPECT_EQ(1,
+              map[Vbid(std::numeric_limits<uint16_t>::max())].count(
+                      std::numeric_limits<uint64_t>::max()));
+
+    // unacceptable limits, only allows for 2^16 vbucket ids
+    filenames = {"/dir/65536.couch.0"
+
+    };
+    // this throw comes from our own check that the id is in range
+    EXPECT_THROW(kvstore->public_getVbucketRevisions(filenames),
+                 std::out_of_range);
+    filenames = {"/dir/8589934591.couch.0"
+
+    };
+    // this second throw is because we use std::stoul for id conversion
+    EXPECT_THROW(kvstore->public_getVbucketRevisions(filenames),
+                 std::out_of_range);
+}

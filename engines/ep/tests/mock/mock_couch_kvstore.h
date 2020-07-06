@@ -91,5 +91,10 @@ public:
         preCommitHook = std::move(cb);
     }
 
+    std::unordered_map<Vbid, std::unordered_set<uint64_t>>
+    public_getVbucketRevisions(const std::vector<std::string>& filenames) {
+        return getVbucketRevisions(filenames);
+    }
+
     std::function<void()> preCommitHook = [] {};
 };

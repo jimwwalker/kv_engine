@@ -151,7 +151,8 @@ public:
      */
     std::unique_ptr<CouchKVStore> makeReadOnlyStore();
 
-    void initialize();
+    void initialize(
+            const std::unordered_map<Vbid, std::unordered_set<uint64_t>>& map);
 
     /**
      * Reset vbucket to a clean state.
@@ -533,8 +534,33 @@ protected:
     void close();
     bool commit2couchstore(VB::Commit& commitData);
 
-    void populateFileNameMap(std::vector<std::string>& filenames,
-                             std::vector<Vbid>* vbids);
+    /**
+     * Populate the dbFileRevMap. This is done by get a directory listing of
+     * dbname and then for each vbucket file storing the greatest revision in
+     * the dbFileRevMap.
+     *
+     * The data used in population, a map of vbid to revisions found is returned
+     * so that a second directory scan isn't needed for further initialisation.
+     *
+     * @return map of vbid to revisions used in populating dbFileRevMap
+     */
+    std::unordered_map<Vbid, std::unordered_set<uint64_t>>
+    populateDbFileRevMap();
+
+    /**
+     * Get a map of vbucket to revisions found from the list of filenames.
+     * The expected usage is that a list of all files found in the dbname
+     * directory is created, this function then processes that list returning
+     * a map of vbid to revisions. This is required because multiple revisions
+     * can exist on disk at the same time, e.g. during compaction. If an unclean
+     * shut-down occurred both files exist at warm-up.
+     *
+     * @param a vector of file names (can be absolute paths to files)
+     * @return map of vbid to revisions
+     */
+    std::unordered_map<Vbid, std::unordered_set<uint64_t>> getVbucketRevisions(
+            const std::vector<std::string>& filenames);
+
     /**
      * Set the revision of the vbucket
      * @param vbucketId vbucket to update
@@ -779,7 +805,6 @@ protected:
      */
     std::shared_ptr<RevisionMap> dbFileRevMap;
 
-    uint16_t numDbFiles;
     PendingRequestQueue pendingReqsQ;
 
     /**
@@ -842,6 +867,19 @@ private:
                  FileOpsInterface& ops,
                  bool readOnly,
                  std::shared_ptr<RevisionMap> revMap);
+
+    struct ReadWrite {};
+    struct ReadOnly {};
+
+    CouchKVStore(CouchKVStoreConfig& config,
+                 FileOpsInterface& ops,
+                 ReadWrite,
+                 std::shared_ptr<RevisionMap> dbFileRevMap);
+
+    CouchKVStore(CouchKVStoreConfig& config,
+                 FileOpsInterface& ops,
+                 ReadOnly,
+                 std::shared_ptr<RevisionMap> dbFileRevMap);
 
     /**
      * Construct a read-only store - private as should be called via

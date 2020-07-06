@@ -837,6 +837,10 @@ public:
         return readOnly;
     }
 
+    bool isReadWrite() const {
+        return !isReadOnly();
+    }
+
     KVStoreStats& getKVStoreStat() {
         return st;
     }
