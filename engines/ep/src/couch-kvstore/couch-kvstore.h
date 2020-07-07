@@ -555,11 +555,17 @@ protected:
      * can exist on disk at the same time, e.g. during compaction. If an unclean
      * shut-down occurred both files exist at warm-up.
      *
+     * Testing/usage note: the input file list is expected to be effectively
+     * "ls *.couch.*", CouchKVStore uses the following for input:
+     *   cb::io::findFilesContaining(dbname, ".couch")
+     *
+     * Any invalid files in the list result in a log warning
+     *
      * @param a vector of file names (can be absolute paths to files)
      * @return map of vbid to revisions
      */
     std::unordered_map<Vbid, std::unordered_set<uint64_t>> getVbucketRevisions(
-            const std::vector<std::string>& filenames);
+            const std::vector<std::string>& filenames) const;
 
     /**
      * Set the revision of the vbucket
@@ -569,7 +575,7 @@ protected:
     void updateDbFileMap(Vbid vbucketId, uint64_t newFileRev);
 
     /// @return the current file revision for the vbucket
-    uint64_t getDbRevision(Vbid vbucketId);
+    uint64_t getDbRevision(Vbid vbucketId) const;
 
     couchstore_error_t openDB(Vbid vbucketId,
                               DbHolder& db,

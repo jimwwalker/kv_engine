@@ -1642,7 +1642,7 @@ void CouchKVStore::updateDbFileMap(Vbid vbucketId, uint64_t newFileRev) {
     }
 }
 
-uint64_t CouchKVStore::getDbRevision(Vbid vbucketId) {
+uint64_t CouchKVStore::getDbRevision(Vbid vbucketId) const {
     return (*dbFileRevMap->rlock())[vbucketId.get()];
 }
 
@@ -1740,7 +1740,8 @@ couchstore_error_t CouchKVStore::openSpecificDB(Vbid vbucketId,
 }
 
 std::unordered_map<Vbid, std::unordered_set<uint64_t>>
-CouchKVStore::getVbucketRevisions(const std::vector<std::string>& filenames) {
+CouchKVStore::getVbucketRevisions(
+        const std::vector<std::string>& filenames) const {
     std::unordered_map<Vbid, std::unordered_set<uint64_t>> vbids;
     for (const auto& filename : filenames) {
         // vbid.couch.rev
@@ -1753,34 +1754,44 @@ CouchKVStore::getVbucketRevisions(const std::vector<std::string>& filenames) {
         auto vbid = name.substr(0, name.find("."));
 
         // rey
-        auto revNum =
-                couchfile.substr(couchfile.rfind(".") + 1, couchfile.size());
+        auto rev = couchfile.substr(couchfile.rfind(".") + 1, couchfile.size());
 
-        // master.couch.x is expected and can be skipped, anything else should
-        // be a vbucket file, if not it should be logged
-        if (vbid == "master") {
-            continue;
-        } else if (allDigit(vbid) && allDigit(revNum)) {
-            auto id = std::stoul(vbid);
+        // possible to get x..couch..y which is invalid
+        bool valid = std::count(couchfile.begin(), couchfile.end(), '.') == 2;
 
-            // Vbid cannot represent > 2^16
-            if (id > std::numeric_limits<uint16_t>::max()) {
-                throw std::out_of_range(
-                        "CouchKVStore::getVbucketRevision filename:" +
-                        filename + " invalid vbid:" + vbid);
+        Vbid id;
+        uint64_t revision = 0;
+        if (valid && allDigit(vbid) && allDigit(rev)) {
+            try {
+                auto rawId = std::stoul(vbid);
+                revision = std::stoull(rev);
+                if (rawId > std::numeric_limits<uint16_t>::max()) {
+                    valid = false;
+                } else {
+                    id = Vbid(rawId);
+                }
+            } catch (const std::out_of_range&) {
+                valid = false;
             }
+        } else if (vbid == "master") {
+            // master.couch.x is expected and can be silently ignored
+            continue;
+        } else {
+            valid = false;
+        }
 
+        if (valid) {
             // update map or create new element
-            if (vbids.count(Vbid(id))) {
-                // id is mapped, add the revNum
-                vbids[Vbid(id)].emplace(std::stoull(revNum));
+            if (vbids.count(id)) {
+                // id is mapped, add the revision
+                vbids[id].emplace(revision);
             } else {
-                // nothing mapped, create new vector with revNum
+                // nothing mapped, create new vector with revision
                 auto inserted = vbids.emplace(std::make_pair(
                         Vbid(id), std::unordered_set<uint64_t>{}));
-                std::cerr << "New map " << vbids[Vbid(id)].size() << std::endl;
-                inserted.first->second.emplace(std::stoull(revNum));
+                inserted.first->second.emplace(revision);
             }
+
         } else {
             logger.warn(
                     "CouchKVStore::getVbucketRevisions: invalid filename:{}, "
@@ -1789,7 +1800,7 @@ CouchKVStore::getVbucketRevisions(const std::vector<std::string>& filenames) {
                     couchfile,
                     name,
                     vbid,
-                    revNum);
+                    rev);
         }
     }
     return vbids;

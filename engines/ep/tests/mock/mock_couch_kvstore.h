@@ -92,8 +92,13 @@ public:
     }
 
     std::unordered_map<Vbid, std::unordered_set<uint64_t>>
-    public_getVbucketRevisions(const std::vector<std::string>& filenames) {
+    public_getVbucketRevisions(
+            const std::vector<std::string>& filenames) const {
         return getVbucketRevisions(filenames);
+    }
+
+    uint64_t public_getDbRevision(Vbid vbucketId) const {
+        return getDbRevision(vbucketId);
     }
 
     std::function<void()> preCommitHook = [] {};
