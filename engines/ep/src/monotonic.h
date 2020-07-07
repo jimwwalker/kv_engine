@@ -201,7 +201,9 @@ public:
     AtomicMonotonic(T val = std::numeric_limits<T>::min()) : val(val) {
     }
 
-    AtomicMonotonic(const AtomicMonotonic<T>& other) = delete;
+    AtomicMonotonic(const AtomicMonotonic& other) {
+        reset(other);
+    }
 
     AtomicMonotonic(AtomicMonotonic<T>&& other) = delete;
 
