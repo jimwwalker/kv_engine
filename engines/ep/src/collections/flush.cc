@@ -39,6 +39,11 @@ void Collections::VB::Flush::saveCollectionStats(
     }
 }
 
+bool Collections::VB::Flush::isLogicallyDeleted(const DocKey& key,
+                                                uint64_t seqno) {
+    return manifest.lock(key).isLogicallyDeleted(seqno);
+}
+
 void Collections::VB::Flush::incrementDiskCount(const DocKey& key) {
     if (!key.isInSystemCollection()) {
         mutated.insert(key.getCollectionID());

@@ -52,6 +52,12 @@ public:
             std::function<void(CollectionID, PersistedStats)> cb) const;
 
     /**
+     * @return true if the key @ seqno logically deleted? I.e. belongs to a
+     * dropped collection.
+     */
+    bool isLogicallyDeleted(const DocKey& key, uint64_t seqno);
+
+    /**
      * Increment the 'disk' count for the collection associated with the key
      */
     void incrementDiskCount(const DocKey& key);

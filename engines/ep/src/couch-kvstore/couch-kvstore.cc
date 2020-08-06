@@ -2136,8 +2136,15 @@ static void saveDocsCallback(const DocInfo* oldInfo,
 
     enum class DocMutationType { Insert, Update, Delete };
     DocMutationType onDiskMutationType = DocMutationType::Update;
+    bool oldDeleted = false;
     if (oldInfo) {
-        if (!oldInfo->deleted) {
+        oldDeleted = oldInfo->deleted;
+        // However if the old item is logically deleted, treat it as deleted
+        if (!oldDeleted && cbCtx->commitData.collections.isLogicallyDeleted(
+                                   newKey.getDocKey(), oldInfo->db_seq)) {
+            oldDeleted = true;
+        }
+        if (!oldDeleted) {
             if (newInfo->deleted) {
                 // New is deleted, so decrement count
                 onDiskMutationType = DocMutationType::Delete;
@@ -2183,7 +2190,7 @@ static void saveDocsCallback(const DocInfo* oldInfo,
     cbCtx->commitData.collections.setPersistedHighSeqno(
             docKey, newInfo->db_seq, newInfo->deleted);
 
-    size_t oldSize = oldInfo ? oldInfo->physical_size : 0;
+    size_t oldSize = oldInfo && !oldDeleted ? oldInfo->physical_size : 0;
     size_t newSize = newInfo ? newInfo->physical_size : 0;
 
     ssize_t delta = newSize - oldSize;

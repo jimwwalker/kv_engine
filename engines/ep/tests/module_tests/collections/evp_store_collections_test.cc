@@ -2840,6 +2840,20 @@ TEST_P(CollectionsPersistentParameterizedTest, create_drop_create_same_id) {
                         return collection.metaData.cid ==
                                CollectionEntry::fruit.uid;
                     }));
+
+    // Run steps that would trigger underflow seen in MB-39864
+    // store 'orange' again and flush - without fix the item counting treats the
+    // following store as an update and not an insert
+    EXPECT_EQ(0,
+              vb->lockCollections().getItemCount(CollectionEntry::fruit.uid));
+    store_item(vbid, key, "yum");
+    flushVBucketToDiskIfPersistent(vbid, 1);
+    EXPECT_EQ(1,
+              vb->lockCollections().getItemCount(CollectionEntry::fruit.uid));
+    delete_item(vbid, key);
+    flushVBucketToDiskIfPersistent(vbid, 1); // Would underflow as 0 - 1
+    EXPECT_EQ(0,
+              vb->lockCollections().getItemCount(CollectionEntry::fruit.uid));
 }
 
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,

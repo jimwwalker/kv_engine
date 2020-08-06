@@ -1063,11 +1063,18 @@ int MagmaKVStore::saveDocs(VB::Commit& commitData, kvstats_ctx& kvctx) {
 
     auto writeDocsCB = [this, &commitData, &kvctx, &ninserts, &ndeletes, vbid](
                                const Magma::WriteOperation& op,
-                               const bool docExists,
+                               bool docExists,
                                const magma::Slice oldMeta) {
         auto req = reinterpret_cast<MagmaRequest*>(op.UserData);
         auto diskDocKey = makeDiskDocKey(op.Key);
         auto docKey = diskDocKey.getDocKey();
+
+        // However if the old item is logically deleted, treat it as deleted
+        if (docExists &&
+            commitData.collections.isLogicallyDeleted(
+                    docKey, configuration.magmaCfg.GetSeqNum(oldMeta))) {
+            docExists = false;
+        }
 
         const size_t isTombstone =
                 docExists && configuration.magmaCfg.IsTombstone(oldMeta);
