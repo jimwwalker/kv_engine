@@ -543,7 +543,7 @@ void KVStore::resetCachedVBState(Vbid vbid) {
     }
 }
 
-void KVStore::setSystemEvent(const queued_item item) {
+void KVStore::applySetSystemEvent(const queued_item item) {
     switch (SystemEvent(item->getFlags())) {
     case SystemEvent::Collection: {
         auto createEvent = Collections::VB::Manifest::getCreateEventData(
@@ -566,10 +566,14 @@ void KVStore::setSystemEvent(const queued_item item) {
                                     std::to_string(item->getFlags()));
     }
     collectionsMeta.needsCommit = true;
+}
+
+void KVStore::setSystemEvent(const queued_item item) {
+    applySetSystemEvent(item);
     set(item);
 }
 
-void KVStore::delSystemEvent(const queued_item item) {
+void KVStore::applyDeleteSystemEvent(const queued_item item) {
     switch (SystemEvent(item->getFlags())) {
     case SystemEvent::Collection: {
         auto dropEvent = Collections::VB::Manifest::getDropEventData(
@@ -600,6 +604,10 @@ void KVStore::delSystemEvent(const queued_item item) {
                                     std::to_string(item->getFlags()));
     }
     collectionsMeta.needsCommit = true;
+}
+
+void KVStore::delSystemEvent(const queued_item item) {
+    applyDeleteSystemEvent(item);
     del(item);
 }
 

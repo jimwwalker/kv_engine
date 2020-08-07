@@ -2275,6 +2275,7 @@ couchstore_error_t CouchKVStore::saveDocs(Vbid vbid,
                                        makeJsonVBState(state));
 
         if (collectionsMeta.needsCommit) {
+            std::cerr << "Updating collection meta \n";
             updateCollectionsMeta(*db, kvctx.commitData.collections);
         }
 

@@ -138,9 +138,11 @@ flatbuffers::DetachedBuffer encodeOpenCollections(
         cb::const_byte_buffer collections) {
     flatbuffers::FlatBufferBuilder builder;
     std::vector<flatbuffers::Offset<Collections::KVStore::Collection>>
-            openCollections;
+            finalisedOpenCollection;
 
     for (const auto& event : collectionsMeta.collections) {
+        // look for the collection in dropped? compare cid and seqno
+
         const auto& meta = event.metaData;
         auto newEntry = Collections::KVStore::CreateCollection(
                 builder,
@@ -150,17 +152,17 @@ flatbuffers::DetachedBuffer encodeOpenCollections(
                 meta.maxTtl.has_value(),
                 meta.maxTtl.value_or(std::chrono::seconds::zero()).count(),
                 builder.CreateString(meta.name.data(), meta.name.size()));
-        openCollections.push_back(newEntry);
+        finalisedOpenCollection.push_back(newEntry);
     }
 
     // And 'merge' with the data we read
     if (!collections.empty()) {
         verifyFlatbuffersData<Collections::KVStore::OpenCollections>(
                 collections, "encodeOpenCollections()");
-        auto fbData =
-                flatbuffers::GetRoot<Collections::KVStore::OpenCollections>(
-                        collections.data());
-        for (const auto& entry : *fbData->entries()) {
+        auto open = flatbuffers::GetRoot<Collections::KVStore::OpenCollections>(
+                collections.data());
+        for (const auto& entry : *open->entries()) {
+            // For each currently open collection, is it in the drop list?
             auto p = [entry](const Collections::KVStore::DroppedCollection& c) {
                 return c.collectionId == entry->collectionId();
             };
@@ -179,7 +181,7 @@ flatbuffers::DetachedBuffer encodeOpenCollections(
                         entry->ttlValid(),
                         entry->maxTtl(),
                         builder.CreateString(entry->name()));
-                openCollections.push_back(newEntry);
+                finalisedOpenCollection.push_back(newEntry);
             } else {
                 // Here we maintain the startSeqno of the dropped collection
                 result->startSeqno = entry->startSeqno();
@@ -196,10 +198,10 @@ flatbuffers::DetachedBuffer encodeOpenCollections(
                 0,
                 builder.CreateString(
                         Collections::DefaultCollectionIdentifier.data()));
-        openCollections.push_back(newEntry);
+        finalisedOpenCollection.push_back(newEntry);
     }
 
-    auto collectionsVector = builder.CreateVector(openCollections);
+    auto collectionsVector = builder.CreateVector(finalisedOpenCollection);
     auto toWrite = Collections::KVStore::CreateOpenCollections(
             builder, collectionsVector);
 

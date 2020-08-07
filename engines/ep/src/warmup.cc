@@ -1204,9 +1204,12 @@ void Warmup::estimateDatabaseItemCount(uint16_t shardId) {
 
         auto itr = warmedUpVbuckets.find(vbid.get());
         if (itr != warmedUpVbuckets.end()) {
-            itr->second->setNumTotalItems(
-                    vbItemCount -
-                    itr->second->lockCollections().getSystemEventItemCount());
+            auto rh = itr->second->lockCollections();
+            rh.dump();
+            std::cerr << vbid << " vbItemCount:" << vbItemCount << " "
+                      << rh.getSystemEventItemCount() << std::endl;
+            itr->second->setNumTotalItems(vbItemCount -
+                                          rh.getSystemEventItemCount());
         }
         item_count += vbItemCount;
     }

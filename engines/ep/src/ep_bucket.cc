@@ -332,6 +332,10 @@ static bool canDeDuplicate(Item* lastFlushed, Item& candidate) {
         // Committed / pending namespace differs - cannot de-dupe.
         return false;
     }
+    if (lastFlushed->isSystemEvent() && candidate.isSystemEvent()) {
+        // Don't de-dup system-events flush every one of them
+        // return false;
+    }
 
     // items match - the candidate must have a lower seqno.
     Expects(lastFlushed->getBySeqno() > candidate.getBySeqno());
@@ -508,6 +512,8 @@ EPBucket::FlushResult EPBucket::flushVBucket(Vbid vbid) {
                            static_cast<uint64_t>(item->getBySeqno()));
         }
 
+        std::cerr << vbid << " item: " << *item << std::endl;
+
         if (op == queue_op::set_vbucket_state) {
             // Only process vbstate if it's sequenced higher (by cas).
             // We use the cas instead of the seqno here because a
@@ -613,6 +619,16 @@ EPBucket::FlushResult EPBucket::flushVBucket(Vbid vbid) {
             //     This means we only write the highest (i.e. newest)
             //     item for a given key, and discard any duplicate,
             //     older items.
+            if (item->isSystemEvent()) {
+                // system event is not persisted, but it's presence has side
+                // effects that the KVStore should be informed about
+                KVStore* kvstore = getRWUnderlying(item->getVBucketId());
+                if (item->isDeleted()) {
+                    //        kvstore->applyDeleteSystemEvent(item);
+                } else {
+                    //    kvstore->applySetSystemEvent(item);
+                }
+            }
         }
 
         // Register the item for deferred (flush success only) stats update.

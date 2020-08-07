@@ -2787,6 +2787,61 @@ TEST_P(CollectionsPersistentParameterizedTest, SystemEventsDoNotCount) {
     { EXPECT_EQ(0, store->getVBucket(vbid)->getNumTotalItems()); }
 }
 
+// Observed in MB-39864, the data we store in _local had a collection with
+// id x in the open collection list twice, leading to failure of warmup. The
+// issue occurred because a collection was recreated (cluster rolled back
+// manifest state), KV flushed a drop{c1}/create{c1} together and the flusher
+// de-duped the drop{c1} away so the metadata became 'corrupt'.
+// This test re-creates the events which lead to a underflow in stats and
+// metadata corruption that lead to warmup failing.
+TEST_P(CollectionsPersistentParameterizedTest, create_drop_create_same_id) {
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Add the fruit collection
+    CollectionsManifest cm(CollectionEntry::fruit);
+    vb->updateFromManifest(Collections::Manifest{cm});
+    auto key = makeStoredDocKey("orange", CollectionEntry::fruit);
+    // Put a key in for the original 'fruit'
+    store_item(vbid, key, "yum");
+
+    // Trigger a flush to disk. Flushes the fruit create and the item in that
+    // collection.
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    // Now in 1 flush drop and add fruit, this simulates the manifest dropping
+    // the collection, but going backwards/forwards 'resurrecting' the
+    // collection. KV needs to be robust against such events.
+    cm.remove(CollectionEntry::fruit);
+    vb->updateFromManifest(Collections::Manifest{cm});
+    cm.add(CollectionEntry::fruit);
+    vb->updateFromManifest(Collections::Manifest{cm});
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    // With or without the de-dup bug, we cannot read the key from the dropped
+    // collection because currently in-memory VB::Manifest has the correct
+    // view of collections - fruit exists, but for items above seqno:4
+    auto options = static_cast<get_options_t>(
+            QUEUE_BG_FETCH | HONOR_STATES | TRACK_REFERENCE | DELETE_TEMP |
+            HIDE_LOCKED_CAS | TRACK_STATISTICS);
+
+    GetValue gv = store->get(key, vbid, cookie, options);
+    EXPECT_EQ(ENGINE_KEY_ENOENT, gv.getStatus());
+
+    // Now read back the persisted manifest and validate that the fruit
+    // collection exists once.
+    auto manifest =
+            vb->getShard()->getRWUnderlying()->getCollectionsManifest(vbid);
+    EXPECT_EQ(
+            1,
+            std::count_if(
+                    manifest.collections.begin(),
+                    manifest.collections.end(),
+                    [](const Collections::KVStore::OpenCollection& collection) {
+                        return collection.metaData.cid ==
+                               CollectionEntry::fruit.uid;
+                    }));
+}
+
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
                          CollectionsExpiryLimitTest,
                          ::testing::Bool(),

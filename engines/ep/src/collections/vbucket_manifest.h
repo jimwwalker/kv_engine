@@ -250,7 +250,7 @@ public:
          * Dump this VB::Manifest to std::cerr
          */
         void dump() const {
-            std::cerr << manifest << std::endl;
+            std::cerr << *manifest << std::endl;
         }
 
         /**
