@@ -3205,9 +3205,10 @@ void CouchKVStore::updateDroppedCollections(
         Db& db,
         std::optional<std::vector<Collections::KVStore::DroppedCollection>>
                 dropped) {
-    for (const auto& drop : collectionsMeta.droppedCollections) {
+    for (const auto& [cid, event] : collectionsMeta.droppedCollections) {
+        (void)event;
         // Delete the 'stats' document for the collection
-        deleteCollectionStats(drop.collectionId);
+        deleteCollectionStats(cid);
     }
 
     // If the input 'dropped' is not initialised we must read the dropped

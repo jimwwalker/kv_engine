@@ -26,9 +26,11 @@
 
 #include "collections/collections_types.h"
 #include <flatbuffers/flatbuffers.h>
+#include <unordered_map>
 #include <vector>
 
 class DiskDocKey;
+class Item;
 
 namespace Collections {
 namespace KVStore {
@@ -40,6 +42,7 @@ namespace KVStore {
 struct OpenCollection {
     int64_t startSeqno;
     CollectionMetaData metaData;
+    bool operator==(const OpenCollection& other) const;
 };
 
 /**
@@ -49,6 +52,7 @@ struct OpenCollection {
 struct OpenScope {
     int64_t startSeqno;
     ScopeMetaData metaData;
+    bool operator==(const OpenScope& other) const;
 };
 
 /**
@@ -72,7 +76,9 @@ struct Manifest {
      * - manifest UID of 0
      * - no dropped collections
      */
-    explicit Manifest(Default) : collections{{0, {}}}, scopes{{0, {}}} {
+    explicit Manifest(Default)
+        : collections{{CollectionID::Default, {0, {}}}},
+          scopes{{ScopeID::Default, {0, {}}}} {
     }
 
     /**
@@ -116,23 +122,38 @@ struct DroppedCollection {
 /**
  * Data that KVStore will maintain as the EPBucket flusher writes system events
  * The underlying implementation of KVStore can optionally persist this data
- * in any format to allow for a simple implementation of:
+ * in any format to allow for an implementation of:
  *   -  KVStore::getCollectionsManifest
  *   -  KVStore::getDroppedCollections
  */
 struct CommitMetaData {
-    void clear() {
-        needsCommit = false;
-        collections.clear();
-        scopes.clear();
-        droppedCollections.clear();
-        droppedScopes.clear();
-        manifestUid.reset(0);
-    }
+    void clear();
 
-    void setUid(ManifestUid in) {
-        manifestUid = std::max<ManifestUid>(manifestUid, in);
-    }
+    /**
+     * Set the ManifestUid from the create/drop events (but only the greatest
+     * observed).
+     */
+    void setManifestUid(ManifestUid in);
+
+    /**
+     * Record that a create collection was present in a commit batch
+     */
+    void recordCreateCollection(const Item& item);
+
+    /**
+     * Record that a drop collection was present in a commit batch
+     */
+    void recordDropCollection(const Item& item);
+
+    /**
+     * Record that a create scope was present in a commit batch
+     */
+    void recordCreateScope(const Item& item);
+
+    /**
+     * Record that a drop scope was present in a commit batch
+     */
+    void recordDropScope(const Item& item);
 
     /**
      * The most recent manifest committed, if needsCommit is true this value
@@ -140,16 +161,33 @@ struct CommitMetaData {
      */
     ManifestUid manifestUid{0};
 
+    struct CollectionSpan {
+        OpenCollection low;
+        OpenCollection high;
+    };
     /**
-     * The following vectors store any items that are creating or dropping
-     * scopes and collections. The underlying KVStore must store the contents
-     * of these containers if needsCommit is true.
+     * For each collection created in the batch, we record meta data of the
+     * first and last (high/low by-seqno). If the collection was created once,
+     * both entries are the same.
      */
-    std::vector<OpenCollection> collections;
-    std::vector<OpenScope> scopes;
+    std::unordered_map<CollectionID, CollectionSpan> collections;
 
-    std::vector<DroppedCollection> droppedCollections;
-    std::vector<ScopeID> droppedScopes;
+    /**
+     * For each scope created in the batch, we record meta data for the greatest
+     * by-seqno.
+     */
+    std::unordered_map<ScopeID, OpenScope> scopes;
+
+    /**
+     * For each collection dropped in the batch, we record the metadata of the
+     * greatest
+     */
+    std::unordered_map<CollectionID, DroppedCollection> droppedCollections;
+
+    /**
+     * For each scope dropped in the batch, we record the greatest seqno
+     */
+    std::unordered_map<ScopeID, int64_t> droppedScopes;
 
     /**
      * Set to true when any of the fields in this structure have data which
@@ -189,24 +227,28 @@ flatbuffers::DetachedBuffer encodeManifestUid(
 /**
  * Encode the open collections list into a flatbuffer. Includes merging
  * with what was read off disk.
- * @param droppedCollections dropped collections list
+ * @param droppedCollections dropped collections list (read from KVStore)
  * @param collectionsMeta manifest commit meta data
- * @param collections collections buffer from local data store
+ * @param collections existing flatbuffer data for open collections
  */
 flatbuffers::DetachedBuffer encodeOpenCollections(
-        std::vector<Collections::KVStore::DroppedCollection>&
+        const std::vector<Collections::KVStore::DroppedCollection>&
                 droppedCollections,
         Collections::KVStore::CommitMetaData& collectionsMeta,
         cb::const_byte_buffer collections);
 
 /**
- * Encode the dropped collection list into a flatbuffer.
- * @param collectionsMeta manifest commit meta data
- * @param dropped dropped collections list
+ * Encode the dropped collection list as flatbuffer.
+ *
+ * @param collectionsMeta manifest commit meta data generated by the current
+ *        flush batch.
+ * @param dropped list of collections that are already dropped (read from
+ *        storage)
+ * @return The dropped list (as a flatbuffer type)
  */
 flatbuffers::DetachedBuffer encodeDroppedCollections(
         Collections::KVStore::CommitMetaData& collectionsMeta,
-        const std::vector<Collections::KVStore::DroppedCollection>& dropped);
+        std::vector<Collections::KVStore::DroppedCollection>& dropped);
 
 /**
  * Encode open scopes list into flat buffer.
@@ -214,7 +256,7 @@ flatbuffers::DetachedBuffer encodeDroppedCollections(
  * @param scopes open scopes list
  */
 flatbuffers::DetachedBuffer encodeOpenScopes(
-        Collections::KVStore::CommitMetaData& collectionsMeta,
+        const Collections::KVStore::CommitMetaData& collectionsMeta,
         cb::const_byte_buffer scopes);
 
 /**

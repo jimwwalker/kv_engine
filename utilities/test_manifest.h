@@ -175,6 +175,12 @@ public:
             const CollectionEntry::Entry& collectionEntry,
             const ScopeEntry::Entry& scopeEntry = ScopeEntry::defaultS);
 
+    bool exists(
+            const CollectionEntry::Entry& collectionEntry,
+            const ScopeEntry::Entry& scopeEntry = ScopeEntry::defaultS) const;
+
+    bool exists(const ScopeEntry::Entry& scopeEntry) const;
+
     /// Return the manifest UID
     uint64_t getUid() const {
         return uid;
