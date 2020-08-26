@@ -2573,6 +2573,7 @@ TEST_P(CollectionsDcpParameterizedTest, seqno_advanced_from_disk_to_memory) {
 class CollectionsDcpPersistentOnly : public CollectionsDcpParameterizedTest {
 public:
     void resurrectionTest(bool dropAtEnd);
+    void resurrectionStatsTest(bool reproduceUnderflow);
 };
 
 // Observed in MB-39864, the data we store in _local had a collection with
@@ -2742,12 +2743,86 @@ void CollectionsDcpPersistentOnly::resurrectionTest(bool dropAtEnd) {
                         ->getDroppedCollections(replicaVB)
                         .empty());
 }
+
 TEST_P(CollectionsDcpPersistentOnly, create_drop_create_same_id) {
     resurrectionTest(false);
 }
 
 TEST_P(CollectionsDcpPersistentOnly, create_drop_create_same_id_end_dropped) {
     resurrectionTest(true);
+}
+
+void CollectionsDcpPersistentOnly::resurrectionStatsTest(
+        bool reproduceUnderflow) {
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Add the target collection
+    CollectionEntry::Entry target = CollectionEntry::fruit;
+    CollectionsManifest cm(target);
+    store->setCollections(std::string{cm});
+    auto key1 = makeStoredDocKey("orange", target);
+    // Put a key in for the original 'fruit'
+    store_item(vbid, key1, "yum1");
+    flushVBucketToDiskIfPersistent(vbid, 2);
+    EXPECT_EQ(1, vb->getManifest().lock().getItemCount(target.getId()));
+
+    // Next store a new item, drop the collection, create the collection and
+    // flush. Before fixes for MB-39864 the 'apple' item, which belongs to the
+    // first generation of the collection was accounted against the new
+    // generation, the new collection would get an item count of 1, but you
+    // cannot read back apple!
+    auto key2 = makeStoredDocKey("apple", target);
+
+    if (!reproduceUnderflow) {
+        store_item(vbid, key2, "yum1");
+    }
+
+    // remove
+    cm.remove(target);
+    store->setCollections(std::string{cm});
+
+    cm.add(target);
+    store->setCollections(std::string{cm});
+    flushVBucketToDiskIfPersistent(vbid, reproduceUnderflow ? 1 : 2);
+
+    auto stats = vb->getManifest().lock(target.getId()).getPersistedStats();
+    // In both test variations the new collection has no items, no disk usage
+    EXPECT_EQ(0, stats.itemCount);
+    EXPECT_EQ(0, stats.diskSize);
+    auto highSeqno = !reproduceUnderflow ? 5 : 4;
+    EXPECT_EQ(highSeqno, stats.highSeqno);
+
+    // Finally we should be able to mutate/delete the key we stored at the start
+    // of the test. MB-39864 showed that this sequence of events could lead
+    // underflow exceptions. The issue was that the store was treated as an
+    // update, so we didn't increment the item count (so collection has 0 items)
+    // the delete then triggers underflow.
+    store_item(vbid, key1, "yummy");
+    flushVBucketToDiskIfPersistent(vbid, 1);
+    stats = vb->getManifest().lock(target.getId()).getPersistedStats();
+    // In both test variations the new collection has no items, no disk usage
+    EXPECT_EQ(1, stats.itemCount);
+    EXPECT_EQ(15, stats.diskSize);
+    highSeqno = !reproduceUnderflow ? 6 : 5;
+    EXPECT_EQ(highSeqno, stats.highSeqno);
+    delete_item(vbid, key1);
+    flushVBucketToDiskIfPersistent(vbid, 1);
+    stats = vb->getManifest().lock(target.getId()).getPersistedStats();
+    // In both test variations the new collection has no items, no disk usage
+    EXPECT_EQ(0, stats.itemCount);
+    EXPECT_EQ(0, stats.diskSize);
+    highSeqno = !reproduceUnderflow ? 7 : 5;
+    EXPECT_EQ(highSeqno, stats.highSeqno);
+}
+
+TEST_P(CollectionsDcpPersistentOnly, create_drop_create_same_id_stats) {
+    resurrectionStatsTest(false);
+}
+
+// reproduce the underflow seen in MB-39864
+TEST_P(CollectionsDcpPersistentOnly,
+       create_drop_create_same_id_stats_undeflow) {
+    resurrectionStatsTest(true);
 }
 
 // Test cases which run for persistent and ephemeral buckets
