@@ -45,8 +45,12 @@ public:
      */
     bool needToUpdateCollectionsMetadata() const;
 
+    void preparePurged(const DocKey& key, size_t size);
+
 private:
     friend std::ostream& operator<<(std::ostream&, const EraserContext&);
+
+    std::unordered_map<CollectionID, size_t> preparesPurgedDiskSize;
 
     /// set to true if an entry was removed from the 'dropped' container
     bool removed = false;

@@ -49,6 +49,15 @@ bool EraserContext::needToUpdateCollectionsMetadata() const {
     return removed;
 }
 
+void EraserContext::preparePurged(const DocKey& key, size_t size) {
+    auto [itr, emplaced] =
+            preparesPurgedDiskSize.try_emplace(key.getCollectionID(), size);
+
+    if (!emplaced) {
+        itr->second += size;
+    }
+}
+
 std::ostream& operator<<(std::ostream& os, const EraserContext& eraserContext) {
     os << "EraserContext: removed:"
        << (eraserContext.removed ? "true, " : "false, ");

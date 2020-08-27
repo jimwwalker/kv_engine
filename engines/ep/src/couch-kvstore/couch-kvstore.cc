@@ -894,6 +894,10 @@ static int time_purge_hook(Db* d,
             if (metadata->isPrepare()) {
                 if (info->db_seq <= ctx->highCompletedSeqno) {
                     ctx->stats.preparesPurged++;
+                    auto diskKey = makeDiskDocKey(info->id);
+                    const auto& docKey = diskKey.getDocKey();
+                    ctx->eraserContext->preparePurged(docKey,
+                                                      info->physical_size);
                     return COUCHSTORE_COMPACT_DROP_ITEM;
                 }
 
