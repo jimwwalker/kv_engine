@@ -2764,7 +2764,21 @@ void CollectionsDcpPersistentOnly::resurrectionStatsTest(
     // Put a key in for the original 'fruit'
     store_item(vbid, key1, "yum1");
     flushVBucketToDiskIfPersistent(vbid, 2);
-    EXPECT_EQ(1, vb->getManifest().lock().getItemCount(target.getId()));
+
+    auto stats = vb->getManifest().lock(target.getId()).getPersistedStats();
+
+    // Note 57 manually verified from dbdump and is the system-event usage
+    // Note 14 manually verified from dbdump and is the item usage
+    size_t systemeventSize = 57;
+    size_t itemSize = 14;
+    if (isMagma()) {
+        // magma doesn't account the same bits and bytes
+        systemeventSize = 56;
+        itemSize = 4;
+    }
+    EXPECT_EQ(1, stats.itemCount);
+    EXPECT_EQ(systemeventSize + itemSize, stats.diskSize);
+    EXPECT_EQ(2, stats.highSeqno);
 
     // Next store a new item, drop the collection, create the collection and
     // flush. Before fixes for MB-39864 the 'apple' item, which belongs to the
@@ -2785,10 +2799,11 @@ void CollectionsDcpPersistentOnly::resurrectionStatsTest(
     store->setCollections(std::string{cm});
     flushVBucketToDiskIfPersistent(vbid, reproduceUnderflow ? 1 : 2);
 
-    auto stats = vb->getManifest().lock(target.getId()).getPersistedStats();
-    // In both test variations the new collection has no items, no disk usage
+    stats = vb->getManifest().lock(target.getId()).getPersistedStats();
+    // In both test variations the new collection has no items but some usage of
+    // disk (system event is counted). Note 57 manually verified from dbdump
     EXPECT_EQ(0, stats.itemCount);
-    EXPECT_EQ(0, stats.diskSize);
+    EXPECT_EQ(systemeventSize, stats.diskSize);
     auto highSeqno = !reproduceUnderflow ? 5 : 4;
     EXPECT_EQ(highSeqno, stats.highSeqno);
 
@@ -2800,18 +2815,24 @@ void CollectionsDcpPersistentOnly::resurrectionStatsTest(
     store_item(vbid, key1, "yummy");
     flushVBucketToDiskIfPersistent(vbid, 1);
     stats = vb->getManifest().lock(target.getId()).getPersistedStats();
-    // In both test variations the new collection has no items, no disk usage
+
+    // Note 15 manually verified from dbdump and is the item usage
+    itemSize = 15;
+    if (isMagma()) {
+        // magma doesn't account the same bits and bytes
+        itemSize = 5;
+    }
     EXPECT_EQ(1, stats.itemCount);
-    EXPECT_EQ(15, stats.diskSize);
+    EXPECT_EQ(systemeventSize + itemSize, stats.diskSize);
     highSeqno = !reproduceUnderflow ? 6 : 5;
     EXPECT_EQ(highSeqno, stats.highSeqno);
+
     delete_item(vbid, key1);
     flushVBucketToDiskIfPersistent(vbid, 1);
     stats = vb->getManifest().lock(target.getId()).getPersistedStats();
-    // In both test variations the new collection has no items, no disk usage
     EXPECT_EQ(0, stats.itemCount);
-    EXPECT_EQ(0, stats.diskSize);
-    highSeqno = !reproduceUnderflow ? 7 : 5;
+    EXPECT_EQ(systemeventSize, stats.diskSize);
+    highSeqno = !reproduceUnderflow ? 7 : 6;
     EXPECT_EQ(highSeqno, stats.highSeqno);
 }
 

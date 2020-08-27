@@ -19,15 +19,14 @@
 
 #include "collections/collection_persisted_stats.h"
 #include "collections/collections_types.h"
+#include "collections/vbucket_manifest_handles.h"
 
 #include <unordered_set>
-#include <vector>
 
 class KVBucket;
 
 namespace Collections {
 namespace VB {
-
 class Manifest;
 
 /**
@@ -52,31 +51,42 @@ public:
             std::function<void(CollectionID, PersistedStats)> cb) const;
 
     /**
-     * Increment the 'disk' count for the collection associated with the key
-     */
-    void incrementDiskCount(const DocKey& key);
-
-    /**
-     * Decrement the 'disk' count for the collection associated with the key
-     */
-    void decrementDiskCount(const DocKey& key);
-
-    /**
-     * Update the on disk size (bytes) for the collection associated with the
-     * key
-     */
-    void updateDiskSize(const DocKey& key, ssize_t delta);
-
-    /**
-     * Set the highest seqno that needs to be persisted for this collection
+     * Update collection stats from the flusher for a insert only operation.
+     * We can be inserting a delete or a live document.
      *
-     * @param key Key of the document being flushed
-     * @param value New seqno value to set
-     * @param deleted Is this document deleted? If it is, and it is a system
-     *        event, then we should not throw an exception if we cannot find
-     *        the collection we wish to update.
+     * @param key The key of the item flushed
+     * @param seqno The seqno of the item flushed
+     * @param isCommitted the prepare/commit state of the item flushed
+     * @param isDelete alive/delete state of the item flushed
+     * @param size bytes used on disk of the item flushed
      */
-    void setPersistedHighSeqno(const DocKey& key, uint64_t value, bool deleted);
+    void updateStats(const DocKey& key,
+                     uint64_t seqno,
+                     bool isCommitted,
+                     bool isDelete,
+                     size_t size);
+
+    /**
+     * Update collection stats from the flusher when an old 'version' of the
+     * item already exists. This covers updates or deletes of items
+     *
+     * @param key The key of the item flushed
+     * @param seqno The seqno of the item flushed
+     * @param isCommitted the prepare/commit state of the item flushed
+     * @param isDelete alive/delete stats of the item flushed
+     * @param size bytes used on disk of the item flushed
+     * @param oldSeqno The seqno of the old 'version' of the item
+     * @param oldIsDelete alive/delete state of the old 'version' of the item
+     * @param oldSize bytes used on disk of the old 'version' of the item
+     */
+    void updateStats(const DocKey& key,
+                     uint64_t seqno,
+                     bool isCommitted,
+                     bool isDelete,
+                     size_t size,
+                     uint64_t oldSeqno,
+                     bool oldIsDelete,
+                     size_t oldSize);
 
     /**
      * Check to see if this flush should trigger a collection purge which if
@@ -93,6 +103,75 @@ public:
     }
 
 private:
+    // Private helper class for doing collection stat updates
+    class StatsUpdate {
+    public:
+        explicit StatsUpdate(CachingReadHandle&& handle)
+            : handle(std::move(handle)) {
+        }
+
+        /**
+         * an item is being inserted into the collection
+         * @param isCommitted the prepare/commit state of the item inserted
+         * @param isDelete alive/delete stats of the item inserted
+         * @param diskSizeDelta the +/- bytes the insert changes disk-used by
+         */
+        void insert(bool isCommitted, bool isDelete, ssize_t diskSizeDelta);
+
+        /**
+         * an item is being updated in the collection
+         * @param isCommitted the prepare/commit state of the item updated
+         * @param diskSizeDelta the +/- bytes the update changes disk-used by
+         */
+        void update(bool isCommitted, ssize_t diskSizeDelta);
+
+        /**
+         * an item is being removed (deleted) from the collection
+         * @param isCommitted the prepare/commit state of the item removed
+         * @param diskSizeDelta the +/- bytes the delete changes disk-used by
+         */
+        void remove(bool isCommitted, ssize_t diskSizeDelta);
+
+        /**
+         * @return true if the seqno represents a logically deleted item for the
+         *         locked collection.
+         */
+        bool isLogicallyDeleted(uint64_t seqno) const;
+
+        /**
+         * Increment the 'disk' count for the collection associated with the key
+         */
+        void incrementDiskCount();
+
+        /**
+         * Decrement the 'disk' count for the collection associated with the key
+         */
+        void decrementDiskCount();
+
+        /**
+         * Update the on disk size (bytes) for the collection associated with
+         * the key
+         */
+        void updateDiskSize(ssize_t delta);
+
+    private:
+        /// handle on the collection
+        CachingReadHandle handle;
+    };
+
+    /**
+     * For collection events and mutations/deletions lock/obtain a handle on
+     * the collection for stat updates. For scope events do nothing.
+     * @param key The key of the item being flushed
+     * @param seqno Sequence number of the item being flushed
+     * @param isCommitted the commit/prepare state of the item being flushed
+     * @return StatsUpdate 'proxy' for updating the collection or nothing for
+     *         scopes
+ `   */
+    std::optional<StatsUpdate> tryTolockAndSetPersistedSeqno(const DocKey& key,
+                                                             uint64_t seqno,
+                                                             bool isCommitted);
+
     bool needsPurge = false;
 
     /**
