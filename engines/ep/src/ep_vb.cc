@@ -1024,3 +1024,11 @@ void EPVBucket::processImplicitlyCompletedPrepare(
     // used after.
     ht.unlocked_del(v.getHBL(), v.release());
 }
+
+void EPVBucket::saveDroppedCollection(
+        CollectionID cid,
+        Collections::VB::WriteHandle& writeHandle,
+        const Collections::VB::ManifestEntry& droppedEntry,
+        uint64_t droppedSeqno) {
+    writeHandle.saveDroppedCollection(cid, droppedEntry, droppedSeqno);
+}
