@@ -2218,6 +2218,10 @@ bool CouchKVStore::commit2couchstore(VB::Commit& commitData) {
                 "{}",
                 couchstore_strerror(errCode),
                 vbucket2flush);
+    } else {
+        // collection stats can be updated, this will make them readable to the
+        // world
+        kvctx.commitData.collections.updateCollectionStats();
     }
 
     if (postFlushHook) {

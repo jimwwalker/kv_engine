@@ -23,7 +23,6 @@
 
 #include <flatbuffers/flatbuffers.h>
 #include <unordered_map>
-#include <unordered_set>
 
 class KVBucket;
 
@@ -46,11 +45,23 @@ public:
     }
 
     /**
-     * Run the specified callback against the set of collections which have
-     * changed their item count during the run of the flusher.
+     * KVStore implementations call this function and specific a callback.
+     * This object will call cb for all collections that were flushed in the
+     * run of the flusher and pass a PersistedStats object which the KVStore
+     * should persist.
+     *
+     * @param a function to callback
      */
     void saveCollectionStats(
             std::function<void(CollectionID, PersistedStats)> cb) const;
+
+    /**
+     * KVStore implementations must call this function once they have
+     * successfully committed all of the PersistedStats provided by the
+     * saveCollectionStats call. This function will make the persisted changes
+     * visible (i.e. cmd_stats will now show the new values).
+     */
+    void updateCollectionStats();
 
     /**
      * Update collection stats from the flusher for a insert only operation.
@@ -203,12 +214,95 @@ private:
      */
     void setManifestUid(ManifestUid in);
 
+    class Stats {
+    public:
+        explicit Stats(uint64_t highSeqno) : persistedHighSeqno(highSeqno) {
+        }
+
+        /**
+         * Set the persistedHighSeqno only if seqno is > than
+         * this->persistedHighSeqno
+         * @param seqno to use if it's greater than current value
+         */
+        void maybeSetPersistedHighSeqno(uint64_t seqno);
+
+        /**
+         * Process an insert into the collection
+         * @param isSystem true if a system event is inserted
+         * @param isCommitted true if a committed item is inserted, false for
+         **       prepare/abort
+         * @param isDelete true if a deleted item is inserted (tombstone
+         *        creation)
+         * @param diskSize size in bytes 'inserted' into disk. Should be
+         *        representative of the bytes used by each document, but does
+         *        not need to be exact.
+         */
+        void insert(bool isSystem,
+                    bool isCommitted,
+                    bool isDelete,
+                    ssize_t diskSize);
+
+        /**
+         * Process an update into the collection
+         * @param isSystem true if a system event is updated
+         * @param isCommitted true if a committed item is updated, false for
+         **       prepare/abort
+         * @param diskSizeDelta size in bytes difference. Should be
+         *        representative of the difference between existing and new
+         *        documents, but does not need to be exact.
+         */
+        void update(bool isSystem, bool isCommitted, ssize_t diskSizeDelta);
+
+        /**
+         * Process a remove from the collection (store of a delete)
+         * @param isSystem true if a system event is removed
+         * @param isCommitted true if a committed item is removed, false for
+         **       prepare/abort
+         * @param diskSizeDelta size in bytes difference. Should be
+         *        representative of the difference between existing and new
+         *        documents, but does not need to be exact.
+         */
+        void remove(bool isSystem, bool isCommitted, ssize_t diskSizeDelta);
+
+        uint64_t getPersistedHighSeqno() const {
+            return persistedHighSeqno;
+        }
+
+        ssize_t getItemCount() const {
+            return itemCount;
+        }
+
+        ssize_t getDiskSize() const {
+            return diskSize;
+        }
+
+    private:
+        void incrementDiskCount();
+
+        void decrementDiskCount();
+
+        void updateDiskSize(ssize_t delta);
+
+        uint64_t persistedHighSeqno{0};
+        ssize_t itemCount{0};
+        ssize_t diskSize{0};
+    };
+
     /**
-     * Keep track of only the collections that have had a insert/delete in
-     * this run of the flusher so we can flush only those collections whose
-     * item count may have changed.
+     * Obtain a Stats reference so insert/update/remove can be tracked.
+     * The function may also update the persisted high-seqno of the collection
+     * if the given seqno is greater than the currently recorded one.
      */
-    std::unordered_set<CollectionID> mutated;
+    Stats& getStatsAndMaybeSetPersistedHighSeqno(CollectionID cid,
+                                                 uint64_t seqno);
+
+    /**
+     * Map of collections flushed by the run of the flusher and the collected
+     * stats. The collected values are just the count of changes made by the
+     * that flusher run, so itemCount/diskSize can be negative (flushed lots
+     * of deletes).
+     */
+    std::unordered_map<CollectionID, Stats> stats;
 
     /**
      * For each collection created in the batch, we record meta data of the

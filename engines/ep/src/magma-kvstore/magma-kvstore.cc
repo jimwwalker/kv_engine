@@ -1234,6 +1234,8 @@ int MagmaKVStore::saveDocs(VB::Commit& commitData, kvstats_ctx& kvctx) {
         logger->critical("MagmaKVStore::saveDocs {} Sync failed. Status:{}",
                          vbid,
                          status.String());
+    } else {
+        kvctx.commitData.collections.updateCollectionStats();
     }
 
     st.commitHisto.add(std::chrono::duration_cast<std::chrono::microseconds>(

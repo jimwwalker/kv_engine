@@ -454,6 +454,16 @@ protected:
         entry->second.decrementDiskCount();
     }
 
+    void updateItemCount(const container::const_iterator entry,
+                         ssize_t delta) const {
+        if (entry == map.end()) {
+            throwException<std::invalid_argument>(__FUNCTION__,
+                                                  "iterator is invalid");
+        }
+
+        entry->second.updateItemCount(delta);
+    }
+
     void updateDiskSize(const container::const_iterator entry,
                         ssize_t delta) const {
         if (entry == map.end()) {

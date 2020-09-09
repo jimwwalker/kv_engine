@@ -1558,7 +1558,11 @@ public:
             // Irrespective of if the in-memory delete succeeded; the document
             // doesn't exist on disk; so decrement the item count.
             vb.decrNumTotalItems();
-            vb.getManifest().lock(item.getKey()).decrementDiskCount();
+            vb.getManifest()
+                    .lock(item.getKey())
+                    .decrementDiskCount(); // @TODO don't need this?? we will
+                                           // reset the manifest and stats when
+                                           // rollback is done
         }
     }
 

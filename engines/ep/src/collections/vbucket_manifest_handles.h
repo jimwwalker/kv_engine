@@ -485,6 +485,25 @@ public:
         return itr != manifest->end();
     }
 
+    bool isLogicallyDeleted(uint64_t seqno) const {
+        if (!valid()) {
+            return true;
+        }
+        return manifest->isLogicallyDeleted(itr, seqno);
+    }
+
+    void updateItemCount(ssize_t delta) const {
+        manifest->updateItemCount(itr, delta);
+    }
+
+    void setPersistedHighSeqno(uint64_t highSeqno) const {
+        manifest->setPersistedHighSeqno(itr, highSeqno);
+    }
+
+    void updateDiskSize(ssize_t delta) const {
+        manifest->updateDiskSize(itr, delta);
+    }
+
     void dump();
 
 protected:

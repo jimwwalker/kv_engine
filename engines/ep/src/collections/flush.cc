@@ -26,164 +26,106 @@
 
 namespace Collections::VB {
 
-// Helper class for doing collection stat updates
-class StatsUpdate {
-public:
-    explicit StatsUpdate(CachingReadHandle&& handle)
-        : handle(std::move(handle)) {
+Flush::Stats& Flush::getStatsAndMaybeSetPersistedHighSeqno(CollectionID cid,
+                                                           uint64_t seqno) {
+    auto [itr, inserted] = stats.try_emplace(cid, Stats{seqno});
+    auto& [key, value] = *itr;
+    if (!inserted) {
+        value.maybeSetPersistedHighSeqno(seqno);
     }
-
-    /**
-     * An item is being inserted into the collection
-     * @param isCommitted the prepare/commit state of the item inserted
-     * @param isDelete alive/delete stats of the item inserted
-     * @param diskSizeDelta the +/- bytes the insert changes disk-used by
-     */
-    void insert(bool isCommitted, bool isDelete, ssize_t diskSizeDelta);
-
-    /**
-     * An item is being updated in the collection
-     * @param isCommitted the prepare/commit state of the item updated
-     * @param diskSizeDelta the +/- bytes the update changes disk-used by
-     */
-    void update(bool isCommitted, ssize_t diskSizeDelta);
-
-    /**
-     * An item is being removed (deleted) from the collection
-     * @param isCommitted the prepare/commit state of the item removed
-     * @param diskSizeDelta the +/- bytes the delete changes disk-used by
-     */
-    void remove(bool isCommitted, ssize_t diskSizeDelta);
-
-    /**
-     * @return true if the seqno represents a logically deleted item for the
-     *         locked collection.
-     */
-    bool isLogicallyDeleted(uint64_t seqno) const;
-
-    /**
-     * Increment the 'disk' count for the collection associated with the key
-     */
-    void incrementDiskCount();
-
-    /**
-     * Decrement the 'disk' count for the collection associated with the key
-     */
-    void decrementDiskCount();
-
-    /**
-     * Update the on disk size (bytes) for the collection associated with
-     * the key
-     */
-    void updateDiskSize(ssize_t delta);
-
-private:
-    /// handle on the collection
-    CachingReadHandle handle;
-};
-
-bool StatsUpdate::isLogicallyDeleted(uint64_t seqno) const {
-    return handle.isLogicallyDeleted(seqno);
+    return value;
 }
 
-void StatsUpdate::incrementDiskCount() {
-    if (!handle.getKey().isInSystemCollection()) {
-        handle.incrementDiskCount();
+void Flush::Stats::maybeSetPersistedHighSeqno(uint64_t seqno) {
+    if (seqno > persistedHighSeqno) {
+        persistedHighSeqno = seqno;
     }
 }
 
-void StatsUpdate::decrementDiskCount() {
-    if (!handle.getKey().isInSystemCollection()) {
-        handle.decrementDiskCount();
-    }
+void Flush::Stats::incrementDiskCount() {
+    itemCount++;
 }
 
-void StatsUpdate::updateDiskSize(ssize_t delta) {
-    handle.updateDiskSize(delta);
+void Flush::Stats::decrementDiskCount() {
+    itemCount--;
 }
 
-static std::optional<StatsUpdate> tryTolockAndSetPersistedSeqno(
-        Flush& flush, const DocKey& key, uint64_t seqno, bool isCommitted) {
-    if (key.isInSystemCollection()) {
-        // Is it a collection system event?
-        auto [event, id] = SystemEventFactory::getTypeAndID(key);
-        switch (event) {
-        case SystemEvent::Collection: {
-            auto handle =
-                    flush.getManifest().lock(key, Manifest::AllowSystemKeys{});
-            if (handle.setPersistedHighSeqno(seqno)) {
-                // Update the 'mutated' set, stats are changing
-                flush.setMutated(CollectionID(id));
-            } else {
-                // Cannot set the seqno (flushing dropped items) no more updates
-                return {};
-            }
-            return StatsUpdate{std::move(handle)};
-        }
-        case SystemEvent::Scope:
-            break;
-        }
-        return {};
-    }
-
-    auto handle = flush.getManifest().lock(key);
-
-    if (isCommitted) {
-        if (handle.setPersistedHighSeqno(seqno)) {
-            // Update the 'mutated' set, stats are changing
-            flush.setMutated(key.getCollectionID());
-            return StatsUpdate{std::move(handle)};
-        } else {
-            // Cannot set the seqno (flushing dropped items) no more updates
-            return {};
-        }
-    }
-
-    return StatsUpdate{std::move(handle)};
+void Flush::Stats::updateDiskSize(ssize_t delta) {
+    diskSize += delta;
 }
 
-void StatsUpdate::insert(bool isCommitted,
-                         bool isDelete,
-                         ssize_t diskSizeDelta) {
-    if (!isDelete && isCommitted) {
+void Flush::Stats::insert(bool isSystem,
+                          bool isCommitted,
+                          bool isDelete,
+                          ssize_t diskSizeDelta) {
+    if (!isSystem && !isDelete && isCommitted) {
         incrementDiskCount();
     } // else inserting a tombstone or it's a prepare
 
-    if (isCommitted) {
+    if (isSystem || isCommitted) {
         updateDiskSize(diskSizeDelta);
     }
 }
 
-void StatsUpdate::update(bool isCommitted, ssize_t diskSizeDelta) {
-    if (isCommitted) {
+void Flush::Stats::update(bool isSystem,
+                          bool isCommitted,
+                          ssize_t diskSizeDelta) {
+    if (isSystem || isCommitted) {
         updateDiskSize(diskSizeDelta);
     }
 }
 
-void StatsUpdate::remove(bool isCommitted, ssize_t diskSizeDelta) {
+void Flush::Stats::remove(bool isSystem,
+                          bool isCommitted,
+                          ssize_t diskSizeDelta) {
     if (isCommitted) {
         decrementDiskCount();
     } // else inserting a tombstone or it's a prepare
 
-    if (isCommitted) {
+    if (isSystem || isCommitted) {
         updateDiskSize(diskSizeDelta);
     }
 }
 
+// pre commit, generate the collection stats and invoke the callback to write
+// them
 void Flush::saveCollectionStats(
         std::function<void(CollectionID, PersistedStats)> cb) const {
-    for (const auto c : mutated) {
-        PersistedStats stats;
+    for (const auto& [cid, flushStats] : stats) {
+        PersistedStats toWrite;
         {
-            auto lock = manifest.lock(c);
-            if (!lock.valid()) {
+            auto lock = manifest.lock(cid);
+            if (!lock.valid() ||
+                lock.isLogicallyDeleted(flushStats.getPersistedHighSeqno())) {
                 // Can be flushing for a dropped collection (no longer in the
-                // manifest)
+                // manifest, or was flushed/recreated)
                 continue;
             }
-            stats = lock.getPersistedStats();
+            toWrite = lock.getPersistedStats();
         }
-        cb(c, stats);
+
+        // update the stats with the changes made by the flusher
+        toWrite.itemCount += flushStats.getItemCount();
+        toWrite.highSeqno = flushStats.getPersistedHighSeqno();
+        toWrite.diskSize += flushStats.getDiskSize(); // size_t += ssize_t??
+        cb(cid, toWrite);
+    }
+}
+
+void Flush::updateCollectionStats() {
+    for (const auto& [cid, flushStats] : stats) {
+        auto lock = manifest.lock(cid);
+        if (!lock.valid() ||
+            lock.isLogicallyDeleted(flushStats.getPersistedHighSeqno())) {
+            // Can be flushing for a dropped collection (no longer in the
+            // manifest, or was flushed/recreated)
+            continue;
+        }
+
+        // update the stats with the changes made by the flusher
+        lock.updateItemCount(flushStats.getItemCount());
+        lock.setPersistedHighSeqno(flushStats.getPersistedHighSeqno());
+        lock.updateDiskSize(flushStats.getDiskSize());
     }
 }
 
@@ -199,15 +141,47 @@ void Flush::triggerPurge(Vbid vbid, KVBucket& bucket) {
     bucket.scheduleCompaction(vbid, config, nullptr);
 }
 
+static std::pair<bool, std::optional<CollectionID>> getCollectionID(
+        const DocKey& key) {
+    bool isSystemEvent = key.isInSystemCollection();
+    CollectionID cid;
+    if (isSystemEvent) {
+        auto [event, id] = SystemEventFactory::getTypeAndID(key);
+        switch (event) {
+        case SystemEvent::Collection: {
+            cid = CollectionID(id);
+            break;
+        }
+        case SystemEvent::Scope:
+            return {true, {}};
+        }
+    } else {
+        cid = key.getCollectionID();
+    }
+    return {isSystemEvent, cid};
+}
+
 void Flush::updateStats(const DocKey& key,
                         uint64_t seqno,
                         bool isCommitted,
                         bool isDelete,
                         size_t size) {
-    auto update = tryTolockAndSetPersistedSeqno(*this, key, seqno, isCommitted);
-    if (update) {
-        update->insert(isCommitted, isDelete, size);
+    auto [isSystemEvent, cid] = getCollectionID(key);
+    if (!cid) {
+        return;
     }
+
+    {
+        auto handle = getManifest().lock(cid.value());
+        // collection gone or the item's generation of collection
+        // dropped/flushed
+        if (handle.isLogicallyDeleted(seqno)) {
+            return;
+        }
+    }
+
+    getStatsAndMaybeSetPersistedHighSeqno(cid.value(), seqno)
+            .insert(isSystemEvent, isCommitted, isDelete, size);
 }
 
 void Flush::updateStats(const DocKey& key,
@@ -218,20 +192,30 @@ void Flush::updateStats(const DocKey& key,
                         uint64_t oldSeqno,
                         bool oldIsDelete,
                         size_t oldSize) {
-    auto update = tryTolockAndSetPersistedSeqno(*this, key, seqno, isCommitted);
-    if (update) {
-        if (update->isLogicallyDeleted(oldSeqno) || oldIsDelete) {
-            update->insert(isCommitted, isDelete, size);
-        } else if (!oldIsDelete && isDelete) {
-            update->remove(isCommitted, size - oldSize);
-        } else {
-            update->update(isCommitted, size - oldSize);
-        }
+    auto [isSystemEvent, cid] = getCollectionID(key);
+    if (!cid) {
+        return;
     }
-}
 
-void Flush::setMutated(CollectionID cid) {
-    mutated.insert(cid);
+    {
+        auto handle = getManifest().lock(cid.value());
+        // collection now gone (for the new item)
+        if (handle.isLogicallyDeleted(seqno)) {
+            return;
+        }
+        // Update delete state for the old item
+        oldIsDelete = oldIsDelete || handle.isLogicallyDeleted(oldSeqno);
+    }
+
+    auto& stats = getStatsAndMaybeSetPersistedHighSeqno(cid.value(), seqno);
+
+    if (oldIsDelete) {
+        stats.insert(isSystemEvent, isCommitted, isDelete, size);
+    } else if (!oldIsDelete && isDelete) {
+        stats.remove(isSystemEvent, isCommitted, size - oldSize);
+    } else {
+        stats.update(isSystemEvent, isCommitted, size - oldSize);
+    }
 }
 
 void Flush::recordSystemEvent(const Item& item) {
