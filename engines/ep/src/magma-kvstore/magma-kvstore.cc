@@ -1168,6 +1168,7 @@ int MagmaKVStore::saveDocs(VB::Commit& commitData, kvstats_ctx& kvctx) {
         commitData.collections.saveCollectionStats(
                 std::bind(&MagmaKVStore::saveCollectionStats,
                           this,
+                          vbid,
                           std::ref(localDbReqs),
                           std::placeholders::_1,
                           std::placeholders::_2));
@@ -1212,6 +1213,9 @@ int MagmaKVStore::saveDocs(VB::Commit& commitData, kvstats_ctx& kvctx) {
                 valSlice,
                 &req));
     }
+
+    commitData.collections.setDroppedCollectionsForSnapshot(
+            getDroppedCollections(vbid));
 
     auto status = magma->WriteDocs(vbid.get(),
                                    writeOps,
@@ -1931,13 +1935,7 @@ bool MagmaKVStore::compactDBInternal(std::shared_ptr<compaction_ctx> ctx) {
             // count.
             auto handle = makeFileHandle(vbid);
             auto stats = getCollectionStats(*handle, dc.collectionId);
-
-            // Stats might not exist if the collection we are dropping has no
-            // items in it.
-            if (stats) {
-                collectionItemsDropped += stats->itemCount;
-            }
-
+            collectionItemsDropped += stats.itemCount;
             std::string keyString =
                     Collections::makeCollectionIdIntoString(dc.collectionId);
             Slice keySlice{keyString};
@@ -2222,26 +2220,32 @@ std::string MagmaKVStore::getCollectionsStatsKey(CollectionID cid) {
     return std::string{"|" + cid.to_string() + "|"};
 }
 
-void MagmaKVStore::saveCollectionStats(
-        LocalDbReqs& localDbReqs,
-        CollectionID cid,
-        const Collections::VB::PersistedStats& stats) {
+void MagmaKVStore::saveCollectionStats(Vbid vbid,
+                                       LocalDbReqs& localDbReqs,
+                                       CollectionID cid,
+                                       const Collections::VB::Stats& stats) {
     auto key = getCollectionsStatsKey(cid);
-    auto encodedStats = stats.getLebEncodedStats();
-    localDbReqs.emplace_back(MagmaLocalReq(key, std::move(encodedStats)));
+    auto current = getCollectionStats(vbid, key);
+    localDbReqs.emplace_back(MagmaLocalReq(
+            key, current.applyChangesAndGetLebEncodedStats(stats)));
 }
 
-std::optional<Collections::VB::PersistedStats> MagmaKVStore::getCollectionStats(
+Collections::VB::PersistedStats MagmaKVStore::getCollectionStats(
         const KVFileHandle& kvFileHandle, CollectionID cid) {
     const auto& kvfh = static_cast<const MagmaKVFileHandle&>(kvFileHandle);
     auto vbid = kvfh.vbid;
     auto key = getCollectionsStatsKey(cid);
+    return getCollectionStats(vbid, key);
+}
+
+Collections::VB::PersistedStats MagmaKVStore::getCollectionStats(
+        Vbid vbid, const std::string& key) {
     Slice keySlice(key);
     Status status;
     std::string stats;
     std::tie(status, stats) = readLocalDoc(vbid, keySlice);
     if (!status) {
-        return {};
+        return Collections::VB::PersistedStats{};
     }
     return Collections::VB::PersistedStats(stats.c_str(), stats.size());
 }

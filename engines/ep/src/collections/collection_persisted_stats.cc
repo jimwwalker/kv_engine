@@ -15,7 +15,8 @@
  *   limitations under the License.
  */
 
-#include "collection_persisted_stats.h"
+#include "collections/collection_persisted_stats.h"
+#include "collections/flush.h"
 
 #include <mcbp/protocol/unsigned_leb128.h>
 
@@ -64,6 +65,22 @@ PersistedStats::PersistedStats(const char* buf,
     }
 }
 
+static std::string encode(uint64_t itemCount,
+                          uint64_t highSeqno,
+                          uint64_t diskSize) {
+    auto leb = cb::mcbp::unsigned_leb128<uint64_t>(itemCount);
+    std::string data(leb.begin(), leb.end());
+    leb = cb::mcbp::unsigned_leb128<uint64_t>(highSeqno);
+    data.append(leb.begin(), leb.end());
+    leb = cb::mcbp::unsigned_leb128<uint64_t>(diskSize);
+    data.append(leb.begin(), leb.end());
+    return data;
+}
+
+std::string PersistedStats::getLebEncodedStats() const {
+    return encode(itemCount, highSeqno, diskSize);
+}
+
 std::string PersistedStats::getLebEncodedStatsMadHatter() const {
     auto leb = cb::mcbp::unsigned_leb128<uint64_t>(itemCount);
     std::string data(leb.begin(), leb.end());
@@ -74,10 +91,11 @@ std::string PersistedStats::getLebEncodedStatsMadHatter() const {
     return data;
 }
 
-std::string PersistedStats::getLebEncodedStats() const {
-    auto data = getLebEncodedStatsMadHatter();
-    auto leb = cb::mcbp::unsigned_leb128<uint64_t>(diskSize);
-    data.append(leb.begin(), leb.end());
-    return data;
+std::string PersistedStats::applyChangesAndGetLebEncodedStats(
+        const Stats& changes) const {
+    return encode(itemCount + changes.getItemCount(),
+                  changes.getPersistedHighSeqno(),
+                  diskSize + changes.getDiskSize());
 }
+
 } // namespace Collections::VB

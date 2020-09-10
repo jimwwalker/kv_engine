@@ -138,7 +138,6 @@ struct DroppedCollection {
     }
 };
 
-
 /**
  * Decode the buffers from the local doc store into the collections
  * data structures.

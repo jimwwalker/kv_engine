@@ -5396,7 +5396,7 @@ TEST_P(STParamCouchstoreBucketTest, FlushFailureAtPersistingCollectionChange) {
     }
 }
 
-TEST_P(STParamCouchstoreBucketTest, MB_41321) {
+TEST_P(STParamCouchstoreBucketTest, ItemCountsAndCommitFailure_MB_41321) {
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
     auto key = makeStoredDocKey("key");
     auto pending = makeCommittedItem(key, "value");

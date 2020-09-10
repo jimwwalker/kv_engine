@@ -26,9 +26,84 @@
 
 class KVBucket;
 
-namespace Collections {
-namespace VB {
+namespace Collections::VB {
+
 class Manifest;
+
+// Collection vbucket stats managed by flushing
+class Stats {
+public:
+    explicit Stats(uint64_t highSeqno) : persistedHighSeqno(highSeqno) {
+    }
+
+    /**
+     * Set the persistedHighSeqno only if seqno is > than
+     * this->persistedHighSeqno
+     * @param seqno to use if it's greater than current value
+     */
+    void maybeSetPersistedHighSeqno(uint64_t seqno);
+
+    /**
+     * Process an insert into the collection
+     * @param isSystem true if a system event is inserted
+     * @param isCommitted true if a committed item is inserted, false for
+     **       prepare/abort
+     * @param isDelete true if a deleted item is inserted (tombstone
+     *        creation)
+     * @param diskSize size in bytes 'inserted' into disk. Should be
+     *        representative of the bytes used by each document, but does
+     *        not need to be exact.
+     */
+    void insert(bool isSystem,
+                bool isCommitted,
+                bool isDelete,
+                ssize_t diskSize);
+
+    /**
+     * Process an update into the collection
+     * @param isSystem true if a system event is updated
+     * @param isCommitted true if a committed item is updated, false for
+     **       prepare/abort
+     * @param diskSizeDelta size in bytes difference. Should be
+     *        representative of the difference between existing and new
+     *        documents, but does not need to be exact.
+     */
+    void update(bool isSystem, bool isCommitted, ssize_t diskSizeDelta);
+
+    /**
+     * Process a remove from the collection (store of a delete)
+     * @param isSystem true if a system event is removed
+     * @param isCommitted true if a committed item is removed, false for
+     **       prepare/abort
+     * @param diskSizeDelta size in bytes difference. Should be
+     *        representative of the difference between existing and new
+     *        documents, but does not need to be exact.
+     */
+    void remove(bool isSystem, bool isCommitted, ssize_t diskSizeDelta);
+
+    uint64_t getPersistedHighSeqno() const {
+        return persistedHighSeqno;
+    }
+
+    ssize_t getItemCount() const {
+        return itemCount;
+    }
+
+    ssize_t getDiskSize() const {
+        return diskSize;
+    }
+
+private:
+    void incrementDiskCount();
+
+    void decrementDiskCount();
+
+    void updateDiskSize(ssize_t delta);
+
+    uint64_t persistedHighSeqno{0};
+    ssize_t itemCount{0};
+    ssize_t diskSize{0};
+};
 
 /**
  * The Collections::VB::Flush object maintains data used in a single run of the
@@ -53,7 +128,7 @@ public:
      * @param a function to callback
      */
     void saveCollectionStats(
-            std::function<void(CollectionID, PersistedStats)> cb) const;
+            std::function<void(CollectionID, const Stats&)> cb) const;
 
     /**
      * KVStore implementations must call this function once they have
@@ -100,6 +175,9 @@ public:
                      uint64_t oldSeqno,
                      bool oldIsDelete,
                      size_t oldSize);
+
+    void setDroppedCollectionsForSnapshot(
+            const std::vector<Collections::KVStore::DroppedCollection>& v);
 
     /**
      * Check to see if this flush should trigger a collection purge which if
@@ -214,79 +292,28 @@ private:
      */
     void setManifestUid(ManifestUid in);
 
-    class Stats {
-    public:
-        explicit Stats(uint64_t highSeqno) : persistedHighSeqno(highSeqno) {
-        }
+    /**
+     * Function determines if the collection @ seqno is dropped, but only
+     * in the current uncommitted flush batch. E.g. if cid:0, seqno:100 and
+     * the function returns true it means that this flush batch contains a
+     * collection drop event for collection 0 with a seqno greater than 100.
+     *
+     * @param cid Collection to look-up.
+     * @param seqno A seqno which was affected by the cid.
+     */
+    bool isLogicallyDeleted(CollectionID cid, uint64_t seqno) const;
 
-        /**
-         * Set the persistedHighSeqno only if seqno is > than
-         * this->persistedHighSeqno
-         * @param seqno to use if it's greater than current value
-         */
-        void maybeSetPersistedHighSeqno(uint64_t seqno);
-
-        /**
-         * Process an insert into the collection
-         * @param isSystem true if a system event is inserted
-         * @param isCommitted true if a committed item is inserted, false for
-         **       prepare/abort
-         * @param isDelete true if a deleted item is inserted (tombstone
-         *        creation)
-         * @param diskSize size in bytes 'inserted' into disk. Should be
-         *        representative of the bytes used by each document, but does
-         *        not need to be exact.
-         */
-        void insert(bool isSystem,
-                    bool isCommitted,
-                    bool isDelete,
-                    ssize_t diskSize);
-
-        /**
-         * Process an update into the collection
-         * @param isSystem true if a system event is updated
-         * @param isCommitted true if a committed item is updated, false for
-         **       prepare/abort
-         * @param diskSizeDelta size in bytes difference. Should be
-         *        representative of the difference between existing and new
-         *        documents, but does not need to be exact.
-         */
-        void update(bool isSystem, bool isCommitted, ssize_t diskSizeDelta);
-
-        /**
-         * Process a remove from the collection (store of a delete)
-         * @param isSystem true if a system event is removed
-         * @param isCommitted true if a committed item is removed, false for
-         **       prepare/abort
-         * @param diskSizeDelta size in bytes difference. Should be
-         *        representative of the difference between existing and new
-         *        documents, but does not need to be exact.
-         */
-        void remove(bool isSystem, bool isCommitted, ssize_t diskSizeDelta);
-
-        uint64_t getPersistedHighSeqno() const {
-            return persistedHighSeqno;
-        }
-
-        ssize_t getItemCount() const {
-            return itemCount;
-        }
-
-        ssize_t getDiskSize() const {
-            return diskSize;
-        }
-
-    private:
-        void incrementDiskCount();
-
-        void decrementDiskCount();
-
-        void updateDiskSize(ssize_t delta);
-
-        uint64_t persistedHighSeqno{0};
-        ssize_t itemCount{0};
-        ssize_t diskSize{0};
-    };
+    /**
+     * Function determines if the collection @ seqno is dropped, but only
+     * in the current snapshot we are flushing too, i.e. the committed data.
+     * E.g. if cid:0, seqno:100 the function returns true it means that the
+     * committed snapshot has a collection drop event for collection 0 with a
+     * seqno greater than 100.
+     *
+     * @param cid Collection to look-up.
+     * @param seqno A seqno which was affected by the cid.
+     */
+    bool isLogicallyDeletedInSnapshot(CollectionID cid, uint64_t seqno) const;
 
     /**
      * Obtain a Stats reference so insert/update/remove can be tracked.
@@ -303,6 +330,9 @@ private:
      * of deletes).
      */
     std::unordered_map<CollectionID, Stats> stats;
+
+    std::unordered_map<CollectionID, KVStore::DroppedCollection>
+            droppedInSnapshot;
 
     /**
      * For each collection created in the batch, we record meta data of the
@@ -359,5 +389,4 @@ private:
     bool needsMetaCommit{false};
 };
 
-} // end namespace VB
-} // end namespace Collections
+} // end namespace Collections::VB

@@ -2349,6 +2349,9 @@ couchstore_error_t CouchKVStore::saveDocs(Vbid vbid,
                         calcLogicalDataSize(docs[idx], *docinfos[idx]);
             }
 
+            kvctx.commitData.collections.setDroppedCollectionsForSnapshot(
+                    getDroppedCollections(*db));
+
             auto cs_begin = std::chrono::steady_clock::now();
 
             uint64_t flags = COMPRESS_DOC_BODIES | COUCHSTORE_SEQUENCE_AS_IS;
@@ -2677,11 +2680,12 @@ std::string CouchKVStore::makeJsonVBState(const vbucket_state& vbState) {
 
 void CouchKVStore::saveCollectionStats(Db& db,
                                        CollectionID cid,
-                                       Collections::VB::PersistedStats stats) {
-    // Write out the stats in BE to a local doc named after the collection
-    // Using set-notation cardinality - |cid| which helps keep the keys small
-    pendingLocalReqsQ.emplace_back("|" + cid.to_string() + "|",
-                                   stats.getLebEncodedStats());
+                                       const Collections::VB::Stats& stats) {
+    std::string statDocName = "|" + cid.to_string() + "|";
+    auto current = getCollectionStats(db, statDocName);
+    pendingLocalReqsQ.emplace_back(
+            std::move(statDocName),
+            current.applyChangesAndGetLebEncodedStats(stats));
 }
 
 void CouchKVStore::deleteCollectionStats(CollectionID cid) {
@@ -2689,39 +2693,43 @@ void CouchKVStore::deleteCollectionStats(CollectionID cid) {
                                    CouchLocalDocRequest::IsDeleted{});
 }
 
-std::optional<Collections::VB::PersistedStats> CouchKVStore::getCollectionStats(
+Collections::VB::PersistedStats CouchKVStore::getCollectionStats(
         const KVFileHandle& kvFileHandle, CollectionID collection) {
-    std::string docName = "|" + collection.to_string() + "|";
-
     const auto& db = static_cast<const CouchKVFileHandle&>(kvFileHandle);
+    std::string statDocName = "|" + collection.to_string() + "|";
+    return getCollectionStats(*db.getDb(), statDocName);
+}
+
+Collections::VB::PersistedStats CouchKVStore::getCollectionStats(
+        Db& db, const std::string& statDocName) {
     sized_buf id;
-    id.buf = const_cast<char*>(docName.c_str());
-    id.size = docName.size();
+    id.buf = const_cast<char*>(statDocName.c_str());
+    id.size = statDocName.size();
 
     LocalDocHolder lDoc;
     auto errCode = couchstore_open_local_document(
-            db.getDb(), (void*)id.buf, id.size, lDoc.getLocalDocAddress());
+            &db, (void*)id.buf, id.size, lDoc.getLocalDocAddress());
 
     if (errCode != COUCHSTORE_SUCCESS) {
         // Could be a deleted collection, so not found not an issue
         if (errCode != COUCHSTORE_ERROR_DOC_NOT_FOUND) {
             logger.warn(
-                    "CouchKVStore::getCollectionStats cid:{}"
+                    "CouchKVStore::getCollectionStats doc:{}"
                     "couchstore_open_local_document error:{}",
-                    collection.to_string(),
+                    statDocName,
                     couchstore_strerror(errCode));
         }
 
-        return {};
+        return Collections::VB::PersistedStats{};
     }
 
     DbInfo info;
-    errCode = couchstore_db_info(db.getDb(), &info);
+    errCode = couchstore_db_info(&db, &info);
     if (errCode) {
         logger.warn(
-                "CouchKVStore::getCollectionStats cid:{}"
+                "CouchKVStore::getCollectionStats doc:{}"
                 "couchstore_db_info error:{}",
-                collection.to_string(),
+                statDocName,
                 couchstore_strerror(errCode));
     }
 

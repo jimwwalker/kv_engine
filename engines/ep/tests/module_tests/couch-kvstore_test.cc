@@ -320,10 +320,9 @@ void CouchKVStoreTest::collectionsOfflineUpgrade(bool writeAsMadHatter) {
     // Check item count
     auto kvstoreContext = kvstore2.rw->makeFileHandle(Vbid(0));
     auto stats = kvstore2.rw->getCollectionStats(*kvstoreContext, cid);
-    ASSERT_TRUE(stats);
-    EXPECT_EQ(keys - deletedKeys, stats->itemCount);
-    EXPECT_EQ(keys + deletedKeys, stats->highSeqno);
-    EXPECT_NE(0, stats->diskSize);
+    EXPECT_EQ(keys - deletedKeys, stats.itemCount);
+    EXPECT_EQ(keys + deletedKeys, stats.highSeqno);
+    EXPECT_NE(0, stats.diskSize);
 }
 
 TEST_F(CouchKVStoreTest, CollectionsOfflineUpgrade) {

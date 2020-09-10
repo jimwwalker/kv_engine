@@ -19,8 +19,10 @@
 
 #include <string>
 
-namespace Collections {
-namespace VB {
+namespace Collections::VB {
+
+class Stats;
+
 /**
  * The collection stats that we persist on disk. Provides encoding and
  * decoding of stats.
@@ -50,8 +52,7 @@ struct PersistedStats {
     PersistedStats(const char* buf, size_t size, size_t diskSize);
 
     /**
-     * @return a LEB 128 encoded version of these stats ready for
-     *         persistence
+     * @return a LEB 128 encoded version of these stats ready for persistence
      */
     std::string getLebEncodedStats() const;
 
@@ -61,9 +62,18 @@ struct PersistedStats {
      */
     std::string getLebEncodedStatsMadHatter() const;
 
+    /**
+     * Using the given 'changes' apply those changes to the current stats and
+     * return a LEB 128 encoded 'buffer'. The changes object stores a +/- delta
+     * for itemCount and diskSize, for highSeqno the changes value is copied
+     * over.
+     * @return a LEB 128 encoded version of these stats ready for
+     *         persistence
+     */
+    std::string applyChangesAndGetLebEncodedStats(const Stats& changes) const;
+
     uint64_t itemCount;
     uint64_t highSeqno;
     uint64_t diskSize;
 };
-} // end namespace VB
-} // end namespace Collections
+} // end namespace Collections::VB

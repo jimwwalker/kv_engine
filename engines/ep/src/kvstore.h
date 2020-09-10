@@ -990,9 +990,9 @@ public:
      * for collection not found as that's a legitimate state (and returns 0)
      * @param kvFileHandle a handle into a KV data file
      * @param collection the id of the collection to lookup
-     * @return optional persisted stats, initialised if the collection was found
+     * @return persisted stats initialised if the collection stats were
      */
-    virtual std::optional<Collections::VB::PersistedStats> getCollectionStats(
+    virtual Collections::VB::PersistedStats getCollectionStats(
             const KVFileHandle& kvFileHandle, CollectionID collection) = 0;
 
     /**

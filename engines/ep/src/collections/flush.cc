@@ -26,8 +26,8 @@
 
 namespace Collections::VB {
 
-Flush::Stats& Flush::getStatsAndMaybeSetPersistedHighSeqno(CollectionID cid,
-                                                           uint64_t seqno) {
+Stats& Flush::getStatsAndMaybeSetPersistedHighSeqno(CollectionID cid,
+                                                    uint64_t seqno) {
     auto [itr, inserted] = stats.try_emplace(cid, Stats{seqno});
     auto& [key, value] = *itr;
     if (!inserted) {
@@ -36,28 +36,28 @@ Flush::Stats& Flush::getStatsAndMaybeSetPersistedHighSeqno(CollectionID cid,
     return value;
 }
 
-void Flush::Stats::maybeSetPersistedHighSeqno(uint64_t seqno) {
+void Stats::maybeSetPersistedHighSeqno(uint64_t seqno) {
     if (seqno > persistedHighSeqno) {
         persistedHighSeqno = seqno;
     }
 }
 
-void Flush::Stats::incrementDiskCount() {
+void Stats::incrementDiskCount() {
     itemCount++;
 }
 
-void Flush::Stats::decrementDiskCount() {
+void Stats::decrementDiskCount() {
     itemCount--;
 }
 
-void Flush::Stats::updateDiskSize(ssize_t delta) {
+void Stats::updateDiskSize(ssize_t delta) {
     diskSize += delta;
 }
 
-void Flush::Stats::insert(bool isSystem,
-                          bool isCommitted,
-                          bool isDelete,
-                          ssize_t diskSizeDelta) {
+void Stats::insert(bool isSystem,
+                   bool isCommitted,
+                   bool isDelete,
+                   ssize_t diskSizeDelta) {
     if (!isSystem && !isDelete && isCommitted) {
         incrementDiskCount();
     } // else inserting a tombstone or it's a prepare
@@ -67,17 +67,13 @@ void Flush::Stats::insert(bool isSystem,
     }
 }
 
-void Flush::Stats::update(bool isSystem,
-                          bool isCommitted,
-                          ssize_t diskSizeDelta) {
+void Stats::update(bool isSystem, bool isCommitted, ssize_t diskSizeDelta) {
     if (isSystem || isCommitted) {
         updateDiskSize(diskSizeDelta);
     }
 }
 
-void Flush::Stats::remove(bool isSystem,
-                          bool isCommitted,
-                          ssize_t diskSizeDelta) {
+void Stats::remove(bool isSystem, bool isCommitted, ssize_t diskSizeDelta) {
     if (isCommitted) {
         decrementDiskCount();
     } // else inserting a tombstone or it's a prepare
@@ -90,39 +86,25 @@ void Flush::Stats::remove(bool isSystem,
 // pre commit, generate the collection stats and invoke the callback to write
 // them
 void Flush::saveCollectionStats(
-        std::function<void(CollectionID, PersistedStats)> cb) const {
+        std::function<void(CollectionID, const Stats&)> cb) const {
     for (const auto& [cid, flushStats] : stats) {
-        PersistedStats toWrite;
-        {
-            auto lock = manifest.lock(cid);
-            if (!lock.valid() ||
-                lock.isLogicallyDeleted(flushStats.getPersistedHighSeqno())) {
-                // Can be flushing for a dropped collection (no longer in the
-                // manifest, or was flushed/recreated)
-                continue;
-            }
-            toWrite = lock.getPersistedStats();
-        }
-
-        // update the stats with the changes made by the flusher
-        toWrite.itemCount += flushStats.getItemCount();
-        toWrite.highSeqno = flushStats.getPersistedHighSeqno();
-        toWrite.diskSize += flushStats.getDiskSize(); // size_t += ssize_t??
-        cb(cid, toWrite);
+        cb(cid, flushStats);
     }
 }
 
+// post commit - make the stats available to the world
+// note on when we skip an update (the continue statement) ...
+#warning "COMMENT THIS FURTHER"
 void Flush::updateCollectionStats() {
     for (const auto& [cid, flushStats] : stats) {
         auto lock = manifest.lock(cid);
         if (!lock.valid() ||
             lock.isLogicallyDeleted(flushStats.getPersistedHighSeqno())) {
             // Can be flushing for a dropped collection (no longer in the
-            // manifest, or was flushed/recreated)
+            // manifest, or was flushed/recreated at a new seqno)
             continue;
         }
-
-        // update the stats with the changes made by the flusher
+        // update the stats with the changes collected by the flusher
         lock.updateItemCount(flushStats.getItemCount());
         lock.setPersistedHighSeqno(flushStats.getPersistedHighSeqno());
         lock.updateDiskSize(flushStats.getDiskSize());
@@ -167,17 +149,15 @@ void Flush::updateStats(const DocKey& key,
                         bool isDelete,
                         size_t size) {
     auto [isSystemEvent, cid] = getCollectionID(key);
-    if (!cid) {
-        return;
-    }
 
-    {
-        auto handle = getManifest().lock(cid.value());
-        // collection gone or the item's generation of collection
-        // dropped/flushed
-        if (handle.isLogicallyDeleted(seqno)) {
-            return;
-        }
+    if (!cid || isLogicallyDeleted(cid.value(), seqno)) {
+        // 1) The key is not for a collection (could be a scope event) or
+        // 2) The key belongs to a collection now dropped (drop is in this flush
+        // batch)
+        // For 2 this means we still flush items which are logically deleted but
+        // do not record any stats for them. Their collection is going away or
+        // may be resurrected, either way we don't want to account it.
+        return;
     }
 
     getStatsAndMaybeSetPersistedHighSeqno(cid.value(), seqno)
@@ -192,20 +172,21 @@ void Flush::updateStats(const DocKey& key,
                         uint64_t oldSeqno,
                         bool oldIsDelete,
                         size_t oldSize) {
+    // Same logic and comment as updateStats above.
     auto [isSystemEvent, cid] = getCollectionID(key);
-    if (!cid) {
+    if (!cid || isLogicallyDeleted(cid.value(), seqno)) {
         return;
     }
 
-    {
-        auto handle = getManifest().lock(cid.value());
-        // collection now gone (for the new item)
-        if (handle.isLogicallyDeleted(seqno)) {
-            return;
-        }
-        // Update delete state for the old item
-        oldIsDelete = oldIsDelete || handle.isLogicallyDeleted(oldSeqno);
-    }
+    // Next update the delete state for the old item.
+    // 1) Already deleted or
+    // 2) the key's collection is dropped in this flush batch
+    // 3) the key's collection is dropped in the snapshot we are writing to
+    // For 2 and 3 we are switching live documents of dropped collections into
+    // being deleted, thus any update flips to an insert
+    oldIsDelete = oldIsDelete ||
+                  (isLogicallyDeleted(cid.value(), oldSeqno) ||
+                   isLogicallyDeletedInSnapshot(cid.value(), oldSeqno));
 
     auto& stats = getStatsAndMaybeSetPersistedHighSeqno(cid.value(), seqno);
 
@@ -216,6 +197,30 @@ void Flush::updateStats(const DocKey& key,
     } else {
         stats.update(isSystemEvent, isCommitted, size - oldSize);
     }
+}
+
+void Flush::setDroppedCollectionsForSnapshot(
+        const std::vector<Collections::KVStore::DroppedCollection>& v) {
+    for (const auto& c : v) {
+        droppedInSnapshot.emplace(c.collectionId, c);
+    }
+}
+
+bool Flush::isLogicallyDeleted(CollectionID cid, uint64_t seqno) const {
+    auto itr = droppedCollections.find(cid);
+    if (itr != droppedCollections.end()) {
+        return seqno <= itr->second.endSeqno;
+    }
+    return false;
+}
+
+bool Flush::isLogicallyDeletedInSnapshot(CollectionID cid,
+                                         uint64_t seqno) const {
+    auto itr = droppedInSnapshot.find(cid);
+    if (itr != droppedInSnapshot.end()) {
+        return seqno <= itr->second.endSeqno;
+    }
+    return false;
 }
 
 void Flush::recordSystemEvent(const Item& item) {

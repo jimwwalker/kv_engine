@@ -377,7 +377,7 @@ public:
 
     std::unique_ptr<KVFileHandle> makeFileHandle(Vbid vbid) override;
 
-    std::optional<Collections::VB::PersistedStats> getCollectionStats(
+    Collections::VB::PersistedStats getCollectionStats(
             const KVFileHandle& kvFileHandle, CollectionID collection) override;
 
     /**
@@ -477,13 +477,15 @@ public:
     /**
      * Save stats for collection cid
      *
+     * @param vbid vbucket id
      * @param localDbReqs vector of localDb updates
      * @param cid Collection ID
-     * @param stats The stats that should be persisted
+     * @param stats The stats that should be applied and persisted
      */
-    void saveCollectionStats(LocalDbReqs& localDbReqs,
+    void saveCollectionStats(Vbid vbid,
+                             LocalDbReqs& localDbReqs,
                              CollectionID cid,
-                             const Collections::VB::PersistedStats& stats);
+                             const Collections::VB::Stats& stats);
 
     /**
      * Delete the collection stats for the given collection id
@@ -694,6 +696,12 @@ protected:
      * magma yet)
      */
     MagmaDbStats getMagmaDbStats(Vbid vbid);
+
+    /**
+     * Get the collection stats for the vbid and key
+     */
+    Collections::VB::PersistedStats getCollectionStats(Vbid vbid,
+                                                       const std::string& key);
 
     MagmaKVStoreConfig& configuration;
 
