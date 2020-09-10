@@ -509,6 +509,10 @@ EPBucket::FlushResult EPBucket::flushVBucket(Vbid vbid) {
                            static_cast<uint64_t>(item->getBySeqno()));
         }
 
+        if (item->isSystemEvent()) {
+            commitData.collections.recordSystemEvent(*item);
+        }
+
         if (op == queue_op::set_vbucket_state) {
             // Only process vbstate if it's sequenced higher (by cas).
             // We use the cas instead of the seqno here because a
@@ -603,24 +607,6 @@ EPBucket::FlushResult EPBucket::flushVBucket(Vbid vbid) {
                                     : itr->getEnd();
                     proposedVBState.highPreparedSeqno =
                             std::max(proposedVBState.highPreparedSeqno, newHps);
-                }
-            }
-        } else {
-            // Item is the same key as the previous[1] one - don't need
-            // to flush to disk.
-            // [1] Previous here really means 'next' - optimizeWrites()
-            //     above has actually re-ordered items such that items
-            //     with the same key are ordered from high->low seqno.
-            //     This means we only write the highest (i.e. newest)
-            //     item for a given key, and discard any duplicate,
-            //     older items.
-            if (item->isSystemEvent()) {
-                // system event is not persisted, but its presence has side
-                // effects. The KVStore must be informed about the event.
-                if (item->isDeleted()) {
-                    rwUnderlying->applyDeleteSystemEvent(*item);
-                } else {
-                    rwUnderlying->applySetSystemEvent(*item);
                 }
             }
         }
