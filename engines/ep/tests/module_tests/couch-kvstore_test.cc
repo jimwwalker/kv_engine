@@ -184,9 +184,10 @@ public:
             DocKey dk = result.item->getKey();
             EXPECT_EQ(500, dk.getCollectionID());
             auto noCollection = dk.makeDocKeyWithoutCollectionID();
-            EXPECT_EQ(2, noCollection.size());
-            std::string str(reinterpret_cast<const char*>(noCollection.data()),
-                            noCollection.size());
+            EXPECT_EQ(3, noCollection.size());
+            std::string str(
+                    reinterpret_cast<const char*>(noCollection.data() + 1),
+                    noCollection.size());
             auto index = std::stoi(str);
             EXPECT_GE(index, deletedRange.first);
             EXPECT_LE(index, deletedRange.second);
@@ -231,11 +232,12 @@ void CouchKVStoreTest::collectionsOfflineUpgrade(bool writeAsMadHatter) {
     const int deletedKeys = 14;
 
     for (int i = 0; i < keys; i++) {
-        auto key = std::to_string(i);
-        // create Item and use a raw key, but say it has a cid encoded so that
+        // key needs to look like it's in the default collection so we can flush
+        // it
+        auto key = "k" + std::to_string(i);
+        key[0] = 0;
+        // create Item and use the raw key, but say it has a cid encoded so that
         // the constructor doesn't push this key into the default collection.
-        // If we don't do this, the source file won't be representative of real
-        // source files when the upgrade is deployed
         std::unique_ptr<Item> item = std::make_unique<Item>(
                 DocKey(key, DocKeyEncodesCollectionId::Yes),
                 0,
@@ -255,7 +257,8 @@ void CouchKVStoreTest::collectionsOfflineUpgrade(bool writeAsMadHatter) {
     // Delete some keys. With and without a value (like xattr)
     for (int i = 18, j = 1; i < 18 + deletedKeys; ++i, ++j) {
         std::unique_ptr<Item> item;
-        auto key = std::to_string(i);
+        auto key = "k" + std::to_string(i);
+        key[0] = 0;
         if (i & 1) {
             item.reset(Item::makeDeletedItem(
                     DeleteSource::Explicit,

@@ -2678,14 +2678,12 @@ std::string CouchKVStore::makeJsonVBState(const vbucket_state& vbState) {
     return j.dump();
 }
 
-void CouchKVStore::saveCollectionStats(Db& db,
-                                       CollectionID cid,
-                                       const Collections::VB::Stats& stats) {
-    std::string statDocName = "|" + cid.to_string() + "|";
-    auto current = getCollectionStats(db, statDocName);
-    pendingLocalReqsQ.emplace_back(
-            std::move(statDocName),
-            current.applyChangesAndGetLebEncodedStats(stats));
+void CouchKVStore::saveCollectionStats(
+        Db& db,
+        CollectionID cid,
+        const Collections::VB::PersistedStats& stats) {
+    pendingLocalReqsQ.emplace_back("|" + cid.to_string() + "|",
+                                   stats.getLebEncodedStats());
 }
 
 void CouchKVStore::deleteCollectionStats(CollectionID cid) {

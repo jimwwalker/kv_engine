@@ -128,7 +128,7 @@ public:
      * @param a function to callback
      */
     void saveCollectionStats(
-            std::function<void(CollectionID, const Stats&)> cb) const;
+            std::function<void(CollectionID, const PersistedStats&)> cb) const;
 
     /**
      * KVStore implementations must call this function once they have

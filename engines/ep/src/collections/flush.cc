@@ -86,11 +86,40 @@ void Stats::remove(bool isSystem, bool isCommitted, ssize_t diskSizeDelta) {
 // pre commit, generate the collection stats and invoke the callback to write
 // them
 void Flush::saveCollectionStats(
+        std::function<void(CollectionID, const PersistedStats&)> cb) const {
+    // for (const auto& [cid, flushStats] : stats) {
+    //      cb(cid, flushStats);
+    // }
+    // return;
+    // For each collection modified in the flush run
+    // 1) Ask the VBM for the stats (high-seqno based)
+    for (const auto& [cid, flushStats] : stats) {
+        // Get the current stats of the collection (for the seqno)
+        auto lock = manifest.lock();
+        auto stats =
+                lock.getStatsForFlush(cid, flushStats.getPersistedHighSeqno());
+
+        // Generate new stats, add the deltas from this flush batch for count
+        // and size and set the high-seqno
+        PersistedStats ps(stats.itemCount + flushStats.getItemCount(),
+                          flushStats.getPersistedHighSeqno(),
+                          stats.diskSize + flushStats.getDiskSize());
+        cb(cid, ps);
+    }
+}
+#if 0
+
+// pre commit, generate the collection stats and invoke the callback to write
+// them
+void Flush::saveCollectionStats(
         std::function<void(CollectionID, const Stats&)> cb) const {
+    // For each collection modified in the flush run
+    // 1) Ask the VBM for the stats (high-seqno based)
     for (const auto& [cid, flushStats] : stats) {
         cb(cid, flushStats);
     }
 }
+#endif
 
 // post commit - make the stats available to the world
 // note on when we skip an update (the continue statement) ...

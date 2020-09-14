@@ -2220,14 +2220,15 @@ std::string MagmaKVStore::getCollectionsStatsKey(CollectionID cid) {
     return std::string{"|" + cid.to_string() + "|"};
 }
 
-void MagmaKVStore::saveCollectionStats(Vbid vbid,
-                                       LocalDbReqs& localDbReqs,
-                                       CollectionID cid,
-                                       const Collections::VB::Stats& stats) {
-    auto key = getCollectionsStatsKey(cid);
-    auto current = getCollectionStats(vbid, key);
-    localDbReqs.emplace_back(MagmaLocalReq(
-            key, current.applyChangesAndGetLebEncodedStats(stats)));
+void MagmaKVStore::saveCollectionStats(
+        Vbid vbid,
+        LocalDbReqs& localDbReqs,
+        CollectionID cid,
+        const Collections::VB::PersistedStats& stats) {
+    //   auto key = getCollectionsStatsKey(cid);
+    //   auto current = getCollectionStats(vbid, key);
+    //  localDbReqs.emplace_back(MagmaLocalReq(
+    //          key, current.applyChangesAndGetLebEncodedStats(stats)));
 }
 
 Collections::VB::PersistedStats MagmaKVStore::getCollectionStats(

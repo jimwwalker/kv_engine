@@ -485,7 +485,7 @@ public:
     void saveCollectionStats(Vbid vbid,
                              LocalDbReqs& localDbReqs,
                              CollectionID cid,
-                             const Collections::VB::Stats& stats);
+                             const Collections::VB::PersistedStats& stats);
 
     /**
      * Delete the collection stats for the given collection id

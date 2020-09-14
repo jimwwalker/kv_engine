@@ -562,7 +562,7 @@ protected:
      */
     void saveCollectionStats(Db& db,
                              CollectionID cid,
-                             const Collections::VB::Stats& stats);
+                             const Collections::VB::PersistedStats& stats);
 
     /**
      * Delete the count for collection cid

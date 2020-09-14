@@ -335,6 +335,21 @@ void Manifest::dropCollection(const WriteHandle& wHandle,
                                             true /*delete*/,
                                             optionalSeqno);
 
+    if (!processingTombstone) {
+        // Copy enough data about the collection that any items currently
+        // flushing to this collection can calculate statistic updates.
+        // Updates need to be compare against these values and not any 'open'
+        // version of the collection.
+        auto [dropped, emplaced] = droppedCollections.try_emplace(
+                cid, std::vector<DroppedCollectionInfo>{/*empty vector*/});
+        dropped->second.emplace_back(itr->second.getStartSeqno(),
+                                     seqno,
+                                     itr->second.getDiskCount(),
+                                     itr->second.getDiskSize());
+    }
+#warning "Todo"
+    // clean up (remove from list)
+
     EP_LOG_INFO(
             "collections: {} drop of collection:{:#x} from scope:{:#x}"
             ", replica:{}, seqno:{}, manifest:{:#x} tombstone:{}",
@@ -650,6 +665,49 @@ size_t Manifest::getSystemEventItemCount() const {
         rv--;
     }
     return rv;
+}
+
+StatsForFlush Manifest::getStatsForFlush(CollectionID collection,
+                                         uint64_t seqno) const {
+    auto mapItr = map.find(collection);
+    if (mapItr != map.end()) {
+        // Collection exists, is it the correct generation
+        if (uint64_t(mapItr->second.getStartSeqno()) <= seqno) {
+            return StatsForFlush{mapItr->second.getDiskCount(),
+                                 mapItr->second.getDiskSize()};
+        }
+    }
+
+    // Not open or open is not the correct generation
+    // has to be in this list
+    auto dropItr = droppedCollections.find(collection);
+    // loop - the length of this list in reality would be short it would
+    // each 'depth' requires the collection to be dropped once, so length of
+    // n means collection was drop/re-created n times.
+
+    if (dropItr == droppedCollections.end()) {
+        // bad time - every call of getStats should be from a flush which
+        // had items we created for a collection which is open or was open.
+        // to not find the collection at all means we have flushed an item
+        // to a collection that never existed?
+        throwException<std::logic_error>(
+                __FUNCTION__,
+                "The collection cannot be found collection:" +
+                        collection.to_string() +
+                        " seqno:" + std::to_string(seqno));
+    }
+
+    for (const auto& droppedInfo : dropItr->second) {
+        if (seqno >= droppedInfo.start && seqno <= droppedInfo.end) {
+            return StatsForFlush{droppedInfo.itemCount, droppedInfo.diskSize};
+        }
+    }
+
+    // Similar to above, we should find something
+    throwException<std::logic_error>(
+            __FUNCTION__,
+            "The collection seqno cannot be found collection:" +
+                    collection.to_string() + " seqno:" + std::to_string(seqno));
 }
 
 template <class T>

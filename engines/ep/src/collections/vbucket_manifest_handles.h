@@ -185,6 +185,12 @@ public:
         return manifest->isDropInProgress();
     }
 
+    // @returns all of the statistics that need to be updated during flushing
+    StatsForFlush getStatsForFlush(CollectionID collection,
+                                   uint64_t seqno) const {
+        return manifest->getStatsForFlush(collection, seqno);
+    }
+
     /**
      * Dump this VB::Manifest to std::cerr
      */

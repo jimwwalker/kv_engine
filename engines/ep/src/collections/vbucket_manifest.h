@@ -724,6 +724,9 @@ protected:
      */
     size_t getSystemEventItemCount() const;
 
+    StatsForFlush getStatsForFlush(CollectionID collection,
+                                   uint64_t seqno) const;
+
     /**
      * Return a string for use in throwException, returns:
      *   "VB::Manifest::<thrower>:<error>, this:<ostream *this>"
@@ -764,6 +767,25 @@ protected:
 
     /// Does this vbucket need collection purging triggering
     bool dropInProgress{false};
+
+    struct DroppedCollectionInfo {
+        DroppedCollectionInfo(uint64_t start,
+                              uint64_t end,
+                              uint64_t itemCount,
+                              uint64_t diskSize)
+            : start(start), end(end), itemCount(itemCount), diskSize(diskSize) {
+        }
+        uint64_t start{0};
+        uint64_t end{0};
+        uint64_t itemCount{0};
+        uint64_t diskSize{0};
+    };
+    // collections move from map to this container and are removed from this
+    // container once fully purged from storage - this allows for stat updates
+    // to collections which are dropped yet that drop event is in the pipeline
+    // somewhere (checkpoint yet to be stored)
+    std::unordered_map<CollectionID, std::vector<DroppedCollectionInfo>>
+            droppedCollections;
 
     /**
      * shared lock to allow concurrent readers and safe updates
