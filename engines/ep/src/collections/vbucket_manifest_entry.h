@@ -33,19 +33,17 @@ namespace VB {
  * needs from a vbucket's perspective.
  * - The ScopeID
  * - The TTL value of the collection (applies to items not the collection)
- * - The seqno lifespace of the collection
+ * - The start seqno of the collection
  */
 class ManifestEntry {
 public:
-    ManifestEntry(ScopeID scopeID, cb::ExpiryLimit maxTtl, int64_t startSeqno)
-        : startSeqno(-1),
+    ManifestEntry(ScopeID scopeID, cb::ExpiryLimit maxTtl, uint64_t startSeqno)
+        : startSeqno(startSeqno),
           scopeID(scopeID),
           maxTtl(maxTtl),
           diskCount(0),
           highSeqno(startSeqno),
           persistedHighSeqno(startSeqno) {
-        // Setters validates the start valid
-        setStartSeqno(startSeqno);
     }
 
     /**
@@ -59,11 +57,11 @@ public:
 
     bool operator==(const ManifestEntry& other) const;
 
-    int64_t getStartSeqno() const {
+    uint64_t getStartSeqno() const {
         return startSeqno;
     }
 
-    void setStartSeqno(int64_t seqno) {
+    void setStartSeqno(uint64_t seqno) {
         // start can only be set to a new, greater value
         if (seqno <= startSeqno) {
             throwException<std::invalid_argument>(
@@ -138,7 +136,7 @@ public:
 
     /// set the highest persisted seqno for this collection if the new value
     /// is greater than the previous one
-    bool setPersistedHighSeqno(int64_t value) const {
+    bool setPersistedHighSeqno(uint64_t value) const {
         if (value >= startSeqno) {
             persistedHighSeqno.store(value, std::memory_order_relaxed);
             return true;
@@ -218,7 +216,7 @@ private:
      * Start-seqno of the collection is recorded, items of the collection below
      * the start-seqno are logically deleted
      */
-    int64_t startSeqno;
+    uint64_t startSeqno;
 
     /// The scope the collection belongs to
     ScopeID scopeID;
