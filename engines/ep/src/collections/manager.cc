@@ -315,14 +315,23 @@ void Collections::Manager::addScopeStats(KVBucket& bucket,
 
 void Collections::Manager::warmupLoadManifest(const std::string& dbpath) {
     auto rv = Collections::PersistManifestTask::tryAndLoad(dbpath);
-    if (rv) {
-        EP_LOG_INFO(
-                "Collections::Manager::warmupLoadManifest: loaded uid:{:#x}",
-                rv->getUid());
-        *currentManifest.wlock() = std::move(*rv);
-    } else {
-        EP_LOG_INFO("Collections::Manager::warmupLoadManifest: nothing loaded");
+    if (rv.has_value()) {
+        if (rv.value()) {
+            EP_LOG_INFO(
+                    "Collections::Manager::warmupLoadManifest: loaded "
+                    "uid:{:#x}",
+                    rv.value()->getUid());
+            *currentManifest.wlock() = std::move(*rv.value());
+        } else {
+            EP_LOG_INFO(
+                    "Collections::Manager::warmupLoadManifest: nothing loaded");
+        }
     }
+    // else tryAndLoad detected (and logged) some kind of corruption issue.
+    // If this corruption occurred at the same time as some issue in the
+    // forward flow of the Manifest, KV can't validate that any change to the
+    // manifest is a legal successor (Manifest::isSuccessor) - we will just have
+    // to accept what we're given and carry on.
 }
 
 /**
