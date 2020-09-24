@@ -313,7 +313,7 @@ void Collections::Manager::addScopeStats(KVBucket& bucket,
     currentManifest.rlock()->addScopeStats(bucket, cookie, add_stat);
 }
 
-void Collections::Manager::warmupLoadManifest(const std::string& dbpath) {
+bool Collections::Manager::warmupLoadManifest(const std::string& dbpath) {
     auto rv = Collections::PersistManifestTask::tryAndLoad(dbpath);
     if (rv.has_value()) {
         if (rv.value()) {
@@ -326,12 +326,14 @@ void Collections::Manager::warmupLoadManifest(const std::string& dbpath) {
             EP_LOG_INFO(
                     "Collections::Manager::warmupLoadManifest: nothing loaded");
         }
+        return true;
     }
     // else tryAndLoad detected (and logged) some kind of corruption issue.
     // If this corruption occurred at the same time as some issue in the
     // forward flow of the Manifest, KV can't validate that any change to the
-    // manifest is a legal successor (Manifest::isSuccessor) - we will just have
-    // to accept what we're given and carry on.
+    // manifest is a legal successor (Manifest::isSuccessor) - return false
+    // so Warmup can fail - holding the node::bucket pending.
+    return false;
 }
 
 /**

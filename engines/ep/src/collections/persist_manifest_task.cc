@@ -131,6 +131,8 @@ std::optional<std::unique_ptr<Manifest>> PersistManifestTask::tryAndLoad(
         auto fbData =
                 flatbuffers::GetRoot<Collections::Persist::ManifestWithCrc>(
                         manifestRaw.data());
+
+        // Now re-do the CRC which will pick-up unexpected changes
         uint32_t storedCrc = fbData->crc();
         uint32_t crc = crc32c(
                 fbData->manifest()->data(), fbData->manifest()->size(), 0);
