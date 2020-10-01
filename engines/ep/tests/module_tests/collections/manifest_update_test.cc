@@ -131,6 +131,9 @@ TEST_P(CollectionsManifestUpdate, update_add1_move1_warmup) {
                          .rlock()
                          ->isForcedUpdate());
 
+    auto scope = store->getVBucket(vbid)->lockCollections().getScopeID(22);
+    EXPECT_EQ(ScopeID::Default, scope.value_or(ScopeID(10000)));
+
     if (isPersistent()) {
         resetEngineAndWarmup();
         EXPECT_EQ(ENGINE_SUCCESS,
@@ -155,7 +158,8 @@ TEST_P(CollectionsManifestUpdate, update_add1_move1_warmup) {
     cm.setForce(true);
     setCollections(cookie, std::string{cm});
 
-    // KV doesn't yet respond to this yet
+    scope = store->getVBucket(vbid)->lockCollections().getScopeID(22);
+    EXPECT_EQ(ScopeEntry::shop1.uid, scope.value_or(ScopeID(10000)));
 }
 
 class CollectionsManifestUpdatePersistent

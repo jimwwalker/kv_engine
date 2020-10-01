@@ -470,8 +470,16 @@ Manifest::ManifestChanges Manifest::processManifest(
     for (const auto& entry : map) {
         // If the entry is not found in the new manifest it must be
         // deleted.
-        if (manifest.findCollection(entry.first) == manifest.end()) {
+        auto itr = manifest.findCollection(entry.first);
+        if (itr == manifest.end()) {
             rv.collectionsToRemove.push_back(entry.first);
+        } else if (itr->second.sid != entry.second.getScopeID() &&
+                   manifest.isForcedUpdate()) {
+            rv.collectionsToRemove.push_back(entry.first);
+            rv.collectionsToAdd.push_back(
+                    {std::make_pair(itr->second.sid, entry.first),
+                     itr->second.name,
+                     itr->second.maxTtl});
         }
     }
 
