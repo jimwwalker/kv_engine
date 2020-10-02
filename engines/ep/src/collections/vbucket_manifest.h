@@ -794,8 +794,13 @@ protected:
         DroppedCollectionInfo(uint64_t start,
                               uint64_t end,
                               uint64_t itemCount,
-                              uint64_t diskSize)
-            : start(start), end(end), itemCount(itemCount), diskSize(diskSize) {
+                              uint64_t diskSize,
+                              uint64_t highSeqno)
+            : start(start),
+              end(end),
+              itemCount(itemCount),
+              diskSize(diskSize),
+              highSeqno(highSeqno) {
         }
         bool addStats(Vbid vbid,
                       CollectionID cid,
@@ -806,6 +811,7 @@ protected:
         uint64_t end{0};
         uint64_t itemCount{0};
         uint64_t diskSize{0};
+        uint64_t highSeqno{0}; // highest item (not the end value)
     };
 
     // collections move from the Manifest::map to this "container" when they

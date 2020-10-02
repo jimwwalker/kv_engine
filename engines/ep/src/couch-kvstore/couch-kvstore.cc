@@ -2729,6 +2729,12 @@ couchstore_error_t CouchKVStore::saveDocs(Vbid vbid,
             }
         }
 
+        if (kvctx.commitData.collections.isReadyForCommit()) {
+            updateCollectionsMeta(*db, kvctx.commitData.collections);
+        }
+
+        // This must come after the collection meta was updated as it makes
+        // updates that saveCollectionStats consumes
         kvctx.commitData.collections.saveCollectionStats(
                 std::bind(&CouchKVStore::saveCollectionStats,
                           this,
@@ -2740,10 +2746,6 @@ couchstore_error_t CouchKVStore::saveDocs(Vbid vbid,
         state.onDiskPrepares += kvctx.onDiskPrepareDelta;
         pendingLocalReqsQ.emplace_back("_local/vbstate",
                                        makeJsonVBState(state));
-
-        if (kvctx.commitData.collections.isReadyForCommit()) {
-            updateCollectionsMeta(*db, kvctx.commitData.collections);
-        }
 
         /// Update the local documents before we commit
         errCode = updateLocalDocuments(*db, pendingLocalReqsQ);

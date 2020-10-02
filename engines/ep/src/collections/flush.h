@@ -53,7 +53,7 @@ public:
      * @param a function to callback
      */
     void saveCollectionStats(
-            std::function<void(CollectionID, const PersistedStats&)> cb) const;
+            std::function<void(CollectionID, const PersistedStats&)> cb);
 
     /**
      * KVStore implementations must call this function once they have
@@ -389,6 +389,12 @@ private:
      * count updates
      */
     Manifest& manifest;
+
+    /**
+     * Flushing counts how many non-empty collections were committed and uses
+     * this for triggering (or not) a purge.
+     */
+    uint32_t nonEmptyDroppedCollections{0};
 
     /**
      * Set to true when any of the fields in this structure have data which

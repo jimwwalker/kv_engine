@@ -1165,12 +1165,6 @@ int MagmaKVStore::saveDocs(VB::Commit& commitData, kvstats_ctx& kvctx) {
                             &ninserts,
                             &ndeletes,
                             &magmaDbStats](WriteOps& postWriteOps) {
-        commitData.collections.saveCollectionStats(
-                std::bind(&MagmaKVStore::saveCollectionStats,
-                          this,
-                          std::ref(localDbReqs),
-                          std::placeholders::_1,
-                          std::placeholders::_2));
         // Merge in the delta changes
         {
             auto lockedStats = magmaDbStats.stats.wlock();
@@ -1188,6 +1182,15 @@ int MagmaKVStore::saveDocs(VB::Commit& commitData, kvstats_ctx& kvctx) {
         if (commitData.collections.isReadyForCommit()) {
             updateCollectionsMeta(vbid, localDbReqs, commitData.collections);
         }
+
+        // This must come after the collection meta was updated as it makes
+        // updates that saveCollectionStats consumes
+        commitData.collections.saveCollectionStats(
+                std::bind(&MagmaKVStore::saveCollectionStats,
+                          this,
+                          std::ref(localDbReqs),
+                          std::placeholders::_1,
+                          std::placeholders::_2));
         addLocalDbReqs(localDbReqs, postWriteOps);
     };
 

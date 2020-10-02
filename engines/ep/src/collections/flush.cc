@@ -83,7 +83,7 @@ void Flush::StatisticsUpdate::remove(bool isSystem,
 // statistics gathered by the Flush and uses the std::function callback to
 // have the KVStore implementation write them to storage, e.g. a local document.
 void Flush::saveCollectionStats(
-        std::function<void(CollectionID, const PersistedStats&)> cb) const {
+        std::function<void(CollectionID, const PersistedStats&)> cb) {
     // For each collection modified in the flush run ask the VBM for the
     // current stats (using the high-seqno so we find the correct generation
     // of stats)
@@ -98,6 +98,35 @@ void Flush::saveCollectionStats(
                           flushStats.getPersistedHighSeqno(),
                           stats.diskSize + flushStats.getDiskSize());
         cb(cid, ps);
+    }
+
+    // Finally, for a flush batch that also happened to be dropping collections
+    // detect and count non-empty collections so we can schedule a purge only
+    // if needed (avoids a compaction if the collection is empty)
+    for (const auto& [cid, dropped] : droppedCollections) {
+        // An empty collection is when the high persisted seqno is equal to the
+        // start-seqno. With one corner case, if the collection was created and
+        // dropped in one flush, the high persisted seqno is 0.
+        //
+        // To detect non-empty collections, two checks are in-place.
+        // 1) If the 'stats' map does not store 'cid' then this flush batch
+        // contained no items to 'cid'. Use the VB::Manifest 'StatsForFlush'
+        // to read the high persisted seqno and compare with the start-seqno.
+        // 2) If the 'stats' map does store 'cid', that is enough to determine
+        // that an item was flushed.
+
+        auto sItr = stats.find(cid);
+
+        if (sItr == stats.end()) {
+            auto highSeqno = manifest.lock()
+                                     .getStatsForFlush(cid, dropped.endSeqno)
+                                     .highSeqno;
+            if (highSeqno != 0 && highSeqno != dropped.startSeqno) {
+                nonEmptyDroppedCollections++;
+            }
+        } else {
+            nonEmptyDroppedCollections++;
+        }
     }
 }
 
@@ -138,7 +167,7 @@ void Flush::notifyManifestOfAnyDroppedCollections() {
 }
 
 void Flush::checkAndTriggerPurge(Vbid vbid, KVBucket& bucket) const {
-    if (!droppedCollections.empty()) {
+    if (nonEmptyDroppedCollections != 0) {
         triggerPurge(vbid, bucket);
     }
 }
@@ -180,14 +209,16 @@ void Flush::updateStats(const DocKey& key,
     }
     auto [isSystemEvent, cid] = getCollectionID(key);
 
-    if (!cid || isLogicallyDeleted(cid.value(), seqno)) {
-        // 1) The key is not for a collection (could be a scope event) or
-        // 2) The key belongs to a collection now dropped, the drop is in this
-        //    flush batch.
-        // The flusher still persists documents that are in this state but we
-        // do not gather statistics about them - this is because the current
-        // statistics will be wiped out by the flush (side effect of the drop
-        // going through the KVStore).
+    if (!cid) {
+        // The key is not for a collection (e.g. a scope event).
+        return;
+    }
+
+    // If we track the 'stats' of the delete collection event, we will not know
+    // if the collection is empty, the high-seqno would change - an empty
+    // collection is one where the high-seqno == start-seqno.
+    if (isDelete && isSystemEvent) {
+        // Delete collection event - no tracking
         return;
     }
 
@@ -209,7 +240,12 @@ void Flush::updateStats(const DocKey& key,
     }
     // Same logic and comment as updateStats above.
     auto [isSystemEvent, cid] = getCollectionID(key);
-    if (!cid || isLogicallyDeleted(cid.value(), seqno)) {
+
+    if (!cid) {
+        return;
+    }
+
+    if (isDelete && isSystemEvent) {
         return;
     }
 
