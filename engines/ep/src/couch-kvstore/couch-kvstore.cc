@@ -2562,16 +2562,16 @@ couchstore_error_t CouchKVStore::saveDocs(Vbid vbid,
         }
     }
 
+    vbucket_state& state = kvctx.commitData.proposedVBState;
+    state.onDiskPrepares += kvctx.onDiskPrepareDelta;
+    pendingLocalReqsQ.emplace_back("_local/vbstate", makeJsonVBState(state));
+
     kvctx.commitData.collections.saveCollectionStats(
             std::bind(&CouchKVStore::saveCollectionStats,
                       this,
                       std::ref(*db),
                       std::placeholders::_1,
                       std::placeholders::_2));
-
-    vbucket_state& state = kvctx.commitData.proposedVBState;
-    state.onDiskPrepares += kvctx.onDiskPrepareDelta;
-    pendingLocalReqsQ.emplace_back("_local/vbstate", makeJsonVBState(state));
 
     if (kvctx.commitData.collections.isReadyForCommit()) {
         updateCollectionsMeta(*db, kvctx.commitData.collections);
@@ -3468,9 +3468,12 @@ void CouchKVStore::updateDroppedCollections(
             &CouchKVStore::deleteCollectionStats, this, std::placeholders::_1));
 
     auto dropped = getDroppedCollections(db);
-    pendingLocalReqsQ.emplace_back(
-            Collections::droppedCollectionsName,
-            collectionsFlush.encodeDroppedCollections(dropped));
+    auto encodedDroppedCollections =
+            collectionsFlush.encodeDroppedCollections(dropped);
+    if (encodedDroppedCollections.data()) {
+        pendingLocalReqsQ.emplace_back(Collections::droppedCollectionsName,
+                                       encodedDroppedCollections);
+    }
 }
 
 void CouchKVStore::updateScopes(Db& db,
@@ -3519,6 +3522,7 @@ couchstore_error_t CouchKVStore::updateLocalDocuments(
 
     for (auto& lDoc : queue) {
         localDocuments.emplace_back(lDoc.getLocalDoc());
+        const char* s = (const char*)localDocuments.back().get().id.buf;
     }
 
     auto errCode = cb::couchstore::saveLocalDocuments(db, localDocuments);
