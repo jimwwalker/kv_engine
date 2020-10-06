@@ -952,6 +952,9 @@ protected:
     }
 
     void createPendingWrite(bool deleted = false) {
+        auto persistedHighSeqno = vb->lockCollections().getPersistedHighSeqno(
+                key.getCollectionID());
+
         if (deleted) {
             auto item = makeCommittedItem(key, "value");
             EXPECT_EQ(ENGINE_SUCCESS, store->set(*item, cookie));
@@ -973,6 +976,11 @@ protected:
             EXPECT_EQ(ENGINE_SYNC_WRITE_PENDING, store->set(*item, cookie));
         }
         flushVBucketToDiskIfPersistent(vbid, 1);
+
+        // Validate the collection high-persisted-seqno didn't change.
+        EXPECT_EQ(persistedHighSeqno,
+                  vb->lockCollections().getPersistedHighSeqno(
+                          key.getCollectionID()));
     }
 
     void commit() {
