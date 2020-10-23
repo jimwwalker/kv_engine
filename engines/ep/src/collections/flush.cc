@@ -102,6 +102,19 @@ void Flush::saveCollectionStats(
     }
 }
 
+void Flush::forEachDroppedCollection(
+        std::function<void(CollectionID)> cb) const {
+    // Only collections that are dropped with no subsequent create should have
+    // the stats removed from KV
+    for (const auto& [cid, dropped] : droppedCollections) {
+        auto itr = stats.find(cid);
+        if (itr == stats.end() ||
+            dropped.endSeqno > itr->second.getPersistedHighSeqno()) {
+            cb(cid);
+        }
+    }
+}
+
 // Called from KVStore after a successful commit.
 // This method will iterate through all of the collection stats that the Flush
 // gathered and attempt to update the VB::Manifest (which is where cmd_stat
