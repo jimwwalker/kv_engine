@@ -141,6 +141,10 @@ TEST_P(CollectionsEraserTest, basic) {
     if (persistent()) {
         evict_key(vbid, StoredDocKey{"dairy:butter", CollectionEntry::dairy});
     }
+
+    // Store an item along side the drop event
+    store_item(vbid, StoredDocKey{"cheese", CollectionEntry::dairy}, "lovely");
+
     // delete the collection
     vb->updateFromManifest(makeManifest(cm.remove(CollectionEntry::dairy)));
 
@@ -158,7 +162,7 @@ TEST_P(CollectionsEraserTest, basic) {
         EXPECT_EQ(diskSize, stats.diskSize);
     }
 
-    flush_vbucket_to_disk(vbid, 1 /* 1 x system */);
+    flush_vbucket_to_disk(vbid, 1 /* 1 x system */ + 1 /*cheese key*/);
 
     // Now the drop is persisted the stats have gone
 
