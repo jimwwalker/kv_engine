@@ -38,7 +38,8 @@ public:
 
     ENGINE_ERROR_CODE scheduleCompaction(Vbid vbid,
                                          const CompactionConfig& c,
-                                         const void* ck) override;
+                                         const void* ck,
+                                         double delay) override;
 
     ENGINE_ERROR_CODE cancelCompaction(Vbid vbid) override;
 

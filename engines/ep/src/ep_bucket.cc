@@ -1001,9 +1001,11 @@ void EPBucket::stopBgFetcher() {
     }
 }
 
-ENGINE_ERROR_CODE EPBucket::scheduleCompaction(Vbid vbid,
-                                               const CompactionConfig& c,
-                                               const void* cookie) {
+ENGINE_ERROR_CODE EPBucket::scheduleCompaction(
+        Vbid vbid,
+        std::optional<CompactionConfig> config,
+        const void* cookie,
+        double delay) {
     ENGINE_ERROR_CODE errCode = checkForDBExistence(vbid);
     if (errCode != ENGINE_SUCCESS) {
         return errCode;
@@ -1015,41 +1017,63 @@ ENGINE_ERROR_CODE EPBucket::scheduleCompaction(Vbid vbid,
         return ENGINE_NOT_MY_VBUCKET;
     }
 
-    LockHolder lh(compactionLock);
-    ExTask task = std::make_shared<CompactTask>(*this, vbid, c, cookie);
-    compactionTasks.emplace_back(std::make_pair(vbid, task));
-    bool snoozed = false;
-    if (compactionTasks.size() > 1) {
-        if ((stats.diskQueueSize > compactionWriteQueueCap &&
-             compactionTasks.size() > (vbMap.getNumShards() / 2)) ||
-            engine.getWorkLoadPolicy().getWorkLoadPattern() == READ_HEAVY) {
-            // Snooze a new compaction task.
-            // We will wake it up when one of the existing compaction tasks is
-            // done.
-            task->snooze(60);
-            snoozed = true;
+    auto handle = compactionTasks.wlock();
+
+    // try to emplace an empty shared_ptr
+    auto [itr, emplaced] = handle->try_emplace(vbid, nullptr);
+    auto& task = itr->second;
+
+    if (!emplaced) {
+        // The existing task must be poked - it needs to either reschedule if
+        // it is currently running or run with the given config (if initialised)
+        task->runCompactionWithConfig(config);
+        if (delay != 0.0) {
+            ExecutorPool::get()->snooze(task->getId(), delay);
+        } else {
+            ExecutorPool::get()->wake(task->getId());
         }
+    } else {
+        // Nothing in the map for this vbid now construct the task
+        itr->second =
+                std::make_shared<CompactTask>(*this, vbid, config, cookie);
+        if (handle->size() > 1) {
+            if ((stats.diskQueueSize > compactionWriteQueueCap &&
+                 handle->size() > (vbMap.getNumShards() / 2)) ||
+                engine.getWorkLoadPolicy().getWorkLoadPattern() == READ_HEAVY) {
+                // Snooze a new compaction task.
+                // We will wake it up when one of the existing compaction tasks
+                // is done.
+                delay = 60.0;
+            }
+        }
+
+        if (delay != 0.0) {
+            task->snooze(delay);
+        }
+        ExecutorPool::get()->schedule(task);
     }
-
-    ExecutorPool::get()->schedule(task);
-
-    EP_LOG_INFO(
-            "Compaction of {}, task:{}, purge_before_ts:{}, "
-            "purge_before_seq:{}, "
-            "drop_deletes:{}, snoozed:{}, scheduled (awaiting completion).",
-            vbid,
-            uint64_t(task->getId()),
-            c.purge_before_ts,
-            c.purge_before_seq,
-            c.drop_deletes,
-            snoozed);
 
     return ENGINE_EWOULDBLOCK;
 }
 
+ENGINE_ERROR_CODE EPBucket::scheduleCompaction(Vbid vbid,
+                                               const CompactionConfig& config,
+                                               const void* cookie,
+                                               double delay) {
+    return scheduleCompaction(
+            vbid, std::optional<CompactionConfig>{config}, cookie, delay);
+}
+
+ENGINE_ERROR_CODE EPBucket::scheduleCompaction(Vbid vbid,
+                                               const void* cookie,
+                                               double delay) {
+    return scheduleCompaction(
+            vbid, std::optional<CompactionConfig>{}, cookie, delay);
+}
+
 ENGINE_ERROR_CODE EPBucket::cancelCompaction(Vbid vbid) {
-    LockHolder lh(compactionLock);
-    for (const auto& task : compactionTasks) {
+    auto handle = compactionTasks.wlock();
+    for (const auto& task : *handle) {
         task.second->cancel();
     }
     return ENGINE_SUCCESS;
@@ -1232,35 +1256,49 @@ bool EPBucket::doCompact(Vbid vbid,
         engine.decrementSessionCtr();
     }
 
-    updateCompactionTasks(vbid);
-
     if (cookie) {
         engine.notifyIOComplete(cookie, err);
     }
-    --stats.pendingCompactions;
+    --stats.pendingCompactions; // just size of map??
     return false;
 }
 
-void EPBucket::updateCompactionTasks(Vbid db_file_id) {
-    LockHolder lh(compactionLock);
-    bool erased = false, woke = false;
-    auto it = compactionTasks.begin();
-    while (it != compactionTasks.end()) {
-        if ((*it).first == db_file_id) {
-            it = compactionTasks.erase(it);
-            erased = true;
+bool EPBucket::updateCompactionTasks(Vbid vbid) {
+    auto handle = compactionTasks.wlock();
+
+    // Copy the size before we may erase a task
+    auto size = handle->size();
+    bool reschedule = false;
+
+    // process the caller and then find a second task to wake
+    auto itr = handle->find(vbid);
+    if (itr != handle->end()) {
+        const auto& task = (*itr).second;
+        if (task->isRescheduleRequired()) {
+            reschedule = true;
         } else {
-            ExTask& task = (*it).second;
-            if (task->getState() == TASK_SNOOZED) {
-                ExecutorPool::get()->wake(task->getId());
-                woke = true;
-            }
-            ++it;
+            // Done, can now erase from the compactionTasks map
+            handle->erase(itr);
         }
-        if (erased && woke) {
-            break;
+    } else {
+        throw std::logic_error(
+                "EPBucket::updateCompactionTasks no task for vbid:" +
+                vbid.to_string());
+    }
+
+    // If another task does exist, find it and wake it
+    if (size > 1) {
+        for (const auto& [key, task] : *handle) {
+            if (key != vbid) {
+                if (task->getState() == TASK_SNOOZED) {
+                    ExecutorPool::get()->wake(task->getId());
+                    // wake one other task
+                    break;
+                }
+            }
         }
     }
+    return reschedule;
 }
 
 std::pair<uint64_t, bool> EPBucket::getLastPersistedCheckpointId(Vbid vb) {

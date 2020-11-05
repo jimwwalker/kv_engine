@@ -454,7 +454,8 @@ public:
      */
     virtual ENGINE_ERROR_CODE scheduleCompaction(Vbid vbid,
                                                  const CompactionConfig& c,
-                                                 const void* ck) = 0;
+                                                 const void* ck,
+                                                 double delay) = 0;
 
     /**
      * Cancels compaction of a database file

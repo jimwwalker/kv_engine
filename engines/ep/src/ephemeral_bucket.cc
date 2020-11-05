@@ -170,7 +170,8 @@ void EphemeralBucket::attemptToFreeMemory() {
 
 ENGINE_ERROR_CODE EphemeralBucket::scheduleCompaction(Vbid vbid,
                                                       const CompactionConfig& c,
-                                                      const void* ck) {
+                                                      const void* ck,
+                                                      double delay) {
     return ENGINE_ENOTSUP;
 }
 

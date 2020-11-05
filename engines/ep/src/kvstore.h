@@ -102,6 +102,7 @@ struct CompactionConfig {
     uint64_t purge_before_seq = 0;
     uint8_t drop_deletes = 0;
     bool retain_erroneous_tombstones = false;
+    bool operator==(const CompactionConfig& c) const;
 };
 
 struct CompactionContext {
