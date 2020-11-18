@@ -232,6 +232,34 @@ Manifest::Manifest(std::string_view json)
     }
 }
 
+Manifest::Manifest(Manifest&& other)
+    : defaultCollectionExists(other.defaultCollectionExists),
+      scopes(std::move(other.scopes)),
+      collections(std::move(other.collections)),
+
+      force(other.force) {
+    if (other.force) {
+        uid.reset(other.uid);
+    } else {
+        uid = other.uid;
+    }
+}
+
+Manifest& Manifest::operator=(Manifest&& other) {
+    if (*this != other) {
+        defaultCollectionExists = other.defaultCollectionExists;
+        scopes = std::move(other.scopes);
+        collections = std::move(other.collections);
+        if (other.force) {
+            uid.reset(other.uid);
+        } else {
+            uid = other.uid;
+        }
+        force = other.force;
+    }
+    return *this;
+}
+
 void Manifest::buildCollectionIdToEntryMap() {
     for (auto& scope : this->scopes) {
         for (auto& collection : scope.second.collections) {
