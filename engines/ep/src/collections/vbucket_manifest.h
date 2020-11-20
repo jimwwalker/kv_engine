@@ -275,6 +275,7 @@ public:
         }
         std::vector<ScopeCreation> scopesToCreate;
         std::vector<ScopeID> scopesToDrop;
+        std::vector<ScopeID> scopesToForceDrop;
         std::vector<CollectionCreation> collectionsToCreate;
         std::vector<CollectionID> collectionsToDrop;
         const ManifestUid uid{0};
@@ -282,7 +283,8 @@ public:
 
         bool empty() const {
             return scopesToCreate.empty() && scopesToDrop.empty() &&
-                   collectionsToCreate.empty() && collectionsToDrop.empty();
+                   scopesToForceDrop.empty() && collectionsToCreate.empty() &&
+                   collectionsToDrop.empty();
         }
     };
 

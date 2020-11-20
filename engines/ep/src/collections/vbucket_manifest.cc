@@ -236,14 +236,18 @@ ManifestUpdateStatus Manifest::update(::VBucket& vb,
 // important. The ordering of the system-events into the vbucket defines
 // the order DCP transmits the events.
 //
-// 1) First collections are dropped, this must happen before step 3 and step 4.
+// 1) Scopes to force-drop must happen first, this has to happen before 2/3 so
+//    that we can support force drop/recreate. A scope drop must be seen before
+//    the collection drop events and the before any subsequent create of the
+//    scope.
+// 2) Next collections are dropped, this must happen before step 4 and step 5.
 //    Before step 3 because a collection can be re-created by force (so it must
-//    drop before create). Before step 4 because the collection drops could
+//    drop before create). Before step 5 because the collection drops could
 //    be due to a scope drop, and the collection drop events must happen before
 //    the scope drop event.
-// 2) Scopes are created. This must happen before step 3, collection creation.
-// 3) Collections are created.
-// 4) Scopes are dropped, this is last so the scope drop will come after any
+// 3) Scopes are created. This must happen before step 4, collection creation.
+// 4) Collections are created.
+// 5) Scopes are dropped, this is last so the scope drop will come after any
 //    collections dropped as part of the scope removal.
 //
 // As the function runs it also has to decide at each point which manifest-UID
@@ -271,6 +275,18 @@ void Manifest::completeUpdate(mutex_type::UpgradeHolder&& upgradeLock,
                        *finalDeletion,
                        OptionalSeqno{/*no-seqno*/},
                        changeset.forced);
+    }
+
+    auto finalScopeForceDrop = applyScopeDrops(
+            wHandle, vb, changeset.scopesToForceDrop, changeset.forced);
+    if (finalScopeForceDrop) {
+        auto uid = changeset.empty() ? changeset.uid : manifestUid;
+        dropScope(wHandle,
+                  vb,
+                  changeset.uid,
+                  *finalScopeForceDrop,
+                  OptionalSeqno{/*no-seqno*/},
+                  changeset.forced);
     }
 
     auto finalScopeCreate = applyScopeCreates(
@@ -316,12 +332,44 @@ void Manifest::completeUpdate(mutex_type::UpgradeHolder&& upgradeLock,
     }
 }
 
+// @return true if newEntry compared to existingEntry shows an immutable
+//              property has changed
+static bool isImmutablePropertyModified(const CollectionEntry& newEntry,
+                                        const ManifestEntry& existingEntry) {
+    return newEntry.sid != existingEntry.getScopeID() ||
+           newEntry.name != existingEntry.getName();
+}
+
+// @return true if newEntry compared to existingEntry shows an immutable
+//              property has changed (only compares Scope vs name)
+static bool isImmutablePropertyModified(const Collections::Scope& newEntry,
+                                        std::string_view name) {
+    return newEntry.name != name;
+}
+
 ManifestUpdateStatus Manifest::canUpdate(
         const Collections::Manifest& manifest) const {
     // Cannot go backwards (unless forced)
     if (manifest.getUid() < manifestUid && !manifest.isForcedUpdate()) {
         return ManifestUpdateStatus::Behind;
     }
+
+    for (const auto& [cid, entry] : map) {
+        auto itr = manifest.findCollection(cid);
+        if (itr != manifest.end() && !manifest.isForcedUpdate() &&
+            isImmutablePropertyModified(itr->second, entry)) {
+            return ManifestUpdateStatus::ImmutablePropertyModified;
+        }
+    }
+
+    for (const auto& [sid, entry] : scopes) {
+        auto itr = manifest.findScope(sid);
+        if (itr != manifest.endScopes() && !manifest.isForcedUpdate() &&
+            isImmutablePropertyModified(itr->second, entry.name)) {
+            return ManifestUpdateStatus::ImmutablePropertyModified;
+        }
+    }
+
     return ManifestUpdateStatus::Success;
 }
 
@@ -591,22 +639,44 @@ Manifest::ManifestChanges Manifest::processManifest(
         const Collections::Manifest& manifest) const {
     ManifestChanges rv{manifest.getUid(), manifest.isForcedUpdate()};
 
-    for (const auto& entry : map) {
-        // If the entry is not found in the new manifest it must be
-        // deleted.
-        if (manifest.findCollection(entry.first) == manifest.end()) {
-            rv.collectionsToDrop.push_back(entry.first);
+    // First iterate through the collections of this VB::Manifest
+    for (const auto& [cid, entry] : map) {
+        // Look-up the collection inside the new manifest
+        auto itr = manifest.findCollection(cid);
+
+        if (itr == manifest.end()) {
+            // Not found, so this collection should be dropped.
+            rv.collectionsToDrop.push_back(cid);
+        } else if (manifest.isForcedUpdate() &&
+                   isImmutablePropertyModified(itr->second, entry)) {
+            // Found and this was a forced update with an immutable property
+            // modification. This becomes drop and (re)create
+            rv.collectionsToDrop.push_back(cid);
+            rv.collectionsToCreate.push_back(
+                    {std::make_pair(itr->second.sid, cid),
+                     itr->second.name,
+                     itr->second.maxTtl});
         }
     }
 
-    for (const auto& [sid, name] : scopes) {
-        // Remove the scopes that don't exist in the new manifest
-        if (manifest.findScope(sid) == manifest.endScopes()) {
+    // Second iterate through the scopes of this VB::Manifest
+    for (const auto& [sid, entry] : scopes) {
+        // Look-up the scope inside the new manifest
+        auto itr = manifest.findScope(sid);
+
+        if (itr == manifest.endScopes()) {
+            // Not found, so this scope should be dropped.
             rv.scopesToDrop.push_back(sid);
+        } else if (manifest.isForcedUpdate() &&
+                   isImmutablePropertyModified(itr->second, entry.name)) {
+            // Found and this was a forced update with an immutable property
+            // modification. This becomes drop and (re)create
+            rv.scopesToForceDrop.push_back(sid);
+            rv.scopesToCreate.push_back({itr->first, itr->second.name});
         }
     }
 
-    // Add scopes and collections in Manifest but not in our map
+    // Finally scopes and collections in Manifest but not in our map
     for (auto scopeItr = manifest.beginScopes();
          scopeItr != manifest.endScopes();
          scopeItr++) {

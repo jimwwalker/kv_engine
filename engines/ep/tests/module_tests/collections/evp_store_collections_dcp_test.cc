@@ -3049,6 +3049,72 @@ TEST_P(CollectionsDcpPersistentOnly,
     replicateForcedUpdate(4, true);
 }
 
+TEST_P(CollectionsDcpParameterizedTest, force_update_multiple_changes) {
+    // Create diverged manifests cm and cm1. First update to cm then force
+    // update to cm1. The test is primarily testing that the force update sends
+    // system events in the correct order.
+    CollectionsManifest cm, cm1;
+    cm.add(ScopeEntry::Entry{"scope-foo", 22});
+    cm.add(CollectionEntry::Entry{"collection-foo", 23},
+           ScopeEntry::Entry{"scope-foo", 22});
+
+    cm1.add(ScopeEntry::Entry{"scope-bar", 22});
+    cm1.add(CollectionEntry::Entry{"collection-bar", 23},
+            ScopeEntry::Entry{"scope-bar", 22});
+
+    setCollections(cookie, cm);
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    notifyAndStepToCheckpoint();
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::CreateScope, producers->last_system_event);
+    EXPECT_EQ("scope-foo", producers->last_key);
+    EXPECT_EQ(22, producers->last_scope_id);
+
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSnapshotMarker);
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection,
+              producers->last_system_event);
+    EXPECT_EQ("collection-foo", producers->last_key);
+    EXPECT_EQ(22, producers->last_scope_id);
+    EXPECT_EQ(23, producers->last_collection_id);
+
+    cm1.setForce(true);
+    setCollections(cookie, cm1);
+    // flusher de-dup means only 2 items are flushed
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    // First the collection(s) get dropped
+    notifyAndStepToCheckpoint();
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::DeleteCollection,
+              producers->last_system_event);
+    EXPECT_EQ(23, producers->last_collection_id);
+
+    // Then the scope
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::DropScope, producers->last_system_event);
+    EXPECT_EQ(22, producers->last_scope_id);
+
+    // Now the scope is recreated (new-name)
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSnapshotMarker);
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::CreateScope, producers->last_system_event);
+    EXPECT_EQ("scope-bar", producers->last_key);
+    EXPECT_EQ(22, producers->last_scope_id);
+
+    // And the collection
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSnapshotMarker);
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection,
+              producers->last_system_event);
+    EXPECT_EQ("collection-bar", producers->last_key);
+    EXPECT_EQ(22, producers->last_scope_id);
+    EXPECT_EQ(23, producers->last_collection_id);
+
+    flushVBucketToDiskIfPersistent(replicaVB, 2);
+}
+
 // Test cases which run for persistent and ephemeral buckets
 INSTANTIATE_TEST_SUITE_P(CollectionsDcpEphemeralOrPersistent,
                          CollectionsDcpParameterizedTest,
