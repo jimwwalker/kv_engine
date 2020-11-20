@@ -352,7 +352,12 @@ using IsVisibleFunction =
         std::function<bool(ScopeID, std::optional<CollectionID>)>;
 
 namespace VB {
-enum class ManifestUpdateStatus { Success, Behind, EqualUidWithDifferences };
+enum class ManifestUpdateStatus {
+    Success,
+    Behind,
+    EqualUidWithDifferences,
+    ImmutablePropertyModified
+};
 std::string to_string(ManifestUpdateStatus);
 
 /// values required by the flusher to calculate new collection statistics

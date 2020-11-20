@@ -174,6 +174,10 @@ public:
         return value == other.value;
     }
 
+    bool operator!=(const ScopeID& other) const {
+        return value != other.value;
+    }
+
     bool isDefaultScope() const {
         return value == Default;
     }

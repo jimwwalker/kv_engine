@@ -254,12 +254,29 @@ void Manifest::completeUpdate(mutex_type::UpgradeHolder&& upgradeLock,
     }
 }
 
+static bool isImmutablePropertyModified(const CollectionEntry& newEntry,
+                                        const ManifestEntry& existingEntry) {
+    std::cerr << existingEntry << std::endl;
+    std::cerr << newEntry.sid << " vs " << existingEntry.getScopeID()
+              << std::endl;
+    return newEntry.sid != existingEntry.getScopeID();
+}
+
 ManifestUpdateStatus Manifest::canUpdate(
         const Collections::Manifest& manifest) const {
     // Cannot go backwards (unless forced)
     if (manifest.getUid() < manifestUid && !manifest.isForcedUpdate()) {
         return ManifestUpdateStatus::Behind;
     }
+
+    for (const auto& entry : map) {
+        auto itr = manifest.findCollection(entry.first);
+        if (itr != manifest.end() && !manifest.isForcedUpdate() &&
+            isImmutablePropertyModified(itr->second, entry.second)) {
+            return ManifestUpdateStatus::ImmutablePropertyModified;
+        }
+    }
+
     return ManifestUpdateStatus::Success;
 }
 
@@ -510,10 +527,20 @@ Manifest::ManifestChanges Manifest::processManifest(
     ManifestChanges rv{manifest.getUid(), manifest.isForcedUpdate()};
 
     for (const auto& entry : map) {
-        // If the entry is not found in the new manifest it must be
-        // deleted.
-        if (manifest.findCollection(entry.first) == manifest.end()) {
+        auto itr = manifest.findCollection(entry.first);
+        if (itr == manifest.end()) {
+            // The entry is not found in the new manifest it must be
+            // deleted.
             rv.collectionsToRemove.push_back(entry.first);
+        } else if (manifest.isForcedUpdate() &&
+                   isImmutablePropertyModified(itr->second, entry.second)) {
+            // The entry is found and has immutable properties modified under
+            // a force update (if !force we would of failed before here)
+            rv.collectionsToRemove.push_back(entry.first);
+            rv.collectionsToAdd.push_back(
+                    {std::make_pair(itr->second.sid, entry.first),
+                     itr->second.name,
+                     itr->second.maxTtl});
         }
     }
 
