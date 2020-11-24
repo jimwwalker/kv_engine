@@ -1479,22 +1479,6 @@ public:
             CollectionID cid) = 0;
 
     /**
-     * Update failovers, checkpoint mgr and other vBucket members after
-     * rollback.
-     *
-     * @param rollbackResult contains high seqno of the vBucket after rollback,
-     *                       snapshot start seqno of the last snapshot in the
-     *                       vBucket after the rollback,
-     *                       snapshot end seqno of the last snapshot in the
-     *                       vBucket after the rollback
-     * @param prevHighSeqno high seqno before the rollback
-     * @param kvstore A KVStore that is used for retrieving stored metadata
-     */
-    void postProcessRollback(const RollbackResult& rollbackResult,
-                             uint64_t prevHighSeqno,
-                             KVStore& kvstore);
-
-    /**
      * Debug - print a textual description of the VBucket to stderr.
      */
     virtual void dump() const;
@@ -2045,13 +2029,6 @@ protected:
             UseActiveVBMemThreshold useActiveVBMemThrehsold =
                     UseActiveVBMemThreshold::No);
 
-    /**
-     * Update collections following a rollback
-     *
-     * @param kvstore A KVStore that is used for retrieving stored metadata
-     */
-    void collectionsRolledBack(KVStore& kvstore);
-
     void _addStats(VBucketStatsDetailLevel detail,
                    const AddStatFn& add_stat,
                    const void* c);
@@ -2148,6 +2125,9 @@ protected:
             const HashTable::HashBucketLock& hbl,
             StoredValue& v,
             const Collections::VB::CachingReadHandle& cHandle);
+
+    /// The VBucket collection state
+    std::unique_ptr<Collections::VB::Manifest> manifest;
 
 private:
     void fireAllOps(EventuallyPersistentEngine& engine, ENGINE_ERROR_CODE code);
@@ -2519,9 +2499,6 @@ private:
      * within the PassiveDurabilityMonitor.
      */
     SeqnoAckCallback seqnoAckCb;
-
-    /// The VBucket collection state
-    std::unique_ptr<Collections::VB::Manifest> manifest;
 
     /**
      * records if the vbucket has had xattrs documents written to it, note that
