@@ -1442,6 +1442,7 @@ TEST_F(CollectionsTest, CollectionAddedAndRemovedBeforePersistence) {
     // flushing the creation to disk should not throw, even though the
     // collection was not found in the manifest
     EXPECT_NO_THROW(flush_vbucket_to_disk(vbid, 1));
+    kvstore.setPreCommitHook([] {});
 }
 
 // Test the pager doesn't generate expired items for a dropped collection

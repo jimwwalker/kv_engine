@@ -427,6 +427,7 @@ void KVBucketTest::replaceCouchKVStore(CouchKVStoreConfig& config,
     auto rwro = store->takeRWRO(0);
     auto rw = std::make_unique<CouchKVStore>(config, ops);
     store->setRWRO(0, std::move(rw), std::move(rwro.ro));
+    kvstoreReplaced = true;
 }
 
 void KVBucketTest::replaceMagmaKVStore(MagmaKVStoreConfig& config) {
@@ -437,6 +438,11 @@ void KVBucketTest::replaceMagmaKVStore(MagmaKVStoreConfig& config) {
     auto rw = std::make_unique<MockMagmaKVStore>(config);
     store->setRWRO(0, std::move(rw), std::move(rwro.ro));
 #endif
+    kvstoreReplaced = true;
+}
+
+bool KVBucketTest::isKVStoreReplaced() const {
+    return kvstoreReplaced;
 }
 
 unique_request_ptr KVBucketTest::createObserveRequest(

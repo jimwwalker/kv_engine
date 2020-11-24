@@ -244,6 +244,8 @@ public:
      */
     void replaceCouchKVStore(CouchKVStoreConfig& config, FileOpsInterface& ops);
 
+    bool isKVStoreReplaced() const;
+
     /**
      * Replace the r/w KVStore with one that uses the given ops. This function
      * will test the config to be sure the KVBucket is persistent/magma.
@@ -280,4 +282,8 @@ public:
 
     // The (mock) server cookie.
     cb::tracing::Traceable* cookie = nullptr;
+
+    bool kvstoreReplaced{false};
+
+    bool cannotDropAllCollections{false};
 };

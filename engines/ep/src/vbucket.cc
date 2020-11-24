@@ -3955,7 +3955,8 @@ void VBucket::notifyPersistenceToDurabilityMonitor() {
         return;
     }
 
-    durabilityMonitor->notifyLocalPersistence();
+    if (durabilityMonitor)
+        durabilityMonitor->notifyLocalPersistence();
 }
 
 const DurabilityMonitor& VBucket::getDurabilityMonitor() const {

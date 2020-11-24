@@ -49,6 +49,7 @@ public:
         auto m = makeManifest(cm);
         vbm.update(*vb, m);
         cookie = create_mock_cookie();
+        cannotDropAllCollections = true;
     }
 
     void TearDown() override {

@@ -222,6 +222,11 @@ protected:
      */
     void resetEngineAndWarmup(std::string new_config = "");
 
+    /**
+     * Attempt to drop all collections for couchstore only
+     */
+    void dropAllCollections();
+
     /*
      * Fake callback emulating dcp_add_failover_log
      */

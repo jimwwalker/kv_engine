@@ -106,7 +106,54 @@ void SingleThreadedKVBucketTest::SetUp() {
     (ExecutorPool::get());
 }
 
+void SingleThreadedKVBucketTest::dropAllCollections() {
+    // Lots of subtle parts at play
+    if (engine->getConfiguration().getBucketType() != "persistent" ||
+        isKVStoreReplaced() || cannotDropAllCollections) {
+        return;
+    }
+
+    auto dropAllCollectionsOnVB = [this](Vbid id) {
+        auto vb = store->getVBucket(id);
+        if (vb && (vb->getState() == vbucket_state_active ||
+                   vb->getState() == vbucket_state_replica)) {
+            CollectionsManifest cm{NoDefault{}};
+            cm.updateUid(~0);
+            vb->updateFromManifest(makeManifest(cm));
+        }
+    };
+
+    dropAllCollectionsOnVB(vbid);
+
+    auto flushAndErase = [this](Vbid id) {
+        auto vb = store->getVBucket(id);
+        if (!vb || (vb->getState() != vbucket_state_active &&
+                    vb->getState() != vbucket_state_replica)) {
+            return;
+        }
+
+        //  reset any flush hook
+        auto* kvstore = store->getRWUnderlying(id);
+        kvstore->setPostFlushHook({});
+
+        // flush everything that is left (should drop the collection)
+        dynamic_cast<EPBucket&>(*store).flushVBucket(id);
+
+        // run compaction (not via task queue as unknown what might be there)
+        CompactionConfig config;
+        EXPECT_FALSE(
+                dynamic_cast<EPBucket&>(*store).doCompact(id, config, cookie));
+
+        // Nothing should remain
+        EXPECT_EQ(0, vb->getNumItems()) << vb->ht;
+    };
+
+    flushAndErase(vbid);
+}
+
 void SingleThreadedKVBucketTest::TearDown() {
+    dropAllCollections();
+
     shutdownAndPurgeTasks(engine.get());
     KVBucketTest::TearDown();
 }
