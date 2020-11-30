@@ -695,6 +695,15 @@ TEST_P(CollectionsParameterizedTest, HighSeqno) {
     EXPECT_EQ(5,
               vb->getManifest().lock().getHighSeqno(
                       CollectionEntry::dairy.getId()));
+
+    // Drop all collections, run the eraser and verify 0 items remain
+    CollectionsManifest cm2{NoDefault{}};
+    cm2.updateUid(cm.getUid() + 1);
+    vb->updateFromManifest(makeManifest(cm2));
+    flushVBucketToDiskIfPersistent(vbid, 4);
+    runCollectionsEraser(vbid);
+    // Nothing should remain
+    EXPECT_EQ(0, vb->getNumItems()) << vb->ht;
 }
 
 // Test high seqno values with multiple collections
