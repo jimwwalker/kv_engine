@@ -249,6 +249,11 @@ public:
             Collections::VB::WriteHandle& writeHandle,
             const Collections::VB::ManifestEntry& droppedEntry) const override;
 
+    std::function<void(int64_t)> getSaveCreateCollectionCallback(
+            CollectionID cid,
+            Collections::VB::WriteHandle& writeHandle,
+            std::string_view collectionName) const override;
+
     /**
      * Update failovers, checkpoint mgr and other vBucket members after
      * rollback.

@@ -1676,6 +1676,11 @@ public:
             Collections::VB::WriteHandle& writeHandle,
             const Collections::VB::ManifestEntry& droppedEntry) const = 0;
 
+    virtual std::function<void(int64_t)> getSaveCreateCollectionCallback(
+            CollectionID cid,
+            Collections::VB::WriteHandle& writeHandle,
+            std::string_view collectionName) const = 0;
+
     std::unique_ptr<FailoverTable> failovers;
 
     std::atomic<size_t>  opsCreate;

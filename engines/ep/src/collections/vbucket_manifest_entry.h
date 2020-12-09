@@ -284,6 +284,8 @@ private:
     mutable cb::RelaxedAtomic<uint64_t> numOpsDelete;
     //! The number of basic get operations
     mutable cb::RelaxedAtomic<uint64_t> numOpsGet;
+
+    std::shared_ptr<std::string> name;
 };
 
 std::ostream& operator<<(std::ostream& os, const ManifestEntry& manifestEntry);

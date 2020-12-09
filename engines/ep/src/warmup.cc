@@ -1035,6 +1035,7 @@ void Warmup::createVBuckets(uint16_t shardId) {
             }
             KVShard* shard = store.getVBuckets().getShardByVbId(vbid);
 
+            // if this loads a name not in the Manifest, is that possible?
             std::unique_ptr<Collections::VB::Manifest> manifest;
             if (config.isCollectionsEnabled()) {
                 manifest = std::make_unique<Collections::VB::Manifest>(

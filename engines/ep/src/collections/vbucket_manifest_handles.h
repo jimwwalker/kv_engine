@@ -668,6 +668,12 @@ public:
         manifest.saveDroppedCollection(cid, droppedEntry, droppedSeqno);
     }
 
+    void saveCreateCollection(CollectionID cid,
+                              std::string_view name,
+                              uint64_t createdSeqno) {
+        manifest.saveCreateCollection(cid, name, createdSeqno);
+    }
+
     /**
      * Dump this VB::Manifest to std::cerr
      */

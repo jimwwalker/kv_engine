@@ -190,6 +190,15 @@ public:
     void collectionDropPersisted(CollectionID cid, uint64_t seqno);
 
     /**
+     * Callback from flusher that the create of collection with the given seqno
+     * was successfully persisted. This method does not need the wlock/rlock
+     * as a separate lock manages the dropped collection structures
+     * @param cid Collection ID of the collection event
+     * @param seqno The seqno of the event that was successfully stored
+     */
+    void collectionCreatePersisted(CollectionID cid, uint64_t seqno);
+
+    /**
      * Get the system event collection create data from a SystemEvent
      * Item's value.
      *
@@ -313,7 +322,7 @@ protected:
      * @param changes a vector of CollectionIDs to add/delete (based on update)
      * @return the last element of the changes vector
      */
-    std::optional<CollectionCreation> applyCreates(const WriteHandle& wHandle,
+    std::optional<CollectionCreation> applyCreates(WriteHandle& wHandle,
                                                    ::VBucket& vb,
                                                    ManifestChanges& changes);
 
@@ -345,7 +354,7 @@ protected:
      * @param isForcedCreate is the createCollection the result of a forced
      *        update
      */
-    void createCollection(const WriteHandle& wHandle,
+    void createCollection(WriteHandle& wHandle,
                           ::VBucket& vb,
                           ManifestUid newManUid,
                           ScopeCollectionPair identifiers,
@@ -765,6 +774,10 @@ protected:
                                const ManifestEntry& droppedEntry,
                                uint64_t droppedSeqno);
 
+    void saveCreateCollection(CollectionID cid,
+                              std::string_view collectionName,
+                              uint64_t createSeqno);
+
     /**
      * Return statistics about the collection for the seqno
      * @param cid ID to lookup
@@ -798,6 +811,22 @@ protected:
     }
 
     /**
+     * shared lock to allow concurrent read and safe updates of the following
+     * members.
+     * - manifestUid
+     * - dropInProgress
+     * - map
+     * - scopes
+     */
+    mutable mutex_type rwlock;
+
+    /// The manifest UID which updated this vb::manifest
+    ManifestUid manifestUid{0};
+
+    /// Does this vbucket need collection purging triggering
+    bool dropInProgress{false};
+
+    /**
      * The current set of collections
      */
     container map;
@@ -821,7 +850,7 @@ protected:
               diskSize(diskSize),
               highSeqno(highSeqno) {
         }
-        bool addStats(Vbid vbid,
+        void addStats(Vbid vbid,
                       CollectionID cid,
                       const StatCollector& collector) const;
 
@@ -832,6 +861,19 @@ protected:
         uint64_t highSeqno{0};
     };
 
+    // Information we need to retain for a collection that is created but the
+    // create event has not been persisted by the flusher.
+    struct CreatedCollectionInfo {
+        CreatedCollectionInfo(uint64_t start, std::string_view name)
+            : start{start}, name{name} {
+        }
+        void addStats(Vbid vbid,
+                      CollectionID cid,
+                      const StatCollector& collector) const;
+        uint64_t start{0};
+        std::string name;
+    };
+
     // collections move from the Manifest::map to this "container" when they
     // are dropped and are removed from this container once the drop system
     // event is persisted.
@@ -840,7 +882,7 @@ protected:
         void insert(CollectionID cid, const DroppedCollectionInfo& info);
         void remove(CollectionID cid, uint64_t seqno);
         StatsForFlush get(CollectionID cid, uint64_t seqno) const;
-        bool addStats(Vbid vbid, const StatCollector& collector) const;
+        void addStats(Vbid vbid, const StatCollector& collector) const;
 
         /// @return size of the map
         size_t size() const;
@@ -853,25 +895,41 @@ protected:
         friend std::ostream& operator<<(std::ostream&,
                                         const DroppedCollections&);
     };
-    // droppedCollections is managed separately, we don't want to exclusively
-    // lock the entire 'map' when removing elements
+    // droppedCollections is managed separately as we don't want to exclusively
+    // lockout readers of the manifest when removing elements
     folly::Synchronized<DroppedCollections> droppedCollections;
 
-    /**
-     * shared lock to allow concurrent readers and safe updates
-     */
-    mutable mutex_type rwlock;
+    class CreatedCollections {
+    public:
+        void insert(CollectionID cid,
+                    uint64_t startSeqno,
+                    std::string_view name);
+        void remove(CollectionID cid, uint64_t seqno);
+        void addStats(Vbid vbid, const StatCollector& collector) const;
 
-    /// The manifest UID which updated this vb::manifest
-    ManifestUid manifestUid{0};
+        /// @return size of the map
+        size_t size() const;
 
-    /// Does this vbucket need collection purging triggering
-    bool dropInProgress{false};
+    private:
+        std::unordered_map<CollectionID, CreatedCollectionInfo>
+                createdCollections;
+        friend std::ostream& operator<<(std::ostream&,
+                                        const CreatedCollections&);
+    };
+
+    // createdCollections is managed separately as we don't want to exclusively
+    // lockout readers of the manifest when removing elements
+    folly::Synchronized<CreatedCollections> createdCollections;
 
     friend std::ostream& operator<<(std::ostream& os, const Manifest& manifest);
     friend std::ostream& operator<<(std::ostream&,
                                     const DroppedCollectionInfo&);
     friend std::ostream& operator<<(std::ostream&, const DroppedCollections&);
+    friend std::ostream& operator<<(std::ostream&,
+                                    const CreatedCollectionInfo&);
+    friend std::ostream& operator<<(std::ostream&, const CreatedCollections&);
+
+    static constexpr char const* UidKey = "uid";
 };
 
 /// Note that the VB::Manifest << operator does not obtain the rwlock
@@ -885,6 +943,10 @@ std::ostream& operator<<(std::ostream& os, const ReadHandle& readHandle);
 std::ostream& operator<<(std::ostream&, const Manifest::DroppedCollectionInfo&);
 
 std::ostream& operator<<(std::ostream&, const Manifest::DroppedCollections&);
+
+std::ostream& operator<<(std::ostream&, const Manifest::CreatedCollectionInfo&);
+
+std::ostream& operator<<(std::ostream&, const Manifest::CreatedCollections&);
 
 } // end namespace VB
 } // end namespace Collections

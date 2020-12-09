@@ -72,7 +72,7 @@ std::optional<CollectionID> Manifest::applyDeletions(WriteHandle& wHandle,
 }
 
 std::optional<Manifest::CollectionCreation> Manifest::applyCreates(
-        const WriteHandle& wHandle, ::VBucket& vb, ManifestChanges& changes) {
+        WriteHandle& wHandle, ::VBucket& vb, ManifestChanges& changes) {
     std::optional<CollectionCreation> rv;
     if (!changes.collectionsToCreate.empty()) {
         rv = changes.collectionsToCreate.back();
@@ -263,7 +263,7 @@ ManifestUpdateStatus Manifest::canUpdate(
     return ManifestUpdateStatus::Success;
 }
 
-void Manifest::createCollection(const WriteHandle& wHandle,
+void Manifest::createCollection(WriteHandle& wHandle,
                                 ::VBucket& vb,
                                 ManifestUid newManUid,
                                 ScopeCollectionPair identifiers,
@@ -280,14 +280,16 @@ void Manifest::createCollection(const WriteHandle& wHandle,
 
     // 2. Queue a system event, this will take a copy of the manifest ready
     //    for persistence into the vb state file.
-    auto seqno = queueCollectionSystemEvent(wHandle,
-                                            vb,
-                                            identifiers.second,
-                                            collectionName,
-                                            entry,
-                                            false,
-                                            optionalSeqno,
-                                            {/*no callback*/});
+    auto seqno = queueCollectionSystemEvent(
+            wHandle,
+            vb,
+            identifiers.second,
+            collectionName,
+            entry,
+            false,
+            optionalSeqno,
+            vb.getSaveCreateCollectionCallback(
+                    identifiers.second, wHandle, collectionName));
 
     EP_LOG_INFO(
             "collections: {} create collection:id:{}, name:{} to "
@@ -392,6 +394,11 @@ void Manifest::dropCollection(WriteHandle& wHandle,
 // Method is cleaning up for insertions made in Manifest::dropCollection
 void Manifest::collectionDropPersisted(CollectionID cid, uint64_t seqno) {
     droppedCollections.wlock()->remove(cid, seqno);
+}
+
+// Method is cleaning up for insertions made in Manifest::addCollection
+void Manifest::collectionCreatePersisted(CollectionID cid, uint64_t seqno) {
+    createdCollections.wlock()->remove(cid, seqno);
 }
 
 const ManifestEntry& Manifest::getManifestEntry(CollectionID identifier) const {
@@ -719,6 +726,12 @@ void Manifest::saveDroppedCollection(CollectionID cid,
                                   droppedEntry.getHighSeqno()});
 }
 
+void Manifest::saveCreateCollection(CollectionID cid,
+                                    std::string_view collectionName,
+                                    uint64_t startSeqno) {
+    createdCollections.wlock()->insert(cid, startSeqno, collectionName);
+}
+
 StatsForFlush Manifest::getStatsForFlush(CollectionID cid,
                                          uint64_t seqno) const {
     auto mapItr = map.find(cid);
@@ -910,7 +923,9 @@ bool Manifest::addCollectionStats(Vbid vbid,
         }
     }
 
-    return droppedCollections.rlock()->addStats(vbid, collector);
+    droppedCollections.rlock()->addStats(vbid, collector);
+    createdCollections.rlock()->addStats(vbid, collector);
+    return true;
 }
 
 bool Manifest::addScopeStats(Vbid vbid, const StatCollector& collector) const {
@@ -1129,19 +1144,16 @@ std::optional<size_t> Manifest::DroppedCollections::size(
     return {};
 }
 
-bool Manifest::DroppedCollections::addStats(
+void Manifest::DroppedCollections::addStats(
         Vbid vbid, const StatCollector& collector) const {
     for (const auto& [cid, list] : droppedCollections) {
         for (const auto& entry : list) {
-            if (!entry.addStats(vbid, cid, collector)) {
-                return false;
-            }
+            entry.addStats(vbid, cid, collector);
         }
     }
-    return true;
 }
 
-bool Manifest::DroppedCollectionInfo::addStats(
+void Manifest::DroppedCollectionInfo::addStats(
         Vbid vbid, CollectionID cid, const StatCollector& collector) const {
     fmt::memory_buffer prefix;
     format_to(prefix, "vb_{}:{}", vbid.get(), cid);
@@ -1155,12 +1167,69 @@ bool Manifest::DroppedCollectionInfo::addStats(
         collector.addStat(std::string_view(key.data(), key.size()), statValue);
     };
 
-    addStat("start", start);
-    addStat("end", end);
-    addStat("items", itemCount);
-    addStat("disk", diskSize);
-    addStat("high_seqno", highSeqno);
-    return true;
+    addStat("dci_start", start);
+    addStat("dci_end", end);
+    addStat("dci_items", itemCount);
+    addStat("dci_disk", diskSize);
+    addStat("dci_high_seqno", highSeqno);
+}
+
+void Manifest::CreatedCollections::insert(CollectionID cid,
+                                          uint64_t startSeqno,
+                                          std::string_view name) {
+    auto [itr, emplaced] = createdCollections.try_emplace(
+            cid, CreatedCollectionInfo{startSeqno, name});
+    if (!emplaced) {
+        Expects(startSeqno > itr->second.start);
+        itr->second = CreatedCollectionInfo{startSeqno, name};
+    }
+}
+
+void Manifest::CreatedCollections::remove(CollectionID cid, uint64_t seqno) {
+    auto itr = createdCollections.find(cid);
+    if (itr != createdCollections.end() && seqno == itr->second.start) {
+        // Remove only if flush is equal
+        createdCollections.erase(itr);
+
+    } else {
+        std::stringstream ss;
+        ss << *this;
+
+        // Similar to above, we should find something
+        throw std::logic_error(
+                std::string(__PRETTY_FUNCTION__) +
+                " The collection@seqno cannot be found cid:" + cid.to_string() +
+                " seqno:" + std::to_string(seqno) + " " + ss.str());
+    }
+}
+
+size_t Manifest::CreatedCollections::size() const {
+    return createdCollections.size();
+}
+
+void Manifest::CreatedCollections::addStats(
+        Vbid vbid, const StatCollector& collector) const {
+    for (const auto& [cid, entry] : createdCollections) {
+        entry.addStats(vbid, cid, collector);
+    }
+}
+
+void Manifest::CreatedCollectionInfo::addStats(
+        Vbid vbid, CollectionID cid, const StatCollector& collector) const {
+    fmt::memory_buffer prefix;
+    format_to(prefix, "vb_{}:{}", vbid.get(), cid);
+    const auto addStat = [&prefix, &collector](const auto& statKey,
+                                               auto statValue) {
+        fmt::memory_buffer key;
+        format_to(key,
+                  "{}:{}",
+                  std::string_view{prefix.data(), prefix.size()},
+                  statKey);
+        collector.addStat(std::string_view(key.data(), key.size()), statValue);
+    };
+
+    addStat("cci_start", start);
+    addStat("cci_name", name);
 }
 
 std::ostream& operator<<(std::ostream& os,
@@ -1183,6 +1252,21 @@ std::ostream& operator<<(std::ostream& os,
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os,
+                         const Manifest::CreatedCollectionInfo& info) {
+    os << "CreatedCollectionInfo s:" << info.start << ", name:" << info.name;
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const Manifest::CreatedCollections& cc) {
+    for (const auto& [cid, entry] : cc.createdCollections) {
+        os << "CreatedCollections: cid:" << cid.to_string() << " " << entry
+           << std::endl;
+    }
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
     os << "VB::Manifest: "
        << "uid:" << manifest.manifestUid
@@ -1197,6 +1281,7 @@ std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
     }
 
     os << *manifest.droppedCollections.rlock() << std::endl;
+    os << *manifest.createdCollections.rlock() << std::endl;
 
     return os;
 }

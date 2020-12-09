@@ -211,7 +211,11 @@ Manifest::Manifest(std::string_view json)
 
             enableDefaultCollection(cidValue);
             scopeCollections.push_back(
-                    CollectionEntry{cidValue, cnameValue, maxTtl, sidValue});
+                    CollectionEntry{cidValue,
+                                    cnameValue,
+                                    std::make_shared<std::string>(cnameValue),
+                                    maxTtl,
+                                    sidValue});
         }
 
         this->scopes.emplace(sidValue,
@@ -334,7 +338,7 @@ nlohmann::json Manifest::toJson(
             // Include if the collection is visible
             if (isVisible(s.first, c.cid)) {
                 nlohmann::json collection;
-                collection["name"] = c.name;
+                collection["name"] = *c.jwwName;
                 collection["uid"] = fmt::format("{0:x}", uint32_t{c.cid});
                 if (c.maxTtl) {
                     collection["maxTTL"] = c.maxTtl.value().count();
@@ -420,7 +424,11 @@ Manifest::Manifest(std::string_view flatbufferData, Manifest::FlatBuffers tag)
 
             enableDefaultCollection(cid);
             scopeCollections.push_back(CollectionEntry{
-                    cid, collection->name()->str(), maxTtl, scope->scopeId()});
+                    cid,
+                    collection->name()->str(),
+                    std::make_shared<std::string>(collection->name()->str()),
+                    maxTtl,
+                    scope->scopeId()});
         }
 
         this->scopes.emplace(

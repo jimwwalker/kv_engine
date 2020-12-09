@@ -360,11 +360,11 @@ private:
                                                             uint64_t seqno);
 
     /**
-     * Iterate through the 'droppedCollections' container and call a function
-     * on the VB:Manifest to let it know the drop/seqno was persisted. This is
-     * only done from flushSuccess.
+     * Iterate through the create and dropped containers and call a function
+     * on the VB:Manifest to let it know the create and drop were persisted.
+     * This is only done from flushSuccess.
      */
-    void notifyManifestOfAnyDroppedCollections();
+    void notifyManifestOfPersistedCollections();
 
     /**
      * Called from the path of a successful flush.

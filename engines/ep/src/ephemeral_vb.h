@@ -280,6 +280,17 @@ public:
         return {};
     }
 
+    /**
+     * @return a std::function with no target - ephemeral buckets don't need
+     * this functionality
+     */
+    std::function<void(int64_t)> getSaveCreateCollectionCallback(
+            CollectionID cid,
+            Collections::VB::WriteHandle& writeHandle,
+            std::string_view collectionName) const override {
+        return {};
+    }
+
 protected:
     /* Data structure for in-memory sequential storage */
     std::unique_ptr<SequenceList> seqList;

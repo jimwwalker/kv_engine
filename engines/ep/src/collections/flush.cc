@@ -193,10 +193,10 @@ void Flush::postCommitMakeStatsVisible() {
 
 void Flush::flushSuccess(Vbid vbid, EPBucket& bucket) {
     try {
-        notifyManifestOfAnyDroppedCollections();
+        notifyManifestOfPersistedCollections();
     } catch (const std::exception& e) {
         EP_LOG_CRITICAL(
-                "Flush notifyManifestOfAnyDroppedCollections caught exception "
+                "Flush notifyManifestOfPersistedCollections caught exception "
                 "for {}",
                 vbid);
         EP_LOG_CRITICAL("{}", e.what());
@@ -205,9 +205,12 @@ void Flush::flushSuccess(Vbid vbid, EPBucket& bucket) {
     checkAndTriggerPurge(vbid, bucket);
 }
 
-void Flush::notifyManifestOfAnyDroppedCollections() {
+void Flush::notifyManifestOfPersistedCollections() {
     for (const auto& [cid, droppedData] : droppedCollections) {
         manifest.collectionDropPersisted(cid, droppedData.endSeqno);
+    }
+    for (const auto& [cid, createData] : collections) {
+        manifest.collectionCreatePersisted(cid, createData.high.startSeqno);
     }
 }
 

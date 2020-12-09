@@ -1036,6 +1036,14 @@ std::function<void(int64_t)> EPVBucket::getSaveDroppedCollectionCallback(
         writeHandle.saveDroppedCollection(cid, droppedEntry, droppedSeqno);
     };
 }
+std::function<void(int64_t)> EPVBucket::getSaveCreateCollectionCallback(
+        CollectionID cid,
+        Collections::VB::WriteHandle& writeHandle,
+        std::string_view collectionName) const {
+    return [&writeHandle, cid, collectionName](uint64_t createSeqno) {
+        writeHandle.saveCreateCollection(cid, collectionName, createSeqno);
+    };
+}
 
 void EPVBucket::postProcessRollback(const RollbackResult& rollbackResult,
                                     uint64_t prevHighSeqno,

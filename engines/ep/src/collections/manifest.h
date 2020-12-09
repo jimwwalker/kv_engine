@@ -42,6 +42,7 @@ static const size_t MaxScopeOrCollectionNameSize = 251;
 struct CollectionEntry {
     CollectionID cid;
     std::string name;
+    std::shared_ptr<std::string> jwwName;
     cb::ExpiryLimit maxTtl;
     ScopeID sid;
     bool operator==(const CollectionEntry& other) const;
@@ -328,12 +329,14 @@ private:
      * scopes stores all of the known scopes and the 'epoch' Manifest i.e.
      * default initialisation stores just the default scope.
      */
-    scopeContainer scopes = {{ScopeID::Default,
-                              {DefaultScopeName,
-                               {{CollectionID::Default,
-                                 DefaultCollectionName,
-                                 cb::NoExpiryLimit,
-                                 ScopeID::Default}}}}};
+    scopeContainer scopes = {
+            {ScopeID::Default,
+             {DefaultScopeName,
+              {{CollectionID::Default,
+                DefaultCollectionName,
+                std::make_shared<std::string>(DefaultCollectionName),
+                cb::NoExpiryLimit,
+                ScopeID::Default}}}}};
     collectionContainer collections;
     ManifestUid uid{0};
     bool force{false};
