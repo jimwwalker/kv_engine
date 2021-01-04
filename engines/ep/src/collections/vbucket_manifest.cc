@@ -147,6 +147,10 @@ void Manifest::updateUid(ManifestUid uid, bool reset) {
 // read (using UpgradeHolder) to write
 ManifestUpdateStatus Manifest::update(::VBucket& vb,
                                       const Collections::Manifest& manifest) {
+    if (manifes.isForcedUpdate()) {
+        return doForcedUpdate(vb, manifest);
+    }
+
     mutex_type::UpgradeHolder upgradeLock(rwlock);
     auto status = canUpdate(manifest);
     if (status != ManifestUpdateStatus::Success) {
@@ -181,6 +185,19 @@ ManifestUpdateStatus Manifest::update(::VBucket& vb,
     }
 
     completeUpdate(std::move(upgradeLock), vb, changes);
+    return ManifestUpdateStatus::Success;
+}
+
+ManifestUpdateStatus Manifest::doForcedUpdate(
+        ::VBucket& vb, const Collections::Manifest& manifest) {
+    // Special case update that needs to perform extra steps to move to the
+    // state in the manifest.
+    // We allow scope moves, name changes etc...
+
+    // need to read the collection name to begin, hmms
+    // 1) Try the collection create thing
+    // 2) if fail do a get (ephemeral returns, persistent ewould block)
+
     return ManifestUpdateStatus::Success;
 }
 
@@ -1201,6 +1218,14 @@ void Manifest::CreatedCollections::remove(CollectionID cid, uint64_t seqno) {
                 " The collection@seqno cannot be found cid:" + cid.to_string() +
                 " seqno:" + std::to_string(seqno) + " " + ss.str());
     }
+}
+
+bool Manifest::CreatedCollections::exists(CollectionID cid) {
+    return createdCollections.count(cid) != 0;
+}
+
+CreatedCollectionInfo Manifest::CreatedCollections::get(CollectionID cid) {
+    return createdCollections[cid];
 }
 
 size_t Manifest::CreatedCollections::size() const {

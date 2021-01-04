@@ -180,6 +180,9 @@ public:
     ManifestUpdateStatus update(::VBucket& vb,
                                 const Collections::Manifest& manifest);
 
+    ManifestUpdateStatus doForcedUpdate(::VBucket& vb,
+                                        const Collections::Manifest& manifest);
+
     /**
      * Callback from flusher that the drop of collection with the given seqno
      * was successfully persisted. This method does not need the wlock/rlock
@@ -861,19 +864,6 @@ protected:
         uint64_t highSeqno{0};
     };
 
-    // Information we need to retain for a collection that is created but the
-    // create event has not been persisted by the flusher.
-    struct CreatedCollectionInfo {
-        CreatedCollectionInfo(uint64_t start, std::string_view name)
-            : start{start}, name{name} {
-        }
-        void addStats(Vbid vbid,
-                      CollectionID cid,
-                      const StatCollector& collector) const;
-        uint64_t start{0};
-        std::string name;
-    };
-
     // collections move from the Manifest::map to this "container" when they
     // are dropped and are removed from this container once the drop system
     // event is persisted.
@@ -899,12 +889,27 @@ protected:
     // lockout readers of the manifest when removing elements
     folly::Synchronized<DroppedCollections> droppedCollections;
 
+    // Information we need to retain for a collection that is created but the
+    // create event has not been persisted by the flusher.
+    struct CreatedCollectionInfo {
+        CreatedCollectionInfo(uint64_t start, std::string_view name)
+            : start{start}, name{name} {
+        }
+        void addStats(Vbid vbid,
+                      CollectionID cid,
+                      const StatCollector& collector) const;
+        uint64_t start{0};
+        std::string name;
+    };
+
     class CreatedCollections {
     public:
         void insert(CollectionID cid,
                     uint64_t startSeqno,
                     std::string_view name);
         void remove(CollectionID cid, uint64_t seqno);
+        bool exists(CollectionID cid);
+        CreatedCollectionInfo get(CollectionID cid /*seqno search??*/);
         void addStats(Vbid vbid, const StatCollector& collector) const;
 
         /// @return size of the map
