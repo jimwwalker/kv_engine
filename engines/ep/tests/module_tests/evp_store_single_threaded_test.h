@@ -26,6 +26,7 @@
 #include <libcouchstore/couch_db.h>
 #include <nlohmann/json.hpp>
 
+class CollectionsManifest;
 struct DcpMessageProducersIface;
 class EPBucket;
 class MockActiveStreamWithOverloadedRegisterCursor;
@@ -181,7 +182,7 @@ public:
      */
     cb::engine_errc setCollections(
             const void* cookie,
-            std::string_view json,
+            const CollectionsManifest& manifest,
             cb::engine_errc status1 = cb::engine_errc::would_block);
 
     /// @return the size of the future queue for the given task type

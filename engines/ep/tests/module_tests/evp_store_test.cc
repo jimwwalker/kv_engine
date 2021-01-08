@@ -701,8 +701,7 @@ void EPBucketFullEvictionTest::compactionFindsNonResidentItem(
     if (dropCollection) {
         CollectionsManifest cm;
         cm.remove(CollectionEntry::defaultC);
-        EXPECT_EQ(setCollections(cookie, std::string{cm}),
-                  cb::engine_errc::success);
+        EXPECT_EQ(setCollections(cookie, cm), cb::engine_errc::success);
         expectedExpiredItems = 0;
         flushVBucketToDiskIfPersistent(vbid, 1);
     } else {
