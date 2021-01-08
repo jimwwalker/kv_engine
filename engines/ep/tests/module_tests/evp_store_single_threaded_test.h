@@ -174,13 +174,40 @@ public:
     void replaceCouchKVStoreWithMock();
 
     /**
-     * Set the collections manifest using the engine API (and drive any tasks)
+     * Set the collections manifest using the engine API, will select force or
+     * non-forced update based on the manifest.isForced() value
      * @param cookie a cookie is needed for i/o callback
-     * @param json the manifest JSON to set
+     * @param the manifest to set
      * @param status1 the first call to set_collection_manifest expected result
      *        usually would_block
      */
     cb::engine_errc setCollections(
+            const void* cookie,
+            const CollectionsManifest& manifest,
+            cb::engine_errc status1 = cb::engine_errc::would_block);
+
+    /**
+     * Set the collections manifest using the engine API and drive the
+     * non-forced update task(s).
+     * @param cookie a cookie is needed for i/o callback
+     * @param manifest the manifest to set
+     * @param status1 the first call to set_collection_manifest expected result
+     *        usually would_block
+     */
+    cb::engine_errc setCollectionsNoForce(
+            const void* cookie,
+            const CollectionsManifest& manifest,
+            cb::engine_errc status1 = cb::engine_errc::would_block);
+
+    /**
+     * Set the collections manifest using the engine API and drive the
+     * forced update task(s).
+     * @param cookie a cookie is needed for i/o callback
+     * @param manifest the manifest to set
+     * @param status1 the first call to set_collection_manifest expected result
+     *        usually would_block
+     */
+    cb::engine_errc setCollectionsForced(
             const void* cookie,
             const CollectionsManifest& manifest,
             cb::engine_errc status1 = cb::engine_errc::would_block);

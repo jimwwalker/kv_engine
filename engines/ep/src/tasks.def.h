@@ -43,6 +43,7 @@ TASK(WarmupLoadAccessLog, READER_TASK_IDX, 0)
 TASK(WarmupLoadingKVPairs, READER_TASK_IDX, 0)
 TASK(WarmupLoadingData, READER_TASK_IDX, 0)
 TASK(WarmupCompletion, READER_TASK_IDX, 0)
+TASK(ForcedCollectionsUpdate, READER_TASK_IDX, 1)
 TASK(VKeyStatBGFetchTask, READER_TASK_IDX, 3)
 
 // Aux IO tasks

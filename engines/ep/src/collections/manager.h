@@ -249,6 +249,14 @@ private:
                                           const void* cookie);
 
     /**
+     * Part of the update code, this function schedule 1 task per KVShard to
+     * do the forced update from a background task.
+     */
+    cb::engine_error scheduleForcedUpdate(KVBucket& bucket,
+                                          std::unique_ptr<Manifest> newManifest,
+                                          const void* cookie);
+
+    /**
      * Final stage of the manifest update is to roll the new manifest out to
      * the active vbuckets.
      *
@@ -353,6 +361,9 @@ private:
 
     /// Serialise updates to the manifest (set_collections core)
     folly::Synchronized<const void*> updateInProgress{nullptr};
+
+    /// A pointer to the Manifest when the background update runs
+    std::unique_ptr<Manifest> updateForcedManifest;
 };
 
 std::ostream& operator<<(std::ostream& os, const Manager& manager);

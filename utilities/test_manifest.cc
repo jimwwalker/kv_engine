@@ -239,6 +239,10 @@ void CollectionsManifest::setForce(bool force) {
     json["force"] = force;
 }
 
+bool CollectionsManifest::isForce() const {
+    return json.value("force", false);
+}
+
 std::string CollectionsManifest::toJson() const {
     return json.dump();
 }

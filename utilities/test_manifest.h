@@ -213,6 +213,8 @@ public:
 
     void setForce(bool force);
 
+    bool isForce() const;
+
     /// Most interfaces require std::string manifest
     operator std::string() const {
         return toJson();

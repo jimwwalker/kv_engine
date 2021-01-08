@@ -238,6 +238,7 @@ SET(CONFIG_SOURCE src/configuration.cc
 SET(COLLECTIONS_SOURCE src/collections/collections_types.cc
                        src/collections/eraser_context.cc
                        src/collections/flush.cc
+                       src/collections/forced_update.cc
                        src/collections/kvstore.cc
                        src/collections/manager.cc
                        src/collections/manifest.cc

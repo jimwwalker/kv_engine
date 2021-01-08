@@ -412,8 +412,15 @@ cb::engine_errc SingleThreadedKVBucketTest::setCollections(
         const void* c,
         const CollectionsManifest& manifest,
         cb::engine_errc status1) {
-    std::string json{manifest};
+    if (manifest.isForce()) {
+        return setCollectionsForced(cookie, manifest, status1);
+    }
+    return setCollectionsNoForce(cookie, manifest, status1);
+}
 
+cb::engine_errc SingleThreadedKVBucketTest::setCollectionsNoForce(
+        const void* c, const CollectionsManifest& manifest, cb::engine_errc status1) {
+    std::string json{manifest};
     auto status = engine->set_collection_manifest(c, json);
     if (!isPersistent()) {
         return status;
@@ -433,6 +440,52 @@ cb::engine_errc SingleThreadedKVBucketTest::setCollections(
     // Cookie now success
     EXPECT_EQ(ENGINE_SUCCESS, cookie_to_mock_cookie(c)->status);
 
+    status = engine->set_collection_manifest(c, json);
+    EXPECT_EQ(cb::engine_errc::success, status);
+    return status;
+}
+
+cb::engine_errc SingleThreadedKVBucketTest::setCollectionsForced(
+        const void* c,const CollectionsManifest& manifest, cb::engine_errc status1) {
+    std::string json{manifest};
+
+    auto status = engine->set_collection_manifest(c, json);
+    // Ephemeral completes the forced update with no background tasks
+    if (!isPersistent()) {
+        return status;
+    }
+    EXPECT_EQ(status1, status);
+
+    if (status != cb::engine_errc::would_block) {
+        return status;
+    }
+
+    auto& lpAuxioQ = *task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
+
+    cookie_to_mock_cookie(c)->status = ENGINE_FAILED;
+
+    runNextTask(lpAuxioQ);
+
+    // Cookie now success
+    EXPECT_EQ(ENGINE_SUCCESS, cookie_to_mock_cookie(c)->status);
+
+    // Go again, ewouldblock though because the force must run on the reader
+    // task(s)
+    status = engine->set_collection_manifest(c, json);
+    EXPECT_EQ(cb::engine_errc::would_block, status);
+
+    auto& readers = *task_executor->getLpTaskQ()[READER_TASK_IDX];
+    cookie_to_mock_cookie(c)->status = ENGINE_FAILED;
+
+    for (size_t i = 0; i < engine->getKVBucket()->getVBuckets().getNumShards();
+         i++) {
+        runNextTask(readers);
+    }
+
+    // Cookie now success
+    EXPECT_EQ(ENGINE_SUCCESS, cookie_to_mock_cookie(c)->status);
+
+    // Now expect success that all background tasks are complete
     status = engine->set_collection_manifest(c, json);
     EXPECT_EQ(cb::engine_errc::success, status);
     return status;

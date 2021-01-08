@@ -2968,6 +2968,12 @@ void CollectionsDcpParameterizedTest::replicateForcedUpdate(uint64_t newUid,
     cm.setForce(true);
     setCollections(cookie, cm);
 
+    // New UID and vegetable should be 'visible' on the active VB
+    EXPECT_TRUE(store->getVBucket(vbid)->lockCollections().exists(
+            CollectionEntry::vegetable));
+    EXPECT_EQ(newUid,
+              store->getVBucket(vbid)->lockCollections().getManifestUid());
+
     notifyAndStepToCheckpoint();
     // Now step the producer to transfer the next collection creation
     stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent);

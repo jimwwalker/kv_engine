@@ -18,11 +18,13 @@
 #include "collections/manager.h"
 #include "bucket_logger.h"
 #include "collections/flush.h"
+#include "collections/forced_update.h"
 #include "collections/manifest.h"
 #include "collections/persist_manifest_task.h"
 #include "collections/vbucket_manifest_handles.h"
 #include "ep_bucket.h"
 #include "ep_engine.h"
+#include "executorpool.h"
 #include "kv_bucket.h"
 #include "string_utils.h"
 #include "vb_visitors.h"
@@ -66,15 +68,29 @@ cb::engine_error Collections::Manager::update(KVBucket& bucket,
                                     "Collections::Manager::update failure");
         }
 
-        // Final stage of update now happening, clear the cookie and engine
-        // specific so the next update can start after this one returns.
-        *lockedUpdateCookie = nullptr;
-        bucket.getEPEngine().storeEngineSpecific(cookie, nullptr);
-
         // Take ownership back of the manifest so it destructs/frees on return
         std::unique_ptr<Manifest> newManifest(
                 reinterpret_cast<Manifest*>(manifest));
-        return updateFromIOComplete(bucket, std::move(newManifest), cookie);
+        cb::engine_error status(cb::engine_errc::success, "");
+        if (updateForcedManifest) {
+            // Update was completed by the background forced update, the
+            // manifest can now be deleted and success returned
+            updateForcedManifest.reset();
+            status = cb::engine_error(
+                    cb::engine_errc::success,
+                    "Collections::Manager::update force applied new manifest");
+        } else {
+            status = updateFromIOComplete(
+                    bucket, std::move(newManifest), cookie);
+        }
+
+        if (status.code() != cb::engine_errc::would_block) {
+            // Final stage of update now done, clear the cookie and engine
+            // specific so the next update can start after this one returns.
+            *lockedUpdateCookie = nullptr;
+            bucket.getEPEngine().storeEngineSpecific(cookie, nullptr);
+        }
+        return status;
     }
 
     // Construct a new Manifest (ctor will throw if JSON was illegal)
@@ -118,12 +134,48 @@ cb::engine_error Collections::Manager::update(KVBucket& bucket,
                             "Collections::Manager::update part one complete");
 }
 
+// This function is invoked for persistent buckets only, at this stage the new
+// manifest has now been stored and KV will move ahead to make per-vbucket
+// updates.
 cb::engine_error Collections::Manager::updateFromIOComplete(
         KVBucket& bucket,
         std::unique_ptr<Manifest> newManifest,
         const void* cookie) {
+    // In the case of a forced update, process the update via a different path.
+    // This is expected to be rare and may require reading state from storage
+    // that we don't keep in memory.
+    if (newManifest->isForcedUpdate()) {
+        EP_LOG_WARN(
+                "Collections::Manager::update is being forced, scheduling the "
+                "update");
+        return scheduleForcedUpdate(bucket, std::move(newManifest), cookie);
+    }
+
     auto current = currentManifest.ulock(); // Will update to newManifest
     return applyNewManifest(bucket, current, std::move(newManifest));
+}
+
+cb::engine_error Collections::Manager::scheduleForcedUpdate(
+        KVBucket& bucket,
+        std::unique_ptr<Manifest> newManifest,
+        const void* cookie) {
+    auto completionData = std::make_shared<ForcedUpdateTask::CompletionData>(
+            bucket.getVBuckets().getNumShards());
+    for (KVShard::id_type i = 0; i < completionData->totalShards; i++) {
+        ExTask task = std::make_shared<ForcedUpdateTask>(
+                dynamic_cast<EPBucket&>(bucket),
+                i,
+                *newManifest,
+                completionData,
+                cookie);
+        ExecutorPool::get()->schedule(task);
+    }
+
+    // The newManifest must be kept alive until the background tasks are done,
+    // this also allows the notifyIOComplete to process correctly
+    updateForcedManifest = std::move(newManifest);
+    return cb::engine_error(cb::engine_errc::would_block,
+                            "Collections::Manager::blocked for forced update");
 }
 
 // common to ephemeral/persistent, this does the update
