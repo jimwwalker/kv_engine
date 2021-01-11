@@ -15,6 +15,7 @@
  *   limitations under the License.
  */
 
+#include "collections/manager.h"
 #include "collections/vbucket_manifest.h"
 #include "ep_vb.h"
 #include "failover-table.h"
@@ -44,24 +45,25 @@ public:
         default:
             FAIL() << "Invalid input param(0) value:" << state.range(0);
         }
-        vbucket.reset(
-                new EPVBucket(Vbid(0),
-                              vbucket_state_active,
-                              globalStats,
-                              checkpointConfig,
-                              /*kvshard*/ nullptr,
-                              /*lastSeqno*/ 1000,
-                              /*lastSnapStart*/ 0,
-                              /*lastSnapEnd*/ 0,
-                              /*table*/ nullptr,
-                              std::make_shared<DummyCB>(),
-                              /*newSeqnoCb*/ nullptr,
-                              [](Vbid) { return; },
-                              NoopSyncWriteCompleteCb,
-                              NoopSeqnoAckCb,
-                              config,
-                              evictionPolicy,
-                              std::make_unique<Collections::VB::Manifest>()));
+        vbucket.reset(new EPVBucket(
+                Vbid(0),
+                vbucket_state_active,
+                globalStats,
+                checkpointConfig,
+                /*kvshard*/ nullptr,
+                /*lastSeqno*/ 1000,
+                /*lastSnapStart*/ 0,
+                /*lastSnapEnd*/ 0,
+                /*table*/ nullptr,
+                std::make_shared<DummyCB>(),
+                /*newSeqnoCb*/ nullptr,
+                [](Vbid) { return; },
+                NoopSyncWriteCompleteCb,
+                NoopSeqnoAckCb,
+                config,
+                evictionPolicy,
+                std::make_unique<Collections::VB::Manifest>(
+                        std::make_shared<Collections::Manager>())));
 
         populateVbucket();
     }

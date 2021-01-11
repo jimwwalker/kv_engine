@@ -46,21 +46,24 @@ public:
 protected:
     void SetUp() override {
         /* to test ephemeral vbucket specific stuff */
-        mockEpheVB = new MockEphemeralVBucket(Vbid(0),
-                                              vbucket_state_active,
-                                              global_stats,
-                                              checkpoint_config,
-                                              /*kvshard*/ nullptr,
-                                              /*lastSeqno*/ 0,
-                                              /*lastSnapStart*/ 0,
-                                              /*lastSnapEnd*/ 0,
-                                              /*table*/ nullptr,
-                                              /*newSeqnoCb*/ nullptr,
-                                              SyncWriteResolvedCallback{},
-                                              NoopSyncWriteCompleteCb,
-                                              NoopSeqnoAckCb,
-                                              config,
-                                              EvictionPolicy::Value);
+        mockEpheVB = new MockEphemeralVBucket(
+                Vbid(0),
+                vbucket_state_active,
+                global_stats,
+                checkpoint_config,
+                /*kvshard*/ nullptr,
+                /*lastSeqno*/ 0,
+                /*lastSnapStart*/ 0,
+                /*lastSnapEnd*/ 0,
+                /*table*/ nullptr,
+                /*newSeqnoCb*/ nullptr,
+                SyncWriteResolvedCallback{},
+                NoopSyncWriteCompleteCb,
+                NoopSeqnoAckCb,
+                config,
+                EvictionPolicy::Value,
+                std::make_unique<Collections::VB::Manifest>(
+                        std::make_shared<Collections::Manager>()));
         /* vbucket manages the life time of mockEpheVB and is a base test class
            ptr of owning type */
         vbucket.reset(mockEpheVB);

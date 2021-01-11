@@ -284,6 +284,10 @@ private:
     mutable cb::RelaxedAtomic<uint64_t> numOpsDelete;
     //! The number of basic get operations
     mutable cb::RelaxedAtomic<uint64_t> numOpsGet;
+
+    // The name, which is shared because every vbucket *should* have the same
+    // name for the collection. But at points we may have differing views
+    std::shared_ptr<std::string> name;
 };
 
 std::ostream& operator<<(std::ostream& os, const ManifestEntry& manifestEntry);

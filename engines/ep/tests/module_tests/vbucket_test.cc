@@ -61,24 +61,25 @@ VBucketTestBase::VBucketTestBase(VBType vbType,
 
     switch (vbType) {
     case VBType::Persistent:
-        vbucket.reset(
-                new EPVBucket(vbid,
-                              vbucket_state_active,
-                              global_stats,
-                              checkpoint_config,
-                              /*kvshard*/ nullptr,
-                              lastSeqno,
-                              range.getStart(),
-                              range.getEnd(),
-                              std::make_unique<FailoverTable>(1 /*capacity*/),
-                              /*flusher callback*/ nullptr,
-                              /*newSeqnoCb*/ nullptr,
-                              noOpSyncWriteResolvedCb,
-                              TracedSyncWriteCompleteCb,
-                              NoopSeqnoAckCb,
-                              config,
-                              eviction_policy,
-                              std::make_unique<Collections::VB::Manifest>()));
+        vbucket.reset(new EPVBucket(
+                vbid,
+                vbucket_state_active,
+                global_stats,
+                checkpoint_config,
+                /*kvshard*/ nullptr,
+                lastSeqno,
+                range.getStart(),
+                range.getEnd(),
+                std::make_unique<FailoverTable>(1 /*capacity*/),
+                /*flusher callback*/ nullptr,
+                /*newSeqnoCb*/ nullptr,
+                noOpSyncWriteResolvedCb,
+                TracedSyncWriteCompleteCb,
+                NoopSeqnoAckCb,
+                config,
+                eviction_policy,
+                std::make_unique<Collections::VB::Manifest>(
+                        std::make_shared<Collections::Manager>())));
         break;
     case VBType::Ephemeral: {
         vbucket.reset(new MockEphemeralVBucket(
@@ -96,7 +97,9 @@ VBucketTestBase::VBucketTestBase(VBType vbType,
                 TracedSyncWriteCompleteCb,
                 NoopSeqnoAckCb,
                 config,
-                eviction_policy));
+                eviction_policy,
+                std::make_unique<Collections::VB::Manifest>(
+                        std::make_shared<Collections::Manager>())));
         break;
     }
     }

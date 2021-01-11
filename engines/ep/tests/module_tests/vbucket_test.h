@@ -18,6 +18,7 @@
 
 #include "callbacks.h"
 #include "checkpoint_config.h"
+#include "collections/manager.h"
 #include "configuration.h"
 #include "hash_table.h"
 #include "stats.h"

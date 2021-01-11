@@ -263,6 +263,7 @@ public:
      */
     void postProcessRollback(const RollbackResult& rollbackResult,
                              uint64_t prevHighSeqno,
+                             KVBucket& bucket,
                              KVStore& kvstore);
 
     /**
@@ -362,7 +363,7 @@ private:
      *
      * @param kvstore A KVStore that is used for retrieving stored metadata
      */
-    void collectionsRolledBack(KVStore& kvstore);
+    void collectionsRolledBack(KVBucket& bucket, KVStore& kvstore);
 
     /**
      * Total number of alive (non-deleted), Committed items on-disk in this

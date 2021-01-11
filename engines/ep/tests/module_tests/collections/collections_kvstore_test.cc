@@ -17,6 +17,7 @@
 
 #include "checkpoint_config.h"
 #include "checkpoint_manager.h"
+#include "collections/manager.h"
 #include "configuration.h"
 #include "ep_vb.h"
 #include "failover-table.h"
@@ -66,7 +67,8 @@ public:
                   NoopSeqnoAckCb,
                   config,
                   EvictionPolicy::Value,
-                  std::make_unique<Collections::VB::Manifest>()) {
+                  std::make_unique<Collections::VB::Manifest>(
+                          std::make_shared<Collections::Manager>())) {
     }
 
     void getEventsFromCheckpoint(std::vector<queued_item>& events) {

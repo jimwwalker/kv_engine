@@ -34,12 +34,15 @@
 
 namespace Collections::VB {
 
-Manifest::Manifest() : scopes({{ScopeID::Default}}) {
+Manifest::Manifest(const std::shared_ptr<Manager>& manager)
+    : scopes({{ScopeID::Default}}), manager(manager) {
     addNewCollectionEntry({ScopeID::Default, CollectionID::Default}, {});
 }
 
-Manifest::Manifest(const KVStore::Manifest& data)
+Manifest::Manifest(const std::shared_ptr<Manager>& manager,
+                   const KVStore::Manifest& data)
     : manifestUid(data.manifestUid),
+      manager(manager),
       dropInProgress(data.droppedCollectionsExist) {
     for (const auto& scope : data.scopes) {
         scopes.insert(scope.metaData.sid);

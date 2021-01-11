@@ -698,6 +698,10 @@ public:
 
     Collections::Manager& getCollectionsManager();
 
+    // comment needed
+    const std::shared_ptr<Collections::Manager>& getSharedCollectionsManager()
+            const;
+
     bool isXattrEnabled() const;
 
     void setXattrEnabled(bool value);
@@ -812,6 +816,7 @@ protected:
 
     EventuallyPersistentEngine     &engine;
     EPStats                        &stats;
+    std::shared_ptr<Collections::Manager> collectionsManager;
     VBucketMap                      vbMap;
     ExTask itemPagerTask;
     ExTask                          chkTask;
@@ -868,7 +873,6 @@ protected:
     std::atomic<size_t> lastTransTimePerItem;
     EvictionPolicy eviction_policy;
 
-    std::unique_ptr<Collections::Manager> collectionsManager;
 
     /**
      * Status of XATTR support for this bucket - this is set from the

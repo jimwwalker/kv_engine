@@ -1041,6 +1041,7 @@ std::function<void(int64_t)> EPVBucket::getSaveDroppedCollectionCallback(
 
 void EPVBucket::postProcessRollback(const RollbackResult& rollbackResult,
                                     uint64_t prevHighSeqno,
+                                    KVBucket& bucket,
                                     KVStore& kvstore) {
     failovers->pruneEntries(rollbackResult.highSeqno);
     checkpointManager->clear(*this, rollbackResult.highSeqno);
@@ -1052,13 +1053,15 @@ void EPVBucket::postProcessRollback(const RollbackResult& rollbackResult,
     setPersistenceSeqno(kvstore.getLastPersistedSeqno(getId()));
 
     // And update collections post rollback
-    collectionsRolledBack(kvstore);
+    collectionsRolledBack(bucket, kvstore);
 
     setNumTotalItems(kvstore);
 }
 
-void EPVBucket::collectionsRolledBack(KVStore& kvstore) {
+void EPVBucket::collectionsRolledBack(KVBucket& bucket, KVStore& kvstore) {
+    // manifest->rollback(kvstore.getCollectionsManager()); /or destruct?
     manifest = std::make_unique<Collections::VB::Manifest>(
+            bucket.getSharedCollectionsManager(),
             kvstore.getCollectionsManifest(getId()));
     auto kvstoreContext = kvstore.makeFileHandle(getId());
     auto wh = manifest->wlock();
