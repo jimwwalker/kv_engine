@@ -3115,6 +3115,68 @@ TEST_P(CollectionsDcpParameterizedTest, force_update_multiple_changes) {
     flushVBucketToDiskIfPersistent(replicaVB, 2);
 }
 
+// Demonstrate we can detect a 'split' in the collection state (i.e. cluster
+// partition). The test adds 'fruit' to 'shop1' scope in the current manifest
+// yet drives the replicas so that the same collection (id) is in a different
+// scope.
+TEST_P(CollectionsDcpParameterizedTest, replica_active_state_diverge) {
+    // First switch vbid to replica
+    store->setVBucketState(vbid, vbucket_state_replica);
+
+    // Now set the manifest so that fruit is in shop collection
+    CollectionsManifest cm;
+    cm.add(ScopeEntry::shop1);
+    cm.add(CollectionEntry::fruit, ScopeEntry::shop1);
+    setCollections(cookie, cm);
+
+    // Now drive vbid as a replica, and place fruit in default collection
+    ASSERT_EQ(ENGINE_SUCCESS,
+              consumer->addStream(/*opaque*/ 0, vbid, /*flags*/ 0));
+
+    std::string collection = "fruit";
+    CollectionID cid = CollectionEntry::fruit.getId();
+    Collections::ManifestUid manifestUid(cm.getUid());
+    Collections::CreateEventData createEventData{
+            manifestUid, {ScopeID::Default, cid, collection, {/*no ttl*/}}};
+    Collections::CreateEventDcpData createEventDcpData{createEventData};
+
+    ASSERT_EQ(ENGINE_SUCCESS,
+              consumer->snapshotMarker(/*opaque*/ 2,
+                                       vbid,
+                                       /*start_seqno*/ 0,
+                                       /*end_seqno*/ 100,
+                                       /*flags*/ 0,
+                                       /*HCS*/ {},
+                                       /*maxVisibleSeqno*/ {}));
+
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Call the consumer function for handling DCP events
+    // create the fruit collection
+    EXPECT_EQ(ENGINE_SUCCESS,
+              consumer->systemEvent(
+                      /*opaque*/ 2,
+                      vbid,
+                      mcbp::systemevent::id::CreateCollection,
+                      /*seqno*/ 1,
+                      mcbp::systemevent::version::version0,
+                      {reinterpret_cast<const uint8_t*>(collection.data()),
+                       collection.size()},
+                      {reinterpret_cast<const uint8_t*>(&createEventDcpData),
+                       Collections::CreateEventDcpData::size}));
+
+    // We can now access the collection
+    EXPECT_TRUE(vb->lockCollections().doesKeyContainValidCollection(
+            StoredDocKey{"apple", CollectionEntry::fruit}));
+
+    // Now set state to active, which has to ensure the replica is current with
+    // the 'node'. This will fail because the switch over to active notices that
+    // the replica has matching collections with different immutable state, in
+    // this case the scope.
+    EXPECT_EQ(ENGINE_FAILED,
+              store->setVBucketState(vbid, vbucket_state_active));
+}
+
 // Test cases which run for persistent and ephemeral buckets
 INSTANTIATE_TEST_SUITE_P(CollectionsDcpEphemeralOrPersistent,
                          CollectionsDcpParameterizedTest,
