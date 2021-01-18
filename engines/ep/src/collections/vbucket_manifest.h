@@ -313,21 +313,27 @@ protected:
      * @param changes a vector of CollectionIDs to add/delete (based on update)
      * @return the last element of the changes vector
      */
-    std::optional<CollectionCreation> applyCreates(const WriteHandle& wHandle,
-                                                   ::VBucket& vb,
-                                                   ManifestChanges& changes);
+    std::optional<CollectionCreation> applyCreates(
+            const WriteHandle& wHandle,
+            ::VBucket& vb,
+            std::vector<CollectionCreation>& changes,
+            bool isForce);
 
-    std::optional<CollectionID> applyDeletions(WriteHandle& wHandle,
-                                               ::VBucket& vb,
-                                               ManifestChanges& changes);
+    std::optional<CollectionID> applyDrops(WriteHandle& wHandle,
+                                           ::VBucket& vb,
+                                           std::vector<CollectionID>& changes,
+                                           bool isForce);
 
-    std::optional<ScopeCreation> applyScopeCreates(const WriteHandle& wHandle,
-                                                   ::VBucket& vb,
-                                                   ManifestChanges& changes);
+    std::optional<ScopeCreation> applyScopeCreates(
+            const WriteHandle& wHandle,
+            ::VBucket& vb,
+            std::vector<ScopeCreation>& changes,
+            bool isForce);
 
     std::optional<ScopeID> applyScopeDrops(const WriteHandle& wHandle,
                                            ::VBucket& vb,
-                                           ManifestChanges& changes);
+                                           std::vector<ScopeID>& scopesToDrop,
+                                           bool isForce);
 
     /**
      * Create a collection in the vbucket
