@@ -18,6 +18,7 @@
 #pragma once
 
 #include "collections/collections_types.h"
+
 #include "memcached/engine_common.h"
 
 #include <platform/non_negative_counter.h>
@@ -40,25 +41,18 @@ namespace VB {
  */
 class ManifestEntry {
 public:
-    ManifestEntry(ScopeID scopeID, cb::ExpiryLimit maxTtl, uint64_t startSeqno)
+    ManifestEntry(const CollectionSharedMetaData& meta, uint64_t startSeqno)
         : startSeqno(startSeqno),
-          scopeID(scopeID),
-          maxTtl(std::move(maxTtl)),
           itemCount(0),
           highSeqno(startSeqno),
-          persistedHighSeqno(startSeqno) {
+          persistedHighSeqno(startSeqno),
+          meta(meta) {
     }
 
-    /**
-     * Explicitly define the copy constructor otherwise it would be
-     * implicitly deleted via the deleted copy constructor in std::atomic
-     * (which is used inside highSeqno - AtomicMonotonic). This is required for
-     * using ManifestEntries in an unordered_map.
-     */
-    ManifestEntry(const ManifestEntry& other);
-    ManifestEntry& operator=(const ManifestEntry& other);
-
     bool operator==(const ManifestEntry& other) const;
+    bool operator!=(const ManifestEntry& other) const {
+        return !(*this == other);
+    }
 
     uint64_t getStartSeqno() const {
         return startSeqno;
@@ -76,11 +70,11 @@ public:
     }
 
     ScopeID getScopeID() const {
-        return scopeID;
+        return meta.scope;
     }
 
     cb::ExpiryLimit getMaxTtl() const {
-        return maxTtl;
+        return meta.maxTtl;
     }
 
     /// increment how many items are stored for this collection
@@ -193,6 +187,14 @@ public:
                 getOpsGet()};
     }
 
+    std::string_view getName() const {
+        return meta.name;
+    }
+
+    const CollectionSharedMetaData& getMeta() const {
+        return meta;
+    }
+
 private:
     /**
      * Return a string for use in throwException, returns:
@@ -224,12 +226,6 @@ private:
      * the start-seqno are logically deleted
      */
     uint64_t startSeqno;
-
-    /// The scope the collection belongs to
-    ScopeID scopeID;
-
-    /// The maxTTL of the collection
-    cb::ExpiryLimit maxTtl;
 
     /**
      * The count of items in this collection
@@ -285,9 +281,14 @@ private:
     //! The number of basic get operations
     mutable cb::RelaxedAtomic<uint64_t> numOpsGet;
 
-    // The name, which is shared because every vbucket *should* have the same
-    // name for the collection. But at points we may have differing views
-    std::shared_ptr<std::string> name;
+    /**
+     * The name associated with this collection ID (for this vbucket). This is
+     * not owned, but shared with all collection entries to avoid bloat if the
+     * names are large (a name can be 251 bytes). This also allows vbuckets to
+     * differ their view of cid->name which can happen with the loss of
+     * consensus.
+     */
+    const CollectionSharedMetaData& meta;
 };
 
 std::ostream& operator<<(std::ostream& os, const ManifestEntry& manifestEntry);

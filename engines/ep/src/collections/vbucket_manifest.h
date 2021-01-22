@@ -124,6 +124,8 @@ public:
     explicit Manifest(const std::shared_ptr<Manager>& manager,
                       const KVStore::Manifest& data);
 
+    ~Manifest();
+
     /**
      * @return ReadHandle, no iterator is held on the collection container
      */
@@ -685,18 +687,37 @@ protected:
                          Summary& summary) const;
 
     /**
-     * Add a collection entry to the manifest specifing the revision that it was
-     * seen in and the sequence number span covering it.
+     * Add a collection entry to the manifest. This will fail if the collection
+     * already exists.
+     *
      * @param identifiers ScopeID and CollectionID pair
+     * @param collectionName The name of the collection
      * @param maxTtl The maxTTL that if defined will be applied to new items of
      *        the collection (overriding bucket maxTTL)
-     * @param startSeqno The seqno where the collection begins. Defaults to 0.
+     * @param startSeqno The seqno where the collection begins.
      * @return a non const reference to the new ManifestEntry so the caller can
-     *         set the correct seqno.
+     *         make any changes that are needed post construction.
      */
     ManifestEntry& addNewCollectionEntry(ScopeCollectionPair identifiers,
+                                         std::string_view collectionName,
                                          cb::ExpiryLimit maxTtl,
-                                         int64_t startSeqno = 0);
+                                         int64_t startSeqno);
+
+    /**
+     * Add a scope to the manifest. This will fail if the scope already exists.
+     *
+     * @param sid is of the new scope
+     * @param name The name of the scope
+     */
+    void addNewScopeEntry(ScopeID sid, std::string_view name);
+
+    /**
+     * Add a scope to the manifest. This will fail if the scope already exists.
+     *
+     * @param sid is of the new scope
+     * @param sharedName The name of the scope (the shared view)
+     */
+    void addNewScopeEntry(ScopeID sid, const ScopeSharedMetaData& sharedName);
 
     /**
      * Get the ManifestEntry for the given collection. Throws an
@@ -813,9 +834,9 @@ protected:
     container map;
 
     /**
-     * The current scopes.
+     * The current scopes and their names.
      */
-    std::unordered_set<ScopeID> scopes;
+    std::unordered_map<ScopeID, const ScopeSharedMetaData&> scopes;
 
     // Information we need to retain for a collection that is dropped but the
     // drop event has not been persisted by the flusher.

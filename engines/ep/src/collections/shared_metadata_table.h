@@ -23,6 +23,10 @@ namespace Collections {
 template <class Key, class Value, class ValueView>
 class SharedMetaDataTable {
 public:
+    ~SharedMetaDataTable() {
+        Expects(smt.empty());
+    }
+
     /**
      * Function returns a SharedName which references the given name. This may
      * reference an existing name or insert it as a new name in the map.

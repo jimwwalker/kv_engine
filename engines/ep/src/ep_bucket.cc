@@ -294,7 +294,9 @@ EPBucket::EPBucket(EventuallyPersistentEngine& theEngine)
     initializeWarmupTask();
 }
 
-EPBucket::~EPBucket() = default;
+EPBucket::~EPBucket() {
+    EP_LOG_INFO("EPBucket destroy");
+}
 
 bool EPBucket::initialize() {
     KVBucket::initialize();

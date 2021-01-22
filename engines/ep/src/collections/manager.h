@@ -18,6 +18,7 @@
 #pragma once
 
 #include "collections/manifest.h"
+#include "collections/shared_metadata_table.h"
 
 #include <memcached/engine.h>
 #include <memcached/engine_error.h>
@@ -221,6 +222,49 @@ public:
     }
 
     /**
+     * When vbuckets create a collection (from new manifest of over DCP) all
+     * names are shared (so we don't store per vbucket copies).
+     *
+     * This method gets shared "handle" for the given collection name.
+     * @param cid Collection the name belongs to
+     * @param name The name to use
+     */
+    const VB::CollectionSharedMetaData& createOrReferenceMeta(
+            CollectionID cid, const VB::CollectionSharedMetaDataView& view);
+
+    /**
+     * When vbuckets drop a collection (from new manifest of over DCP) or the
+     * vbucket is deleted( VB::Manifest destructs) the vbucket must dereference
+     * all names it previously retrieved from createOrReferenceMeta
+     *
+     * @param cid Collection the name belongs to
+     * @param name The name to use
+     */
+    void dereferenceMeta(CollectionID cid,
+                         const VB::CollectionSharedMetaDataView& view);
+
+    /**
+     * When vbuckets create a scope (from new manifest of over DCP) all
+     * names are shared (so we don't store per vbucket copies).
+     *
+     * This method gets shared "handle" for the given scope name.
+     * @param sid Scope the name belongs to
+     * @param name The name to use
+     */
+    const VB::ScopeSharedMetaData& createOrReferenceMeta(
+            ScopeID sid, const VB::ScopeSharedMetaDataView& view);
+
+    /**
+     * When vbuckets drop a scope (from new manifest of over DCP) or the
+     * vbucket is deleted( VB::Manifest destructs) the vbucket must dereference
+     * all names it previously retrieved from createOrReferenceMeta
+     *
+     * @param sid Scope the name belongs to
+     * @param name The name to use
+     */
+    void dereferenceMeta(ScopeID sid, const VB::ScopeSharedMetaDataView& view);
+
+    /**
      * Perform the gathering of collection stats for the bucket.
      */
     static cb::EngineErrorGetCollectionIDResult doCollectionStats(
@@ -358,6 +402,30 @@ private:
             const std::string& statKey);
 
     friend std::ostream& operator<<(std::ostream& os, const Manager& manager);
+
+    /**
+     * All of the currently known collection names for a CollectionID, which
+     * vbuckets refer back to.
+     * This is Synchronized because multiple connections/threads can be updating
+     * the data.
+     */
+    using CollectionsSharedMetaDataTable =
+            SharedMetaDataTable<CollectionID,
+                                VB::CollectionSharedMetaData,
+                                VB::CollectionSharedMetaDataView>;
+    folly::Synchronized<CollectionsSharedMetaDataTable> collectionSMT;
+
+    /**
+     * All of the currently known collection names for a ScopeID, which
+     * vbuckets refer back to.
+     * This is Synchronized because multiple connections/threads can be updating
+     * the data.
+     */
+    using ScopesSharedMetaDataTable =
+            SharedMetaDataTable<ScopeID,
+                                VB::ScopeSharedMetaData,
+                                VB::ScopeSharedMetaDataView>;
+    folly::Synchronized<ScopesSharedMetaDataTable> scopeSMT;
 
     /// Store the most recent (current) manifest received - this default
     /// constructs as the 'epoch' Manifest
