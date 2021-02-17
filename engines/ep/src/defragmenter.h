@@ -143,6 +143,18 @@ private:
      */
     std::optional<cb::FragmentationStats> needToDefrag() const;
 
+    enum class TuningState { ResetToConfig, NoChange, SpeedUp, SlowDown };
+    void reconfigureSettings(std::pair<size_t, size_t> preFragmentation,
+                             std::pair<size_t, size_t> postFragmentation);
+    TuningState examineRun(std::pair<size_t, size_t> preFragmentation,
+                           std::pair<size_t, size_t> postFragmentation);
+    void resetToConfig();
+    void speedUp();
+    void slowDown();
+
+    /// Return configuration values
+    std::pair<std::chrono::milliseconds, double> configure() const;
+
     /// Reference to EP stats, used to check on mem_used.
     EPStats &stats;
 
@@ -155,4 +167,9 @@ private:
      * complete pass.
      */
     std::unique_ptr<PauseResumeVBAdapter> prAdapter;
+
+    std::chrono::milliseconds expectedDuration;
+
+    std::chrono::milliseconds chunkDuration;
+    double sleepTime;
 };

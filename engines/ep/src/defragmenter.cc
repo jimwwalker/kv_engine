@@ -31,7 +31,9 @@ DefragmenterTask::DefragmenterTask(EventuallyPersistentEngine* e,
                                    EPStats& stats_)
     : GlobalTask(e, TaskId::DefragmenterTask, 0, false),
       stats(stats_),
-      epstore_position(engine->getKVBucket()->startPosition()) {
+      epstore_position(engine->getKVBucket()->startPosition()),
+      chunkDuration(getChunkDuration()),
+      sleepTime(getSleepTime()) {
 }
 
 static auto getFragmentation(const EventuallyPersistentEngine* engine) {
@@ -93,10 +95,14 @@ bool DefragmenterTask::run() {
         cb::ArenaMalloc::switchToClient(engine->getArenaMallocClient(),
                                         false /* no tcache*/);
 
+        auto preFragmentation = cb::ArenaMalloc::getFragmentationStats(
+                engine->getArenaMallocClient());
+
         // Prepare the underlying visitor.
         auto& visitor = getDefragVisitor();
         const auto start = std::chrono::steady_clock::now();
-        const auto deadline = start + getChunkDuration();
+
+        const auto deadline = start + chunkDuration;
         visitor.setDeadline(deadline);
         visitor.setBlobAgeThreshold(getAgeThreshold());
         // Only defragment StoredValues of persistent buckets because the
@@ -111,6 +117,9 @@ bool DefragmenterTask::run() {
         epstore_position = engine->getKVBucket()->pauseResumeVisit(
                 *prAdapter, epstore_position);
         const auto end = std::chrono::steady_clock::now();
+
+        auto postFragmentation = cb::ArenaMalloc::getFragmentationStats(
+                engine->getArenaMallocClient());
 
         // Defrag complete. Restore thread caching.
         cb::ArenaMalloc::switchToClient(engine->getArenaMallocClient(),
@@ -143,10 +152,11 @@ bool DefragmenterTask::run() {
             auto fragStats = cb::ArenaMalloc::getFragmentationStats(
                     engine->getArenaMallocClient());
             ss << " Took " << duration.count() << " us."
+               << " planned duration " << chunkDuration.count() << " us."
                << " moved " << visitor.getDefragCount() << "/"
                << visitor.getVisitedCount() << " visited documents."
                << " mem_used=" << stats.getEstimatedTotalMemoryUsed() << ", "
-               << fragStats << ". Sleeping for " << getSleepTime()
+               << fragStats << ". Sleeping for " << sleepTime
                << " seconds.";
             EP_LOG_DEBUG("{}", ss.str());
         }
@@ -155,11 +165,13 @@ bool DefragmenterTask::run() {
         if (completed) {
             prAdapter.reset();
         }
+
+        reconfigureSettings(preFragmentation, postFragmentation);
     }
 
-    snooze(getSleepTime());
+    snooze(sleepTime);
     if (engine->getEpStats().isShutdown) {
-            return false;
+        return false;
     }
     return true;
 }
@@ -180,7 +192,9 @@ std::chrono::microseconds DefragmenterTask::maxExpectedDuration() const {
     // However, the ProgressTracker used estimates the time remaining, so
     // apply some headroom to that figure so we don't get inundated with
     // spurious "slow tasks" which only just exceed the limit.
-    return getChunkDuration() * 10;
+
+    // todo: this should be based on any tuned runtime
+    return expectedDuration * 10;
 }
 
 double DefragmenterTask::getSleepTime() const {
@@ -225,4 +239,183 @@ std::chrono::milliseconds DefragmenterTask::getChunkDuration() const {
 
 DefragmentVisitor& DefragmenterTask::getDefragVisitor() {
     return dynamic_cast<DefragmentVisitor&>(prAdapter->getHTVisitor());
+}
+
+void DefragmenterTask::reconfigureSettings(
+        std::pair<size_t, size_t> preFragmentation,
+        std::pair<size_t, size_t> postFragmentation) {
+    auto state = examineRun(preFragmentation, postFragmentation);
+
+    if (globalBucketLogger->should_log(spdlog::level::debug)) {
+        EP_LOG_DEBUG(
+                "{} state: pre-reconfig duration:{} sleep:{} mem:{} "
+                "resident:{}",
+                getDescription(),
+                chunkDuration.count(),
+                sleepTime,
+                postFragmentation.first,
+                postFragmentation.second);
+    }
+
+    switch (state) {
+    case TuningState::ResetToConfig:
+        resetToConfig();
+        break;
+    case TuningState::NoChange:
+        break;
+    case TuningState::SpeedUp:
+        // change chunkDuration/sleepTime
+        speedUp();
+        break;
+    case TuningState::SlowDown:
+        // change chunkDuration/sleepTime
+        slowDown();
+        break;
+    }
+
+    if (globalBucketLogger->should_log(spdlog::level::debug)) {
+        EP_LOG_DEBUG("{} post-reconfig duration:{} sleep:{} state:{}",
+                     getDescription(),
+                     chunkDuration.count(),
+                     sleepTime,
+                     int(state));
+    }
+}
+
+DefragmenterTask::TuningState DefragmenterTask::examineRun(
+        std::pair<size_t, size_t> preFragmentation,
+        std::pair<size_t, size_t> postFragmentation) {
+    auto getScore = [](std::pair<size_t, size_t> fragmentation) {
+        const double memUsed = fragmentation.first;
+        const double resident = fragmentation.second;
+        double percent = ((resident - memUsed) / resident);
+        std::cerr << (resident - memUsed) << std::endl;
+        std::cerr << "P:" << percent << std::endl;
+        if (percent < 0.01) {
+            return size_t(0); // below threshold, all is good
+        }
+
+        // above threshold
+
+        // The score though is scaled by size, this means that comparing
+        // a pre/post score a decrease in resident is accounted. E.g.
+        // We don't just care about 10% vs 20%, if the 10% is 10% of 1G and
+        // the second is 20% of 1M
+
+        // return number of bytes considered fragmented
+        return size_t(resident * percent);
+    };
+
+    auto postScore = getScore(postFragmentation);
+
+    if (postScore == 0) {
+        return TuningState::ResetToConfig;
+    }
+
+    // fragmentation above threshold so state is SpeedUp
+    auto state = TuningState::SpeedUp;
+
+    // Next though compare with pre
+    auto preScore = getScore(preFragmentation);
+
+    // Is the situation improving?
+    if (preScore > postScore) {
+        // Yes, improving, less fragmented bytes, stay steady or slow-down?
+        auto distance = preScore - postScore;
+
+        // If there's a 'large' enough reduction, slow down
+        if (distance > 1024) {
+            state = TuningState::SlowDown;
+        } else {
+            state = TuningState::NoChange;
+        }
+    }
+
+    if (globalBucketLogger->should_log(spdlog::level::debug)) {
+        EP_LOG_DEBUG("{} examineRun: state: postScore:{} preScore:{}",
+                     getDescription(),
+                     postScore,
+                     preScore);
+    }
+    return state;
+}
+
+void DefragmenterTask::resetToConfig() {
+    chunkDuration = getChunkDuration();
+    sleepTime = getSleepTime();
+}
+
+void DefragmenterTask::speedUp() {
+    auto newDuration = chunkDuration + std::chrono::milliseconds(2);
+    auto newSleep = sleepTime - 0.5;
+
+    if (newDuration <= std::chrono::milliseconds(50)) {
+        chunkDuration = newDuration;
+    }
+
+    if (newSleep >= 1) {
+        sleepTime = newSleep;
+    }
+}
+
+void DefragmenterTask::slowDown() {
+    auto newDuration = chunkDuration - std::chrono::milliseconds(2);
+    auto newSleep = sleepTime + 0.5;
+
+    // todo copy chunk and sleep at construction
+    // if a dynamic change occurs just reset everything
+
+    auto l1 = getChunkDuration(); // upper limit1
+    if (newDuration < l1) {
+        chunkDuration = newDuration;
+    } else {
+        chunkDuration = l1;
+    }
+
+    auto l2 = getSleepTime(); // upper limit2
+    if (newSleep < l2) {
+        sleepTime = newSleep;
+    } else {
+        sleepTime = l2;
+    }
+}
+
+// Look at fragmentation and tune
+// return duration for this pass and the sleep time once done
+std::pair<std::chrono::milliseconds, double> DefragmenterTask::configure()
+        const {
+    auto [memUsed, resident] = cb::ArenaMalloc::getFragmentationStats(
+            engine->getArenaMallocClient());
+
+    // The worse the fragmentation of this bucket
+    // 1) The longer this run will be
+    // 2) The shorter the delay until run again will be
+
+    // First compare current fragmentation against acceptable threshold
+    auto fragmentation = ((resident - memUsed) / resident) * 100.0;
+
+    // What about the scale though? if resident is like 10bytes/100mb...
+    // Small scale may find we cannot affect the fragmentation, so could just
+    // get pointlessly aggressive?
+
+    const double threshold = 5.0;
+
+    auto duration = getChunkDuration();
+    auto sleepTime = getSleepTime();
+    if (fragmentation < threshold) {
+        return {duration, sleepTime};
+    }
+
+    // Add 2ms for every 1% fragmented over the threshold?
+    std::chrono::milliseconds oneMs{2};
+    duration = duration + (oneMs * int(threshold - fragmentation));
+
+    // Sleep time needs reducing, 0.5s for every 5%?
+    double v = 0.5;
+    double c = fragmentation / 5.0;
+    sleepTime = sleepTime - (c * v);
+    if (sleepTime < 0.0) {
+        sleepTime = 0.0;
+    }
+    return {duration, sleepTime};
 }
