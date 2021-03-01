@@ -39,7 +39,7 @@ void EraserContext::processSystemEvent(const DocKey& key, SystemEvent se) {
         // 'removed' flag.
         auto itr = dropped.find(getCollectionIDFromKey(key));
         if (itr != dropped.end()) {
-            dropped.erase(itr);
+            // dropped.erase(itr);
             removed = true;
         }
     }

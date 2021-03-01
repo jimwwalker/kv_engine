@@ -1446,10 +1446,12 @@ TEST_F(CollectionsTest, ConcCompactNewPrepare) {
     CollectionsManifest cm;
     cm.add(CollectionEntry::dairy);
     cm.add(CollectionEntry::meat);
+    // MB-44590 include a collection drop in the test
+    cm.remove(CollectionEntry::defaultC);
 
     auto vb = store->getVBucket(vbid);
     vb->updateFromManifest(makeManifest(cm));
-    flushVBucketToDiskIfPersistent(vbid, 2);
+    flushVBucketToDiskIfPersistent(vbid, 3);
 
     // We add dairy and a key to it just to ensure that we're not breaking
     // collections that may change during compaction but not during the replay
@@ -1525,6 +1527,13 @@ TEST_F(CollectionsTest, ConcCompactNewPrepare) {
                   preCompactionMeatSize);
         EXPECT_EQ(summary[CollectionEntry::meat].diskSize, postFlushMeatSize);
     }
+    // MB-44590: Check that the dropped collection was cleaned-up
+    auto [status, dropped] = store->getVBucket(vbid)
+                                     ->getShard()
+                                     ->getRWUnderlying()
+                                     ->getDroppedCollections(vbid);
+    ASSERT_TRUE(status);
+    EXPECT_TRUE(dropped.empty());
 }
 
 TEST_F(CollectionsTest, ConcCompactPrepareAbort) {
@@ -1734,11 +1743,12 @@ TEST_F(CollectionsTest, ConcCompactDropCollection) {
     replaceCouchKVStoreWithMock();
 
     CollectionsManifest cm;
+    cm.remove(CollectionEntry::defaultC);
     cm.add(CollectionEntry::meat);
 
     auto vb = store->getVBucket(vbid);
     vb->updateFromManifest(makeManifest(cm));
-    flushVBucketToDiskIfPersistent(vbid, 1);
+    flushVBucketToDiskIfPersistent(vbid, 2);
 
     auto& kvstore =
             dynamic_cast<MockCouchKVStore&>(*store->getRWUnderlying(vbid));
@@ -1773,6 +1783,8 @@ TEST_F(CollectionsTest, ConcCompactDropCollection) {
               store->getRWUnderlying(vbid)
                       ->getKVStoreStat()
                       .numCompactionFailure);
+
+    exit(1);
 }
 
 // MB-44590 and MB-44694. This test reproduces what was seen in MB-44694, but is

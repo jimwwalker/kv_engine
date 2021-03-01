@@ -32,6 +32,7 @@ ScanContext::ScanContext(
                 std::min<uint64_t>(startSeqno, droppedCollection.startSeqno);
         endSeqno = std::max<uint64_t>(endSeqno, droppedCollection.endSeqno);
     }
+    std::cerr << *this << std::endl;
 }
 
 bool ScanContext::isLogicallyDeleted(const DocKey& key, uint64_t seqno) const {
