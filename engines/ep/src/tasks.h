@@ -102,8 +102,8 @@ public:
      * the current compaction is complete, the latest config will be used in the
      * reschedule run.
      */
-    void runCompactionWithConfig(std::optional<CompactionConfig> config,
-                                 const void* cookie);
+    CompactionConfig runCompactionWithConfig(
+            std::optional<CompactionConfig> config, const void* cookie);
 
     /**
      * @return true if a reschedule is required
