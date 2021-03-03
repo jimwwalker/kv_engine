@@ -1429,7 +1429,7 @@ CouchKVStore::CompactDBInternalStatus CouchKVStore::compactDBInternal(
                             std::stringstream ss;
                             ss << "CouchKVStore::compactDBInternal finalising "
                                   "dropped collections, container should be "
-                                  "empty"
+                                  "empty "
                                << *hook_ctx->eraserContext << std::endl;
                             throw std::logic_error(ss.str());
                         }

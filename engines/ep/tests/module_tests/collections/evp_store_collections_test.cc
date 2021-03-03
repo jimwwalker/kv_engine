@@ -1775,6 +1775,63 @@ TEST_F(CollectionsTest, ConcCompactDropCollection) {
                       .numCompactionFailure);
 }
 
+// MB-44590 and MB-44694. This test reproduces what was seen in MB-44694, but is
+// fixed by MB-44590. The test drops collections and also tombstone purges them.
+// When MB-44590 occurs a second compaction/erase gets quite confused because
+// it cannot find the tombstones it thinks should exist.
+TEST_F(CollectionsTest, ConcCompactDropCollectionMB_44694) {
+    setVBucketStateAndRunPersistTask(
+            vbid,
+            vbucket_state_active,
+            {{"topology", nlohmann::json::array({{"active", "replica"}})}});
+
+    replaceCouchKVStoreWithMock();
+
+    // Create two collections
+    CollectionsManifest cm;
+    cm.add(CollectionEntry::meat);
+    cm.add(CollectionEntry::fruit);
+
+    auto vb = store->getVBucket(vbid);
+    vb->updateFromManifest(makeManifest(cm));
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    store_item(vbid, StoredDocKey{"apple", CollectionEntry::fruit}, "v1");
+
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // Now remove the fruit collection
+    cm.remove(CollectionEntry::fruit);
+    vb->updateFromManifest(makeManifest(cm));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // Store an item, so that the fruit tombstone is not high-seqno
+    store_item(vbid, StoredDocKey{"beef", CollectionEntry::meat}, "v2");
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // Setup the compaction hook so that another collection drops - triggering
+    // MB-44590
+    auto& kvstore =
+            dynamic_cast<MockCouchKVStore&>(*store->getRWUnderlying(vbid));
+
+    kvstore.setConcurrentCompactionPreLockHook(
+            [&vb, &cm, this](auto& compactionKey) {
+                // Drop another collection
+                cm.remove(CollectionEntry::meat);
+                vb->updateFromManifest(makeManifest(cm));
+                flushVBucketToDiskIfPersistent(vbid, 1);
+            });
+
+    // compact and force purging of all deletes
+    runCompaction(vbid, 0, true);
+
+    kvstore.setConcurrentCompactionPreLockHook(
+            [](auto& compactionKey) { return; });
+
+    // With MB-44590, this would trigger the exception seen in MB-44694
+    runCollectionsEraser(vbid);
+}
+
 // Test the pager doesn't generate expired items for a dropped collection
 TEST_P(CollectionsParameterizedTest,
        collections_expiry_after_drop_collection_pager) {
