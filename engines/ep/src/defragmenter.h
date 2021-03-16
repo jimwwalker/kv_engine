@@ -22,6 +22,9 @@
 class DefragmentVisitor;
 class EPStats;
 class PauseResumeVBAdapter;
+namespace cb {
+class FragmentationStats;
+}
 
 /** Task responsible for defragmenting items in memory.
  *
@@ -132,6 +135,13 @@ private:
 
     /// Update the EPStats from the visitor
     void updateStats(DefragmentVisitor& visitor);
+
+    /**
+     * @return an optional which if 'has_value' the defragmenter should run. The
+     * value of the optional are the FragmentationStats so that there's no need
+     * for multiple calls to cb::ArenaMalloc during the task prologue
+     */
+    std::optional<cb::FragmentationStats> needToDefrag() const;
 
     /// Reference to EP stats, used to check on mem_used.
     EPStats &stats;

@@ -843,6 +843,10 @@ public:
         return arena;
     }
 
+    const cb::ArenaMallocClient& getArenaMallocClient() const {
+        return arena;
+    }
+
     cb::HlcTime getVBucketHlcNow(Vbid vbucket) override;
 
     /**

@@ -315,20 +315,31 @@
         "dcp_noop_mandatory_for_v5_features": {
             "default": "true",
             "descr": "Forces clients to enable noop for v5 features",
-	    "dynamic": true,
+            "dynamic": true,
             "type": "bool"
         },
-
         "defragmenter_enabled": {
             "default": "true",
             "descr": "True if defragmenter task is enabled",
             "dynamic": true,
             "type": "bool"
         },
+        "defragmenter_threshold": {
+            "default": "10",
+            "descr": "If defragmenter_enabled=true this is the threshold at which the defragmenter task will attempt defragmentation. This value is used in comparison against the % of memory resident which is not considered allocated",
+            "type": "size_t",
+            "dynamic": true,
+            "validator": {
+                "range": {
+                    "min": 0,
+                    "max": 100
+                }
+            }
+        },
         "defragmenter_interval": {
             "default": "10.0",
             "descr": "How often defragmenter task should be run (in seconds).",
-	    "dynamic": true,
+            "dynamic": true,
             "type": "float"
         },
         "defragmenter_age_threshold": {
@@ -345,8 +356,8 @@
         },
         "defragmenter_chunk_duration": {
             "default": "20",
-            "descr": "Maximum time (in ms) defragmentation task will run for before being paused (and resumed at the next defragmenter_interval).",
-	    "dynamic": true,
+                "descr": "Maximum time (in ms) defragmentation task will run for before being paused (and resumed at the next defragmenter_interval).",
+            "dynamic": true,
             "type": "size_t",
             "validator": {
                 "range": {

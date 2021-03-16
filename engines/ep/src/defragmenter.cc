@@ -34,9 +34,30 @@ DefragmenterTask::DefragmenterTask(EventuallyPersistentEngine* e,
       epstore_position(engine->getKVBucket()->startPosition()) {
 }
 
+static auto getFragmentation(const EventuallyPersistentEngine* engine) {
+    return cb::ArenaMalloc::getFragmentationStats(
+            engine->getArenaMallocClient());
+}
+
+std::optional<cb::FragmentationStats> DefragmenterTask::needToDefrag() const {
+    if (!engine->getConfiguration().isDefragmenterEnabled()) {
+        return std::nullopt;
+    }
+
+    // Check with threshold and return the stats if defrag is needed (so we
+    // avoid triggering a jemalloc sync unnecessarily)
+    auto stats = getFragmentation(engine);
+    if (stats.getFragmentationPerc() <
+        engine->getConfiguration().getDefragmenterThreshold()) {
+        return std::nullopt;
+    }
+    return stats;
+}
+
 bool DefragmenterTask::run() {
     TRACE_EVENT0("ep-engine/task", "DefragmenterTask");
-    if (engine->getConfiguration().isDefragmenterEnabled()) {
+    auto fragmentation = needToDefrag();
+    if (fragmentation.has_value()) {
         // Get our pause/resume visitor. If we didn't finish the previous pass,
         // then resume from where we last were, otherwise create a new visitor
         // starting from the beginning.
@@ -60,12 +81,10 @@ bool DefragmenterTask::run() {
                 ss << " resuming from " << epstore_position << ", ";
                 ss << prAdapter->getHashtablePosition() << ".";
             }
-            auto fragStats = cb::ArenaMalloc::getFragmentationStats(
-                    engine->getArenaMallocClient());
             ss << " Using chunk_duration=" << getChunkDuration().count()
                << " ms."
                << " mem_used=" << stats.getEstimatedTotalMemoryUsed() << ", "
-               << fragStats;
+               << fragmentation.value();
             EP_LOG_DEBUG("{}", ss.str());
         }
 
