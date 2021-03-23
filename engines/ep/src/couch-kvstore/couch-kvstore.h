@@ -767,8 +767,9 @@ protected:
             CompactionReplayPrepareStats&& prepareStats);
 
     /// try to load _local/vbstate and patch the num_on_disk_prepares
-    /// and subtract the number of prepares pruned
-    couchstore_error_t maybePatchOnDiskPrepares(
+    /// and subtract the number of prepares pruned and update collection disk
+    /// sizes
+    couchstore_error_t maybePatchMetaData(
             Db& db,
             CompactionStats& stats,
             PendingLocalDocRequestQueue& localDocQueue,

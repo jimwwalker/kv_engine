@@ -1902,6 +1902,80 @@ TEST_F(CollectionsTest, ConcCompactDropCollectionMB_44694) {
     EXPECT_TRUE(dropped.empty());
 }
 
+TEST_F(CollectionsTest, ConcCompactPurgeTombstones) {
+    replaceCouchKVStoreWithMock();
+    auto vb = store->getVBucket(vbid);
+
+    auto compareDiskStatMemoryVsPersisted = [vb]() {
+        auto kvs = vb->getShard()->getRWUnderlying();
+        auto fileHandle = kvs->makeFileHandle(vb->getId());
+        ASSERT_TRUE(fileHandle);
+        auto fruitSz =
+                vb->getManifest().lock(CollectionEntry::fruit).getDiskSize();
+        auto stats =
+                kvs->getCollectionStats(*fileHandle, CollectionEntry::fruit);
+        ASSERT_TRUE(stats.first);
+        EXPECT_EQ(stats.second.diskSize, fruitSz);
+    };
+
+    // 1) Add a collection, flush it and record the diskSize
+    CollectionsManifest cm;
+    cm.add(CollectionEntry::fruit);
+    vb->updateFromManifest(makeManifest(cm));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+    auto diskSizeAtCreation =
+            vb->getManifest().lock(CollectionEntry::fruit).getDiskSize();
+    EXPECT_NE(0, diskSizeAtCreation);
+    compareDiskStatMemoryVsPersisted();
+
+    // 2) Store two items and check the diskSize increased and save the new size
+    StoredDocKey key1{"apple", CollectionEntry::fruit};
+    StoredDocKey key2{"apricot", CollectionEntry::fruit};
+    store_item(vbid, key1, "v1");
+    store_item(vbid, key2, "v1");
+    flushVBucketToDiskIfPersistent(vbid, 2);
+    auto diskSizeWithTwoItems =
+            vb->getManifest().lock(CollectionEntry::fruit).getDiskSize();
+    EXPECT_GT(diskSizeWithTwoItems, diskSizeAtCreation);
+    compareDiskStatMemoryVsPersisted();
+
+    // 3) Delete both keys, but store with a value. This checks that tombstones
+    // are accounted in the diskSize and allows the test to check what happens
+    // when we purge a tombstone. Note the value is larger then the original,
+    // so we have deleted two items but used more bytes.
+    store_deleted_item(vbid, key1, "v2.0");
+    store_deleted_item(vbid, key2, "v2.0");
+    flushVBucketToDiskIfPersistent(vbid, 2);
+    auto diskSizeWithTwoTombstones =
+            vb->getManifest().lock(CollectionEntry::fruit).getDiskSize();
+    EXPECT_GT(diskSizeWithTwoTombstones, diskSizeWithTwoItems);
+    compareDiskStatMemoryVsPersisted();
+
+    // 4) Compact and purge tombstones. Concurrently update one of the keys.
+    // After compaction expect that the diskSize is still larger than at 1) and
+    // smaller than at 3).
+    auto& kvstore =
+            dynamic_cast<MockCouchKVStore&>(*store->getRWUnderlying(vbid));
+
+    kvstore.setConcurrentCompactionPreLockHook(
+            [this, &key2](auto& compactionKey) {
+                store_item(vbid, key2, "v2");
+                flushVBucketToDiskIfPersistent(vbid, 1);
+            });
+
+    // Force tombstone purging
+    runCompaction(vbid, 0, true);
+    auto diskSizeFinal =
+            vb->getManifest().lock(CollectionEntry::fruit).getDiskSize();
+    // Collection disk must be bigger than the size at creation
+    EXPECT_GT(diskSizeFinal, diskSizeAtCreation);
+    // And less than when it had two items
+    EXPECT_LT(diskSizeFinal, diskSizeWithTwoItems);
+    // And less than when it had two large tombstones
+    EXPECT_LT(diskSizeFinal, diskSizeWithTwoTombstones);
+    compareDiskStatMemoryVsPersisted();
+}
+
 // Test the pager doesn't generate expired items for a dropped collection
 TEST_P(CollectionsParameterizedTest,
        collections_expiry_after_drop_collection_pager) {
@@ -3613,6 +3687,80 @@ TEST_P(CollectionsEphemeralParameterizedTest, TrackSystemEventSize) {
     // No system event for default
     EXPECT_EQ(0, getCollectionMemUsed(vb, CollectionID::Default));
     EXPECT_NE(0, getCollectionMemUsed(vb, CollectionEntry::meat.getId()));
+}
+
+// @todo: MB-45185 magma needs work to account for purged collections
+TEST_P(CollectionsCouchstoreParameterizedTest, TombstonePurge) {
+    auto vb = store->getVBucket(vbid);
+    // add two collections
+    CollectionsManifest cm(CollectionEntry::dairy);
+    vb->updateFromManifest(makeManifest(cm.add(CollectionEntry::fruit)));
+
+    auto compareDiskStatMemoryVsPersisted = [vb]() {
+        auto kvs = vb->getShard()->getRWUnderlying();
+        auto fileHandle = kvs->makeFileHandle(vb->getId());
+        ASSERT_TRUE(fileHandle);
+        auto fruitSz =
+                vb->getManifest().lock(CollectionEntry::fruit).getDiskSize();
+        auto dairySz =
+                vb->getManifest().lock(CollectionEntry::dairy).getDiskSize();
+        auto stats =
+                kvs->getCollectionStats(*fileHandle, CollectionEntry::fruit);
+        ASSERT_TRUE(stats.first);
+        EXPECT_EQ(stats.second.diskSize, fruitSz);
+        stats = kvs->getCollectionStats(*fileHandle, CollectionEntry::dairy);
+        ASSERT_TRUE(stats.first);
+
+        EXPECT_EQ(stats.second.diskSize, dairySz);
+    };
+
+    flushVBucketToDiskIfPersistent(vbid, 2 /* 2 x system */);
+    const auto& manifest = vb->getManifest();
+    auto c1_d1 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    auto c2_d1 = manifest.lock(CollectionEntry::dairy).getDiskSize();
+    EXPECT_GT(c1_d1, 0);
+    EXPECT_GT(c2_d1, 0);
+    compareDiskStatMemoryVsPersisted();
+
+    // add some items
+    store_item(vbid, StoredDocKey{"milk", CollectionEntry::dairy}, "nice");
+    store_item(vbid, StoredDocKey{"butter", CollectionEntry::dairy}, "lovely");
+    store_item(vbid, StoredDocKey{"apple", CollectionEntry::fruit}, "nice");
+    store_item(vbid, StoredDocKey{"apricot", CollectionEntry::fruit}, "lovely");
+
+    flushVBucketToDiskIfPersistent(vbid, 4);
+    auto c1_d2 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    auto c2_d2 = manifest.lock(CollectionEntry::dairy).getDiskSize();
+    EXPECT_GT(c1_d2, c1_d1);
+    EXPECT_GT(c2_d2, c2_d1);
+    compareDiskStatMemoryVsPersisted();
+
+    // @todo: This test currently has to use a delete with value because the
+    // disk-size only accounts for the value. We can only detect the fix to
+    // MB-45132 if the delete has some value. MB-45144 will account for key and
+    // meta, so we will be able to detect the fix for MB-45132 for deletes with
+    // empty values.
+    store_deleted_item(
+            vbid, StoredDocKey{"apple", CollectionEntry::fruit}, ".");
+    store_deleted_item(vbid, StoredDocKey{"milk", CollectionEntry::dairy}, ".");
+
+    flushVBucketToDiskIfPersistent(vbid, 2);
+    auto c1_d3 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    auto c2_d3 = manifest.lock(CollectionEntry::dairy).getDiskSize();
+    EXPECT_LT(c1_d3, c1_d2);
+    EXPECT_LT(c2_d3, c2_d2);
+    compareDiskStatMemoryVsPersisted();
+
+    runCompaction(vbid, 0, true);
+
+    auto c1_d4 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    auto c2_d4 = manifest.lock(CollectionEntry::dairy).getDiskSize();
+    EXPECT_LT(c1_d4, c1_d3);
+
+    // dairy is equal because we haven't purged the tombstone (it's the high
+    // seqno which remains)
+    EXPECT_EQ(c2_d4, c2_d3);
+    compareDiskStatMemoryVsPersisted();
 }
 
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
