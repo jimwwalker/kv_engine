@@ -819,7 +819,7 @@ static int time_purge_hook(Db* d,
         if (!docKey.isInSystemCollection()) {
             auto itr = ctx->stats.collectionSizeUpdates.emplace(
                     docKey.getCollectionID(), 0);
-            itr.first->second += info->physical_size;
+            itr.first->second += info->getTotalSize();
         }
         return COUCHSTORE_COMPACT_DROP_ITEM;
     };
@@ -838,7 +838,7 @@ static int time_purge_hook(Db* d,
         }
         if (metadata->isPrepare()) {
             ctx->stats.preparesPurged++;
-            ctx->stats.prepareBytesPurged += info->physical_size;
+            ctx->stats.prepareBytesPurged += info->getTotalSize();
 
             // Track nothing for the individual collection as the stats doc has
             // already been deleted.
@@ -897,7 +897,7 @@ static int time_purge_hook(Db* d,
         if (metadata->isPrepare()) {
             if (info->db_seq <= ctx->highCompletedSeqno) {
                 ctx->stats.preparesPurged++;
-                ctx->stats.prepareBytesPurged += info->physical_size;
+                ctx->stats.prepareBytesPurged += info->getTotalSize();
 
                 // Decrement individual collection disk sizes as we track
                 // prepares in the value. We don't do this at collection drop
@@ -1187,12 +1187,12 @@ static couchstore_error_t replayPreCopyHook(
                     std::string_view{docInfo->id.buf, docInfo->id.size});
             if (st == COUCHSTORE_SUCCESS && !di->deleted) {
                 --prepareStats.onDiskPrepares;
-                prepareStats.onDiskPrepareBytes -= di->physical_size;
+                prepareStats.onDiskPrepareBytes -= di->getTotalSize();
 
                 auto diskDocKey = makeDiskDocKey(docInfo->id);
                 prepareStats.collectionSizes[diskDocKey.getDocKey()
                                                      .getCollectionID()] -=
-                        di->physical_size;
+                        di->getTotalSize();
             }
         }
 
@@ -1206,24 +1206,24 @@ static couchstore_error_t replayPreCopyHook(
             // New prepare
             if (st == COUCHSTORE_ERROR_DOC_NOT_FOUND) {
                 ++prepareStats.onDiskPrepares;
-                prepareStats.onDiskPrepareBytes += docInfo->physical_size;
+                prepareStats.onDiskPrepareBytes += docInfo->getTotalSize();
 
                 auto cid = diskDocKey.getDocKey().getCollectionID();
-                prepareStats.collectionSizes[cid] += docInfo->physical_size;
+                prepareStats.collectionSizes[cid] += docInfo->getTotalSize();
             }
 
             if (st == COUCHSTORE_SUCCESS) {
                 if (di->deleted) {
                     // Abort -> Prepare
                     ++prepareStats.onDiskPrepares;
-                    prepareStats.onDiskPrepareBytes += docInfo->physical_size;
+                    prepareStats.onDiskPrepareBytes += docInfo->getTotalSize();
 
                     prepareStats.collectionSizes[diskDocKey.getDocKey()
                                                          .getCollectionID()] +=
-                            docInfo->physical_size;
+                            docInfo->getTotalSize();
                 } else {
                     // Prepare -> Prepare
-                    auto delta = docInfo->physical_size - di->physical_size;
+                    auto delta = docInfo->getTotalSize() - di->getTotalSize();
                     prepareStats.onDiskPrepareBytes += delta;
 
                     prepareStats.collectionSizes[diskDocKey.getDocKey()
@@ -1249,11 +1249,11 @@ static couchstore_error_t replayPreCopyHook(
                 // New item, count goes up
                 prepareStats.collectionSizes[diskDocKey.getDocKey()
                                                      .getCollectionID()] +=
-                        docInfo->physical_size;
+                        docInfo->getTotalSize();
             } else if (st == COUCHSTORE_SUCCESS) {
                 // Change in item, change in count
-                ssize_t oldSize = di->physical_size;
-                ssize_t newSize = docInfo->physical_size;
+                ssize_t oldSize = di->getTotalSize();
+                ssize_t newSize = docInfo->getTotalSize();
                 prepareStats.collectionSizes[diskDocKey.getDocKey()
                                                      .getCollectionID()] +=
                         newSize - oldSize;
@@ -2832,10 +2832,10 @@ static void saveDocsCallback(const DocInfo* oldInfo,
                                                   newInfo->db_seq,
                                                   isCommitted,
                                                   isDeleted,
-                                                  newInfo->physical_size,
+                                                  newInfo->getTotalSize(),
                                                   oldInfo->db_seq,
                                                   oldIsDeleted,
-                                                  oldInfo->physical_size);
+                                                  oldInfo->getTotalSize());
 
         if (!oldInfo->deleted) {
             // Doc already existed alive on disk, this is an update
@@ -2846,7 +2846,7 @@ static void saveDocsCallback(const DocInfo* oldInfo,
                                                   newInfo->db_seq,
                                                   isCommitted,
                                                   isDeleted,
-                                                  newInfo->physical_size);
+                                                  newInfo->getTotalSize());
     }
 
     enum class DocMutationType { Insert, Update, Delete };
@@ -2867,8 +2867,8 @@ static void saveDocsCallback(const DocInfo* oldInfo,
         onDiskMutationType = DocMutationType::Insert;
     }
 
-    const ssize_t newSize = newInfo->physical_size;
-    const ssize_t oldSize = oldInfo ? oldInfo->physical_size : 0;
+    const ssize_t newSize = newInfo->getTotalSize();
+    const ssize_t oldSize = oldInfo ? oldInfo->getTotalSize() : 0;
 
     if (newKey.isPrepared()) {
         switch (onDiskMutationType) {

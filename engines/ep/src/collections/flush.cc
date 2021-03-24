@@ -311,6 +311,9 @@ void Flush::updateStats(const DocKey& key,
         return;
     }
 
+    // std::cerr << "Replace " << key.to_string() << " oldsz:" << oldSize << "
+    // size:" << size << std::endl;
+
     if (isDelete == IsDeleted::Yes && isSystemEvent == IsSystem::Yes) {
         return;
     }

@@ -2058,6 +2058,10 @@ TEST_F(CouchstoreTest, MB_39946_diskSize_could_underflow) {
     };
 
     doWrite("");
+    auto diskSize1 = manifest.lock()
+                             .getStatsForFlush(CollectionID::Default, seqno)
+                             .diskSize;
+    EXPECT_NE(0, diskSize1);
     kvstore->setConcurrentCompactionPostLockHook(doWrite);
 
     std::mutex mutex;
@@ -2082,7 +2086,10 @@ TEST_F(CouchstoreTest, MB_39946_diskSize_could_underflow) {
     }
     auto stats = manifest.lock().getStatsForFlush(CollectionID::Default, seqno);
     EXPECT_EQ(0, stats.itemCount);
-    EXPECT_EQ(0, stats.diskSize);
+    // diskSize doesn't get to zero because we still have the items key/meta
+    // stored (tombstones). It should though be > 0 and < diskSize1
+    EXPECT_GT(stats.diskSize, 0);
+    EXPECT_LT(stats.diskSize, diskSize1);
 }
 
 /// MB-43121: Make sure that we abort compaction if someone tries to delete
