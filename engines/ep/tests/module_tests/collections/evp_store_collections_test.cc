@@ -3763,6 +3763,46 @@ TEST_P(CollectionsCouchstoreParameterizedTest, TombstonePurge) {
     compareDiskStatMemoryVsPersisted();
 }
 
+// Collection disk size tracking for delete -> delete is incorrect
+// The second delete became an insert
+TEST_P(CollectionsPersistentParameterizedTest, DeleteDelete) {
+    auto vb = store->getVBucket(vbid);
+    CollectionsManifest cm;
+    vb->updateFromManifest(makeManifest(cm.add(CollectionEntry::fruit)));
+    flushVBucketToDiskIfPersistent(vbid, 1 /* 1 x system */);
+
+    const auto& manifest = vb->getManifest();
+    auto c1_diskSize1 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    EXPECT_GT(c1_diskSize1, 0);
+
+    // add some items
+    store_item(vbid, StoredDocKey{"apple", CollectionEntry::fruit}, "nice");
+    store_item(vbid, StoredDocKey{"apricot", CollectionEntry::fruit}, "lovely");
+    flushVBucketToDiskIfPersistent(vbid, 2);
+    auto c1_diskSize2 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    // Increased
+    EXPECT_GT(c1_diskSize2, c1_diskSize1);
+
+    // Now delete a key, which really is an update in terms of disk, here we
+    // deliberatley delete with a bigger value
+    store_deleted_item(
+            vbid, StoredDocKey{"apple", CollectionEntry::fruit}, "nice+++");
+    flushVBucketToDiskIfPersistent(vbid, 1);
+    auto c1_diskSize3 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+    EXPECT_GT(c1_diskSize3, c1_diskSize2);
+
+    // Now delete again (first we store, but don't flush the store)
+    store_item(vbid, StoredDocKey{"apple", CollectionEntry::fruit}, "nice+++");
+    store_deleted_item(
+            vbid, StoredDocKey{"apple", CollectionEntry::fruit}, "nice+++");
+    flushVBucketToDiskIfPersistent(vbid, 1);
+    auto c1_diskSize4 = manifest.lock(CollectionEntry::fruit).getDiskSize();
+
+    // We've just replaced a delete with an identical delete. Before fixing
+    // MB-45221 the disk increased as the new delete was treated as an insert
+    EXPECT_EQ(c1_diskSize4, c1_diskSize3);
+}
+
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
                          CollectionsExpiryLimitTest,
                          ::testing::Bool(),
