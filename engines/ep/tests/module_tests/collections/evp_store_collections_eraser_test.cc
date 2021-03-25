@@ -1258,14 +1258,19 @@ TEST_P(CollectionsEraserSyncWriteTest, DropAfterAbort) {
     }
 
     createPendingWrite();
+    auto pendingSz =
+            vb->getManifest().lock(key.getCollectionID()).getDiskSize();
     abort();
 
-    if (isPersistent()) {
+    if (!isMagma() && isPersistent()) {
         // MB-45221 test the prepare->abort does the right thing with diskSize.
-        // prior to MB-45221, aborts were not counted. Without the updates from
-        // MB-45144, the abort takes the size back to the size at creation.
-        EXPECT_EQ(emptySz,
-                  vb->getManifest().lock(key.getCollectionID()).getDiskSize());
+        // prior to MB-45221, aborts were not counted. The abort still accounts
+        // for some bytes in the disk size, so expect to be between empty and
+        // pending
+        EXPECT_GT(vb->getManifest().lock(key.getCollectionID()).getDiskSize(),
+                  emptySz);
+        EXPECT_LT(vb->getManifest().lock(key.getCollectionID()).getDiskSize(),
+                  pendingSz);
     }
 
     dropCollection();

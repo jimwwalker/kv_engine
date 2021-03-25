@@ -1648,6 +1648,8 @@ TEST_F(CollectionsTest, ConcCompactAbortPrepare) {
     auto vb = store->getVBucket(vbid);
     vb->updateFromManifest(makeManifest(cm));
     flushVBucketToDiskIfPersistent(vbid, 2);
+    std::cerr << "meat size:" << vb->getManifest().lock(8).getDiskSize()
+              << std::endl;
 
     // We add dairy and a key to it just to ensure that we're not breaking
     // collections that may change during compaction but not during the replay
@@ -1662,18 +1664,24 @@ TEST_F(CollectionsTest, ConcCompactAbortPrepare) {
                           vb->getHighSeqno());
     vb->processResolvedSyncWrites();
     flushVBucketToDiskIfPersistent(vbid, 1);
+    std::cerr << "meat size:" << vb->getManifest().lock(8).getDiskSize()
+              << std::endl;
 
     StoredDocKey meatKey{"beef", CollectionEntry::meat};
     auto meatPending = makePendingItem(meatKey, "value");
     EXPECT_EQ(cb::engine_errc::sync_write_pending,
               store->set(*meatPending, cookie));
     flushVBucketToDiskIfPersistent(vbid, 1);
+    std::cerr << "meat size:" << vb->getManifest().lock(8).getDiskSize()
+              << std::endl;
 
     vb->processDurabilityTimeout(std::chrono::steady_clock::now() +
                                  std::chrono::seconds(1000));
     vb->processResolvedSyncWrites();
 
     flushVBucketToDiskIfPersistent(vbid, 1);
+    std::cerr << "meat size:" << vb->getManifest().lock(8).getDiskSize()
+              << std::endl;
 
     auto postCommitDairySize = 0;
     auto preCompactionMeatSize = 0;
@@ -1708,6 +1716,8 @@ TEST_F(CollectionsTest, ConcCompactAbortPrepare) {
                   store->set(*meatPending, cookie));
 
         flushVBucketToDiskIfPersistent(vbid, 1);
+        std::cerr << "meat size:" << vb->getManifest().lock(8).getDiskSize()
+                  << std::endl;
 
         {
             Collections::Summary summary;
@@ -1721,6 +1731,8 @@ TEST_F(CollectionsTest, ConcCompactAbortPrepare) {
     });
 
     runCompaction(vbid, 0, false);
+    std::cerr << "meat size:" << vb->getManifest().lock(8).getDiskSize()
+              << std::endl;
 
     {
         // Check that dairy decreases
@@ -1869,6 +1881,11 @@ TEST_F(CollectionsTest, ConcCompactDropCollectionMB_44694) {
 
     kvstore.setConcurrentCompactionPreLockHook(
             [&vb, &cm, this](auto& compactionKey) {
+                store_item(vbid,
+                           StoredDocKey{"carrot1", CollectionEntry::vegetable},
+                           "v2");
+                flushVBucketToDiskIfPersistent(vbid, 1);
+
                 // Drop a collection during flush
                 cm.remove(CollectionEntry::vegetable);
                 vb->updateFromManifest(makeManifest(cm));
@@ -1975,6 +1992,7 @@ TEST_F(CollectionsTest, ConcCompactPurgeTombstones) {
     EXPECT_LT(diskSizeFinal, diskSizeWithTwoItems);
     // And less than when it had two large tombstones
     EXPECT_LT(diskSizeFinal, diskSizeWithTwoTombstones);
+    std::cerr << "final" << std::endl;
     compareDiskStatMemoryVsPersisted();
 }
 

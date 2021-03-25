@@ -42,6 +42,7 @@
 #include <platform/dirutils.h>
 #include <gsl/gsl>
 
+#include <charconv>
 #include <memory>
 #include <shared_mutex>
 #include <utility>
@@ -197,6 +198,25 @@ static std::string getDBFileName(const std::string& dbname,
 
 static std::string getCollectionStatsLocalDocId(CollectionID cid) {
     return fmt::format("|{:#x}|", uint32_t(cid));
+}
+
+static CollectionID getCollectionIdFromStatsDocId(std::string_view id) {
+    uint32_t result{0};
+    bool fail = true;
+    // id is expected to be "|0x<id>|" min size is 5, i.e. "|0x0|"
+    if (id.size() >= 5) {
+        auto [p, ec] = std::from_chars(id.begin() + 3, id.end(), result, 16);
+        (void)p;
+        if (ec == std::errc()) {
+            fail = false;
+        }
+    }
+    if (fail) {
+        throw std::logic_error(
+                "getCollectionIdFromStatsDocId cannot convert id:" +
+                std::string(id));
+    }
+    return result;
 }
 
 struct GetMultiCbCtx {
@@ -818,8 +838,9 @@ static int time_purge_hook(Db* d,
     auto updateCollectionDiskSize = [ctx, docKey, info]() {
         if (!docKey.isInSystemCollection()) {
             auto itr = ctx->stats.collectionSizeUpdates.emplace(
-                    docKey.getCollectionID(), 0);
-            itr.first->second += info->getTotalSize();
+                    docKey.getCollectionID(),
+                    CompactionStats::CollectionDiskSizeChange{0, 0});
+            itr.first->second.purgedBytes += info->getTotalSize();
         }
         return COUCHSTORE_COMPACT_DROP_ITEM;
     };
@@ -903,6 +924,7 @@ static int time_purge_hook(Db* d,
                 // prepares in the value. We don't do this at collection drop
                 // as the stat doc will have already been deleted (for
                 // couchstore)
+                std::cerr << "drop and account prepare\n";
                 return updateCollectionDiskSize();
             }
 
@@ -1058,11 +1080,11 @@ static FileInfo toFileInfo(const cb::couchstore::Header& info) {
             info.docCount, info.deletedCount, info.fileSize, info.purgeSeqNum};
 }
 
-couchstore_error_t CouchKVStore::replayPrecommitHook(
+couchstore_error_t CouchKVStore::replayPreCommitHook(
         Db& db,
         CompactionReplayPrepareStats& prepareStats,
         uint64_t purge_seqno,
-        const CompactionContext& hook_ctx) {
+        CompactionContext& hook_ctx) {
     couchstore_set_purge_seq(&db, purge_seqno);
     auto [status, json] = getLocalVbState(db);
     if (status != COUCHSTORE_SUCCESS) {
@@ -1086,20 +1108,22 @@ couchstore_error_t CouchKVStore::replayPrecommitHook(
         PendingLocalDocRequestQueue localDocQueue =
                 replayPrecommitProcessDroppedCollections(db, hook_ctx);
 
-        for (auto [cid, adjustedDiskSize] : prepareStats.collectionSizes) {
+        for (auto& [cid, change] : hook_ctx.stats.collectionSizeUpdates) {
             // Need to read the collection stats
             auto [success, collectionStats] = getCollectionStats(db, cid);
             if (!success) {
                 logger.warn(
-                        "CouchKVStore::replayPrecommitHook: Failed to "
+                        "CouchKVStore::replayPreCommitHook: Failed to "
                         "load collection stats for cid:{}, stats could be now "
                         "wrong!",
                         cid);
                 return COUCHSTORE_ERROR_READ;
             }
 
-            // To update them
-            collectionStats.diskSize = adjustedDiskSize;
+            // Disk size needs updating
+            change.updateDiskSize(collectionStats.diskSize);
+            // Store back the updated size
+            collectionStats.diskSize = change.diskSize;
 
             // To write them back
             localDocQueue.emplace_back(getCollectionStatsLocalDocId(cid),
@@ -1175,6 +1199,7 @@ static couchstore_error_t replayPreCopyHook(
         const DocInfo* docInfo,
         CompactionReplayPrepareStats& prepareStats) {
     if (docInfo) {
+        std::cerr << "jjjj\n";
         auto metadata = MetaDataFactory::createMetaData(docInfo->rev_meta);
         // Reminder! An abort is a deleted (by the DocInfo flag) prepare. A
         // SyncDelete is an alive (not deleted in DocInfo) prepare with a
@@ -1188,11 +1213,7 @@ static couchstore_error_t replayPreCopyHook(
             if (st == COUCHSTORE_SUCCESS && !di->deleted) {
                 --prepareStats.onDiskPrepares;
                 prepareStats.onDiskPrepareBytes -= di->getTotalSize();
-
-                auto diskDocKey = makeDiskDocKey(docInfo->id);
-                prepareStats.collectionSizes[diskDocKey.getDocKey()
-                                                     .getCollectionID()] -=
-                        di->getTotalSize();
+                std::cerr << "H22211ERE\n";
             }
         }
 
@@ -1207,9 +1228,7 @@ static couchstore_error_t replayPreCopyHook(
             if (st == COUCHSTORE_ERROR_DOC_NOT_FOUND) {
                 ++prepareStats.onDiskPrepares;
                 prepareStats.onDiskPrepareBytes += docInfo->getTotalSize();
-
-                auto cid = diskDocKey.getDocKey().getCollectionID();
-                prepareStats.collectionSizes[cid] += docInfo->getTotalSize();
+                std::cerr << "HzzERE\n";
             }
 
             if (st == COUCHSTORE_SUCCESS) {
@@ -1217,57 +1236,36 @@ static couchstore_error_t replayPreCopyHook(
                     // Abort -> Prepare
                     ++prepareStats.onDiskPrepares;
                     prepareStats.onDiskPrepareBytes += docInfo->getTotalSize();
-
-                    prepareStats.collectionSizes[diskDocKey.getDocKey()
-                                                         .getCollectionID()] +=
-                            docInfo->getTotalSize();
+                    std::cerr << "11ERE\n";
                 } else {
                     // Prepare -> Prepare
                     auto delta = docInfo->getTotalSize() - di->getTotalSize();
+                    std::cerr << "HERE\n";
                     prepareStats.onDiskPrepareBytes += delta;
-
-                    prepareStats.collectionSizes[diskDocKey.getDocKey()
-                                                         .getCollectionID()] +=
-                            delta;
                 }
             }
         }
-
-        if (metadata->isCommit()) {
-            // As we track prepares in the collection sizes and can't update
-            // the collection sizes with deltas during the replay (as we don't
-            // have the original db) we need to also update the sizes of any
-            // collections whose elements change during the replay. We need to
-            // track the size updates here
-
-            // Check if it existed before
-            auto [st, di] = cb::couchstore::openDocInfo(
-                    target,
-                    std::string_view{docInfo->id.buf, docInfo->id.size});
-
-            if (st == COUCHSTORE_ERROR_DOC_NOT_FOUND && !docInfo->deleted) {
-                // New item, count goes up
-                prepareStats.collectionSizes[diskDocKey.getDocKey()
-                                                     .getCollectionID()] +=
-                        docInfo->getTotalSize();
-            } else if (st == COUCHSTORE_SUCCESS) {
-                // Change in item, change in count
-                ssize_t oldSize = di->getTotalSize();
-                ssize_t newSize = docInfo->getTotalSize();
-                prepareStats.collectionSizes[diskDocKey.getDocKey()
-                                                     .getCollectionID()] +=
-                        newSize - oldSize;
-            }
-        }
-
-        if (diskDocKey.getDocKey().isInSystemCollection() && docInfo->deleted) {
-            // Finally, we prune any entries that belong to collections that
-            // have now been dropped. We don't want to put a stat doc on disk
-            // for them.
-            prepareStats.collectionSizes.erase(
-                    diskDocKey.getDocKey().getCollectionID());
-        }
     }
+
+#if 0
+Code doesn't work?
+
+Why.
+
+Current code assumes can just copy the diskSize from source to target and remove purgeBytes. That is wrong in the case we purged an item from target and it was re-added to source (and copied over in replay)
+
+So code is correct I think up to maybePatch now when replay kicks in we have to copy over each item and add it into the total
+
+E.g.
+
+target[a,b,c]
+source [a',b,c, d]
+
+we will see a copy of a' and d
+
+This is where the pain comes in though as we will have to reuse the flush logic for calculating insert/replace/remove :(
+
+#endif
     return COUCHSTORE_SUCCESS;
 }
 
@@ -1317,89 +1315,7 @@ CouchKVStore::CompactDBInternalStatus CouchKVStore::compactDBInternal(
     // Perform COMPACTION of vbucket.couch.rev into
     // vbucket.couch.rev.compact
     if (configuration.isPitrEnabled()) {
-        std::chrono::nanoseconds timestamp =
-                std::chrono::system_clock::now().time_since_epoch() -
-                configuration.getPitrMaxHistoryAge();
-        const auto delta = configuration.getPitrGranularity();
-        const auto seconds =
-                std::chrono::duration_cast<std::chrono::seconds>(timestamp);
-        const auto usec = std::chrono::duration_cast<std::chrono::microseconds>(
-                timestamp - seconds);
-
-        EP_LOG_INFO(
-                "{}: Full compaction to {}, incremental with granularity of "
-                "{} sec",
-                vbid.to_string(),
-                ISOTime::generatetimestamp(seconds.count(), usec.count()),
-                std::chrono::duration_cast<std::chrono::seconds>(
-                        configuration.getPitrGranularity())
-                        .count());
-
-        // @todo I'm not sure if updating the bloom filter as part of
-        //       traversing historical data is what we want to do :S
-        hook_ctx->bloomFilterCallback = {};
-
-        CompactionReplayPrepareStats prepareStats;
-        uint64_t purge_seqno = 0;
-        errCode = cb::couchstore::compact(
-                *sourceDb,
-                compact_file.c_str(),
-                flags,
-                [hook_ctx](Db& db, DocInfo* docInfo, sized_buf value) -> int {
-                    return time_purge_hook(&db, docInfo, value, hook_ctx);
-                },
-                {},
-                def_iops,
-                [vbid, hook_ctx, this](Db& compacted) {
-                    // we don't try to delete the dropped collection document
-                    // as it'll come back in the next database header anyway
-                    PendingLocalDocRequestQueue localDocQueue;
-                    auto ret = maybePatchMetaData(
-                            compacted, hook_ctx->stats, localDocQueue, vbid);
-                    if (ret == COUCHSTORE_SUCCESS) {
-                        ret = updateLocalDocuments(compacted, localDocQueue);
-                    }
-                    return ret;
-                },
-                timestamp.count(),
-                delta.count(),
-                [this, &vbid, hook_ctx](Db& db) {
-                    auto [status, state] = readVBState(&db, vbid);
-                    if (status != ReadVBStateStatus::Success) {
-                        return COUCHSTORE_ERROR_CANCEL;
-                    }
-                    hook_ctx->highCompletedSeqno =
-                            state.persistedCompletedSeqno;
-                    auto [getDroppedStatus, droppedCollections] =
-                            getDroppedCollections(db);
-                    if (getDroppedStatus != COUCHSTORE_SUCCESS) {
-                        return COUCHSTORE_ERROR_CANCEL;
-                    }
-
-                    hook_ctx->eraserContext =
-                            std::make_unique<Collections::VB::EraserContext>(
-                                    droppedCollections);
-                    return COUCHSTORE_SUCCESS;
-                },
-                [this, &vbid, &prepareStats, &purge_seqno](Db& db) {
-                    auto [status, state] = readVBState(&db, vbid);
-                    if (status != ReadVBStateStatus::Success) {
-                        return COUCHSTORE_ERROR_CANCEL;
-                    }
-                    prepareStats.onDiskPrepares = state.onDiskPrepares;
-                    purge_seqno = cb::couchstore::getHeader(db).purgeSeqNum;
-                    return COUCHSTORE_SUCCESS;
-                },
-                [&prepareStats](Db&,
-                                Db& target,
-                                const DocInfo* docInfo,
-                                const DocInfo*) {
-                    return replayPreCopyHook(target, docInfo, prepareStats);
-                },
-                [&prepareStats, &purge_seqno, hook_ctx, this](Db& db) {
-                    return replayPrecommitHook(
-                            db, prepareStats, purge_seqno, *hook_ctx);
-                });
+        errCode = COUCHSTORE_SUCCESS;
     } else {
         auto [status, state] = readVBState(sourceDb.getDb(), vbid);
         if (status == ReadVBStateStatus::Success) {
@@ -1489,7 +1405,9 @@ CouchKVStore::CompactDBInternalStatus CouchKVStore::compactDBInternal(
                 targetDb.getFileRev());
         return CompactDBInternalStatus::Failed;
     }
+
     CompactionReplayPrepareStats prepareStats;
+
     {
         auto [status, json] = getLocalVbState(*targetDb);
         if (status != COUCHSTORE_SUCCESS) {
@@ -1507,41 +1425,10 @@ CouchKVStore::CompactDBInternalStatus CouchKVStore::compactDBInternal(
             prepareStats.onDiskPrepareBytes =
                     std::stoul(prepareBytes->get<std::string>());
         }
-
-        // Load in all of the collections stats docs so that we have the correct
-        // baseline values to which we will apply deltas to during the catch up
-        auto [getManifestResult, manifest] =
-                getCollectionsManifest(*targetDb.getDb());
-        if (getManifestResult != COUCHSTORE_SUCCESS) {
-            logger.warn(
-                    "CouchKVStore::compactDBInternal: {} failed to read "
-                    "collections manifest for replay phase, got status: {}",
-                    vbid,
-                    couchstore_strerror(getManifestResult));
-            return CompactDBInternalStatus::Failed;
-        }
-
-        for (const auto& collection : manifest.collections) {
-            const auto cid = collection.metaData.cid;
-            const auto [success, stats] =
-                    getCollectionStats(*targetDb.getDb(), cid);
-            if (!success) {
-                logger.warn(
-                        "CouchKVStore::compactDBInternal: {} failed to read "
-                        "collections stats for replay phase, got status: ",
-                        vbid);
-                // fail in the same way as if we couldn't get the collection
-                // manifest
-                return CompactDBInternalStatus::Failed;
-            }
-            prepareStats.collectionSizes[cid] = stats.diskSize;
-
-            auto itr = hook_ctx->stats.collectionSizeUpdates.find(cid);
-            if (itr != hook_ctx->stats.collectionSizeUpdates.end()) {
-                prepareStats.collectionSizes[cid] = itr->second;
-            }
-        }
     }
+
+    // Pre-populate the collection sizes, if replay does nothing these will
+    // be used, otherwise replay will update
 
     concurrentCompactionPreLockHook(compact_file);
 
@@ -1674,8 +1561,8 @@ bool CouchKVStore::compactDBTryAndSwitchToNewFile(
     // don't have to worry about race conditions with things like the purge
     // seqno.
     if (hookCtx->completionCallback) {
-        hookCtx->stats.collectionSizeUpdates =
-                std::move(prepareStats.collectionSizes);
+        //  hookCtx->stats.collectionSizeUpdates =
+        //          std::move(prepareStats.collectionSizes);
         hookCtx->completionCallback(*hookCtx);
     }
 
@@ -1762,6 +1649,7 @@ couchstore_error_t CouchKVStore::maybePatchMetaData(
                 // prepare-bytes. The counter would go negative, just set to 0.
                 *prepareBytes = "0";
             }
+            std::cerr << "Prepare bytes changing\n";
             updateVbState = true;
         }
 
@@ -1773,7 +1661,7 @@ couchstore_error_t CouchKVStore::maybePatchMetaData(
     }
 
     // Finally see if compaction purged data and disk size stats need updates
-    for (auto [cid, purgedBytes] : stats.collectionSizeUpdates) {
+    for (auto& [cid, update] : stats.collectionSizeUpdates) {
         // Need to read the collection stats
         auto [success, currentStats] = getCollectionStats(db, cid);
         if (!success) {
@@ -1786,20 +1674,58 @@ couchstore_error_t CouchKVStore::maybePatchMetaData(
             return COUCHSTORE_ERROR_READ;
         }
 
-        // To update them
-        currentStats.diskSize -= purgedBytes;
+        std::cerr << "maybePatchMetaData collection diskSize change disk:"
+                  << currentStats.diskSize << " purged:" << update.purgedBytes
+                  << " = new-disk" << currentStats.diskSize - update.purgedBytes
+                  << std::endl;
 
-        // Set the size to the total so that we can reset the cached value in
-        // the manifest. We don't update using deltas as a concurrent flush
-        // during compaction can't update the stats via deltas and we can re-use
-        // the code
-        stats.collectionSizeUpdates[cid] = currentStats.diskSize;
+        // Save the new total for the in-memory update (happens on success)
+        update.updateDiskSize(currentStats.diskSize);
+        currentStats.diskSize = update.diskSize;
 
         // To write them back
         localDocQueue.emplace_back(getCollectionStatsLocalDocId(cid),
                                    currentStats.getLebEncodedStats());
     }
 
+    return COUCHSTORE_SUCCESS;
+}
+
+couchstore_error_t CouchKVStore::replayPreCopyLocalDoc(Db& source,
+                                                       const DocInfo* ldoc,
+                                                       CompactionStats& stats) {
+    std::string_view documentId{ldoc->id.buf, ldoc->id.size};
+    if (documentId.empty()) {
+        // Warn and error
+    }
+    std::cerr << "copy ldoc:" << documentId << std::endl;
+    if (documentId[0] == '|') {
+        // Collection statistics, obtain collection-ID
+        auto cid = getCollectionIdFromStatsDocId(documentId);
+        auto [success, currentStats] = getCollectionStats(source, cid);
+        if (!success) {
+            logger.warn(
+                    "CouchKVStore::replayPreCopyLocalDoc: failed loading stats "
+                    "for cid:{}",
+                    cid);
+            return COUCHSTORE_ERROR_CANCEL;
+        }
+
+        auto [itr, emplaced] = stats.collectionSizeUpdates.try_emplace(
+                cid,
+                CompactionStats::CollectionDiskSizeChange{
+                        0, currentStats.diskSize});
+
+        if (!emplaced) {
+            // Collection is already in the map. A new disk size must be
+            // calculated. Note purgedBytes could be zero in the case the copy
+            // is happening because of multiple flushes interleaved with
+            // compaction, outcome is still correct.
+            itr->second.updateDiskSize(currentStats.diskSize);
+            std::cerr << "Replay copy disk:" << currentStats.diskSize << " now "
+                      << itr->second.diskSize << std::endl;
+        }
+    }
     return COUCHSTORE_SUCCESS;
 }
 
@@ -1811,7 +1737,7 @@ bool CouchKVStore::tryToCatchUpDbFile(
         uint64_t purge_seqno,
         CompactionReplayPrepareStats& prepareStats,
         Vbid vbid,
-        const CompactionContext& hook_ctx) {
+        CompactionContext& hook_ctx) {
     if (!lock.owns_lock()) {
         throw std::logic_error(
                 "CouchKVStore::tryToCatchUpDbFile: lock must be held");
@@ -1858,12 +1784,19 @@ bool CouchKVStore::tryToCatchUpDbFile(
             destination,
             delta,
             end.headerPosition,
-            [&prepareStats](
-                    Db&, Db& target, const DocInfo* docInfo, const DocInfo*) {
+            [&prepareStats, &hook_ctx, this](Db& source,
+                                             Db& target,
+                                             const DocInfo* docInfo,
+                                             const DocInfo* localDocInfo) {
+                if (localDocInfo) {
+                    return replayPreCopyLocalDoc(
+                            source, localDocInfo, hook_ctx.stats);
+                }
+
                 return replayPreCopyHook(target, docInfo, prepareStats);
             },
             [&prepareStats, &purge_seqno, &hook_ctx, this](Db& compacted) {
-                return replayPrecommitHook(
+                return replayPreCommitHook(
                         compacted, prepareStats, purge_seqno, hook_ctx);
             });
     if (err != COUCHSTORE_SUCCESS) {

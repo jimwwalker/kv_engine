@@ -131,13 +131,6 @@ protected:
 struct CompactionReplayPrepareStats {
     uint64_t onDiskPrepares = 0;
     uint64_t onDiskPrepareBytes = 0;
-
-    /**
-     * Values which we will use to update the collection sizes. We load in the
-     * post-compaction values and apply deltas as we replay the new mutations to
-     * the new Db.
-     */
-    CompactionStats::CollectionSizeUpdates collectionSizes;
 };
 
 struct kvstats_ctx;
@@ -718,7 +711,7 @@ protected:
                             uint64_t purge_seqno,
                             CompactionReplayPrepareStats& prepareStats,
                             Vbid vbid,
-                            const CompactionContext& hook_ctx);
+                            CompactionContext& hook_ctx);
 
     /**
      * The following status codes can be returned by compactDBInternal
@@ -866,18 +859,22 @@ protected:
      * @returns COUCHSTORE_SUCCESS on success, couchstore error otherwise (which
      *          will cause replay to fail).
      */
-    couchstore_error_t replayPrecommitHook(Db&,
+    couchstore_error_t replayPreCommitHook(Db&,
                                            CompactionReplayPrepareStats&,
                                            uint64_t,
-                                           const CompactionContext&);
+                                           CompactionContext&);
+
+    couchstore_error_t replayPreCopyLocalDoc(Db& source,
+                                             const DocInfo* ldoc,
+                                             CompactionStats& compactionStats);
 
     /**
-     * Helper method for replayPrecommitHook, processes the dropped collections
+     * Helper method for replayPreCommitHook, processes the dropped collections
      * (if any) and returns a local doc queue that has the correct dropped
      * collection data in it (or is an empty queue)
      * @param db The database instance to read and update
      * @param hook_ctx The CompactionContext
-     * @return queue that replayPrecommitHook uses for further local doc updates
+     * @return queue that replayPreCommitHook uses for further local doc updates
      */
     PendingLocalDocRequestQueue replayPrecommitProcessDroppedCollections(
             Db& db, const CompactionContext& hook_ctx);

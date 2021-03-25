@@ -42,9 +42,9 @@ public:
     explicit Flush(Manifest& manifest) : manifest(manifest) {
     }
 
-    const Manifest& getManifest() const {
-        return manifest;
-    }
+    // const Manifest& getManifest() const {
+    //    return manifest;
+    //}
 
     /**
      * KVStore implementations call this function and specific a callback.

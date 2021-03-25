@@ -102,7 +102,35 @@ struct CompactionStats {
     /**
      * Per-collection size updates to be applied post-compaction.
      */
-    using CollectionSizeUpdates = std::unordered_map<CollectionID, ssize_t>;
+    struct CollectionDiskSizeChange {
+        /**
+         * For the final stage of compaction we may need to undo the changes
+         * to the in-memory collection diskSize. At that point purgedBytes is
+         * not needed and we can use it for storing that value.
+         */
+        void setUndoDiskSize(size_t s) {
+            purgedBytes = s;
+        }
+        /**
+         * @return the diskSize to set if we had to abort the final stage of
+         *  compaction
+         */
+        size_t getUndoDiskSize() const {
+            return purgedBytes;
+        }
+
+        void updateDiskSize(size_t newDiskSize) {
+            diskSize = newDiskSize - purgedBytes;
+        }
+
+        // During compaction this will accumulate the number of purged bytes
+        size_t purgedBytes{0};
+        // During compaction this will store the updates absolute diskSize, this
+        // may change multiple times if we have to perform catch up.
+        size_t diskSize{0};
+    };
+    using CollectionSizeUpdates =
+            std::unordered_map<CollectionID, CollectionDiskSizeChange>;
     CollectionSizeUpdates collectionSizeUpdates;
 };
 

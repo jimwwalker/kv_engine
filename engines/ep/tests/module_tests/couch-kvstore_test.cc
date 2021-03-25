@@ -515,38 +515,6 @@ protected:
     Vbid vbid = Vbid(0);
 };
 
-TEST_F(CouchKVStoreErrorInjectionTest, getCollectionsManifestFailed) {
-    populate_items(1);
-
-    CompactionConfig config;
-    config.purge_before_seq = 0;
-    config.purge_before_ts = 0;
-    config.drop_deletes = false;
-    auto cctx = std::make_shared<CompactionContext>(vbid, config, 0);
-
-    {
-        /* Establish Logger expectation */
-        EXPECT_CALL(logger, mlog(_, _)).Times(AnyNumber());
-        EXPECT_CALL(logger,
-                    mlog(Ge(spdlog::level::level_enum::warn),
-                         VCE(COUCHSTORE_ERROR_READ)))
-                .Times(1)
-                .RetiresOnSaturation();
-
-        /* Establish FileOps expectation */
-        EXPECT_CALL(ops, pread(_, _, _, _, _))
-                .Times(1)
-                .WillRepeatedly(Return(COUCHSTORE_ERROR_READ))
-                .RetiresOnSaturation();
-
-        EXPECT_CALL(ops, pread(_, _, _, _, _)).Times(20).RetiresOnSaturation();
-
-        std::mutex mutex;
-        std::unique_lock<std::mutex> lock(mutex);
-        EXPECT_FALSE(kvstore->compactDB(lock, cctx));
-    }
-}
-
 /**
  * Injects error during CouchKVStore::writeVBucketState/couchstore_commit
  */
@@ -1365,9 +1333,8 @@ public:
         // @TODO move the tests that rely on this to a different test suite and
         // remove
         ctx->completionCallback = [this](CompactionContext& ctx) {
-            for (const auto& [cid, droppedPrepareBytes] :
-                 ctx.stats.collectionSizeUpdates) {
-                manifest.lock(cid).setDiskSize(droppedPrepareBytes);
+            for (const auto& [cid, change] : ctx.stats.collectionSizeUpdates) {
+                manifest.lock(cid).setDiskSize(change.diskSize);
             }
         };
         kvstore->compactDB(lock, ctx);
@@ -2288,7 +2255,7 @@ TEST_F(CouchstoreTest, ConcurrentCompactionAndFlushingPreparePurgeToPrepare) {
     auto dummy = makeCommittedItem(makeStoredDocKey("dummy"), "dummy");
     dummy->setBySeqno(2);
 
-    // And set the PCS so that the compactor tries to drop the prepare at 1
+    // And set the PCS so that the compactor drops the prepare at 1
     kvstore->begin(std::make_unique<TransactionContext>(vbid));
     kvstore->set(dummy);
     flush.proposedVBState = kvstore->getPersistedVBucketState(vbid);
@@ -2342,7 +2309,11 @@ TEST_F(CouchstoreTest, ConcurrentCompactionAndFlushingPreparePurgeToPrepare) {
         Collections::Summary summary;
         manifest.lock().updateSummary(summary);
         auto expected = summary[CollectionID::Default].diskSize - dummySize;
-        EXPECT_EQ(expected, vbstate.getOnDiskPrepareBytes());
+        EXPECT_EQ(expected, vbstate.getOnDiskPrepareBytes()) << dummySize;
+        std::cerr << " summary[CollectionID::Default].diskSize:"
+                  << summary[CollectionID::Default].diskSize << std::endl;
+        std::cerr << "vbstate.getOnDiskPrepareBytes():"
+                  << vbstate.getOnDiskPrepareBytes() << std::endl;
     }
 
     // Should also check the cached count

@@ -1191,14 +1191,13 @@ void EPBucket::compactionCompletionCallback(CompactionContext& ctx) {
     // Grab a pre-compaction snapshot of the stats
     auto prePurgeSeqno = vb->getPurgeSeqno();
     auto preNumTotalItems = vb->getNumTotalItems();
-
-    auto preCollectionSizes = ctx.stats.collectionSizeUpdates;
     bool preDropInProgess = vb->getManifest().isDropInProgress();
-    for (auto& [cid, newSize] : preCollectionSizes) {
-        auto handle = vb->getManifest().lock(cid);
 
+    // Setup the undo sizes in-case we have to abort
+    for (auto& [cid, newSize] : ctx.stats.collectionSizeUpdates) {
+        auto handle = vb->getManifest().lock(cid);
         if (handle.valid()) {
-            newSize = handle.getDiskSize();
+            newSize.setUndoDiskSize(handle.getDiskSize());
         }
     }
 
@@ -1214,29 +1213,44 @@ void EPBucket::compactionCompletionCallback(CompactionContext& ctx) {
         if (postCompactionCompletionStatsUpdateHook) {
             postCompactionCompletionStatsUpdateHook();
         }
-
-    } catch (std::exception& e) {
+    } catch (const std::exception&) {
         // Re-apply our pre-compaction stats snapshot
         vb->setPurgeSeqno(prePurgeSeqno);
         vb->setNumTotalItems(preNumTotalItems);
 
-        updateCollectionStatePostCompaction(
-                *vb, preCollectionSizes, preDropInProgess);
+        undoCollectionStatePostCompaction(
+                *vb, ctx.stats.collectionSizeUpdates, preDropInProgess);
 
         // And re-throw to "undo" the on disk compaction
         throw;
     }
 }
 
-void EPBucket::updateCollectionStatePostCompaction(
+void EPBucket::undoCollectionStatePostCompaction(
         VBucket& vb,
-        CompactionStats::CollectionSizeUpdates& collectionSizeUpdates,
+        const CompactionStats::CollectionSizeUpdates& collectionSizeUpdates,
         bool onDiskDroppedCollectionDataExists) {
     for (const auto& [cid, newSize] : collectionSizeUpdates) {
         auto handle = vb.getManifest().lock(cid);
 
         if (handle.valid()) {
-            handle.setDiskSize(newSize);
+            handle.setDiskSize(newSize.getUndoDiskSize());
+        }
+    }
+
+    // Set the dropInProgress flag to true if ondisk dropped data exists
+    vb.getManifest().setDropInProgress(onDiskDroppedCollectionDataExists);
+}
+
+void EPBucket::updateCollectionStatePostCompaction(
+        VBucket& vb,
+        const CompactionStats::CollectionSizeUpdates& collectionSizeUpdates,
+        bool onDiskDroppedCollectionDataExists) {
+    for (const auto& [cid, newSize] : collectionSizeUpdates) {
+        auto handle = vb.getManifest().lock(cid);
+
+        if (handle.valid()) {
+            handle.setDiskSize(newSize.diskSize);
         }
     }
 
