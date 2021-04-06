@@ -992,7 +992,7 @@ TEST_F(VBucketManifestTest, replica_add_remove) {
 
 TEST_F(VBucketManifestTest, check_applyChanges) {
     Collections::VB::Manifest::ManifestChanges changes{
-            Collections::ManifestUid(0), false};
+            {Collections::ManifestUid(0), {}}, false};
     auto value = manifest.getActiveManifest().public_applyCreates(
             manifest.getActiveVB(), changes);
     EXPECT_FALSE(value.has_value());

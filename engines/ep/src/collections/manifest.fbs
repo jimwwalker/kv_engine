@@ -21,6 +21,14 @@ struct FlatbufferHistoryID {
     data1:uint64;
 }
 
+table FlatbufferManifestGID {
+   revision:ulong;
+   historyId:FlatbufferHistoryID;
+}
+
+// VBuckets store the ID
+root_type FlatbufferManifestGID;
+
 namespace Collections.Persist;
 
 table Collection {
@@ -37,8 +45,7 @@ table Scope {
 }
 
 table Manifest {
-   uid:ulong;
-   historyID:FlatbufferHistoryID;
+   id:FlatbufferManifestGID;
    scopes:[Scope];
 }
 

@@ -136,6 +136,8 @@ Entry_(maxScope);
 } // namespace ScopeEntry
 
 constexpr std::string_view TestHistoryID = "00112233445566778899aabbccddeeff";
+constexpr std::string_view AltHistoryID = "9a112233445566771199aabbccddeef1";
+
 struct NoDefault {};
 
 /**
@@ -199,6 +201,10 @@ public:
     uint64_t getUid() const {
         return uid;
     }
+
+    void setHistoryID(std::string_view historyId);
+
+    std::string getHistoryID() const;
 
     /// Return the manifest UID
     std::string getUidString() const {

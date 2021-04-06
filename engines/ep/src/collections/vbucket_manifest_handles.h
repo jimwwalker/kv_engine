@@ -571,7 +571,7 @@ public:
      * @param startSeqno The start-seqno assigned to the collection.
      */
     void replicaCreate(::VBucket& vb,
-                       ManifestUid manifestUid,
+                       ManifestGID manifestUid,
                        ScopeCollectionPair identifiers,
                        std::string_view collectionName,
                        cb::ExpiryLimit maxTtl,
@@ -597,7 +597,7 @@ public:
      * @param endSeqno The end-seqno assigned to the end collection.
      */
     void replicaDrop(::VBucket& vb,
-                     ManifestUid manifestUid,
+                     ManifestGID manifestUid,
                      CollectionID cid,
                      int64_t endSeqno) {
         manifest.dropCollection(
@@ -614,7 +614,7 @@ public:
      * @param startSeqno The start-seqno assigned to the scope
      */
     void replicaCreateScope(::VBucket& vb,
-                            ManifestUid manifestUid,
+                            ManifestGID manifestUid,
                             ScopeID sid,
                             std::string_view scopeName,
                             int64_t startSeqno) {
@@ -636,7 +636,7 @@ public:
      * @param endSeqno The end-seqno assigned to the scope drop
      */
     void replicaDropScope(::VBucket& vb,
-                          ManifestUid manifestUid,
+                          ManifestGID manifestUid,
                           ScopeID sid,
                           int64_t endSeqno) {
         manifest.dropScope(

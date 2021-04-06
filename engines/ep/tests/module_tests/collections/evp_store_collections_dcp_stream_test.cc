@@ -773,7 +773,9 @@ TEST_F(CollectionsDcpStreamsTest,
     // set seqno at the begging of snapshot
     auto seqno = snapStart;
     // create a DCP collection creation event
-    Collections::ManifestUid manifestUid;
+    Collections::ManifestUid revision{0};
+    Collections::HistoryID hid{TestHistoryID};
+    Collections::ManifestGID manifestUid{revision, hid};
     Collections::CreateEventDcpData createEventDcpData{
             {manifestUid,
              {ScopeEntry::defaultS.getId(),
@@ -827,7 +829,7 @@ TEST_F(CollectionsDcpStreamsTest,
 
     // create collection drop system event and apply it to the pending vbucket
     Collections::DropEventDcpData dropEventDcpData{
-            {Collections::ManifestUid{manifestUid++},
+            {{revision++, TestHistoryID},
              ScopeEntry::defaultS.getId(),
              CollectionEntry::dairy.getId()}};
     EXPECT_EQ(cb::engine_errc::success,

@@ -47,12 +47,11 @@ Collections::KVStore::Manifest decodeManifest(cb::const_byte_buffer manifest,
     std::unordered_set<ScopeID> openScopes;
 
     if (!manifest.empty()) {
-        verifyFlatbuffersData<Collections::KVStore::CommittedManifest>(
+        verifyFlatbuffersData<Collections::FlatbufferManifestGID>(
                 manifest, "decodeManifest(manifest)");
-        auto fbData =
-                flatbuffers::GetRoot<Collections::KVStore::CommittedManifest>(
-                        manifest.data());
-        rv.manifestUid = fbData->uid();
+        auto fbData = flatbuffers::GetRoot<Collections::FlatbufferManifestGID>(
+                manifest.data());
+        rv.manifestUid = fbData->revision();
     }
     if (!collections.empty()) {
         verifyFlatbuffersData<Collections::KVStore::OpenCollections>(

@@ -1443,7 +1443,7 @@ TEST_F(CollectionsTest, ConcCompactNewPrepare) {
         EXPECT_NE(0, postCommitDairySize);
 
         preCompactionMeatSize = summary[CollectionEntry::meat].diskSize;
-        EXPECT_EQ(57 + 14 + MetaData::getMetaDataSize(MetaData::Version::V1),
+        EXPECT_EQ(86 + 14 + MetaData::getMetaDataSize(MetaData::Version::V1),
                   preCompactionMeatSize);
     }
 
@@ -1970,17 +1970,17 @@ TEST_P(ConcurrentCompactPurge, ConcCompactPurgeTombstones) {
     runCompaction(vbid, 0, true);
 
     // For GetParam==false (no prepare/commit) fruit collection consists of:
-    //    1) create-collection k:14 + v:57 + m:+18 = 88
+    //    1) create-collection k:14 + v:74 + m:+18 = 106
     //    2) apricot{v2} k:8+ v:12 + m:18 = 38
     // For GetParam==true (prepare/commit) fruit collection consists of:
-    //    1) create-collection k:14 + v:57 + m:+18 = 88
+    //    1) create-collection k:14 + v:89 + m:+18 = 106
     //    2) durian{pong} k:8 +  v:14 + m:24 = 46
     //    3) apricot{v2} k:8+ v:12 + m:18 = 38
     auto expectedSz = 0;
     if (!GetParam()) {
-        expectedSz = 89 + 38;
+        expectedSz = 106 + 38;
     } else {
-        expectedSz = 89 + 46 + 38;
+        expectedSz = 106 + 46 + 38;
     }
 
     auto diskSizeFinal =
@@ -2648,10 +2648,12 @@ TEST_F(CollectionsTest, GetScopeIdForGivenKeyAndVbucket) {
 
     replicaVb->checkpointManager->createSnapshot(
             0, 2, std::nullopt, CheckpointType::Memory, 3);
-    replicaVb->replicaCreateScope(
-            Collections::ManifestUid(1), ScopeUid::shop1, ScopeName::shop1, 1);
+    replicaVb->replicaCreateScope({1, cmDairyVb.getHistoryID()},
+                                  ScopeUid::shop1,
+                                  ScopeName::shop1,
+                                  1);
     replicaVb->replicaCreateCollection(
-            Collections::ManifestUid(2),
+            {2, cmDairyVb.getHistoryID()},
             {ScopeUid::shop1, CollectionEntry::meat.getId()},
             CollectionEntry::meat.name,
             {},

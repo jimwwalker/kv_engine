@@ -12,6 +12,7 @@
 #pragma once
 
 #include "collections/collections_types.h"
+#include "collections/manifest_gid.h"
 
 namespace Collections {
 
@@ -19,23 +20,23 @@ namespace Collections {
  * All of the data a system event needs
  */
 struct CreateEventData {
-    ManifestUid manifestUid; // The Manifest which generated the event
+    ManifestGID manifestUid; // The Manifest which generated the event
     CollectionMetaData metaData; // The data of the new collection
 };
 
 struct DropEventData {
-    ManifestUid manifestUid; // The Manifest which generated the event
+    ManifestGID manifestUid; // The Manifest which generated the event
     ScopeID sid; // The scope that the collection belonged to
     CollectionID cid; // The collection the event belongs to
 };
 
 struct CreateScopeEventData {
-    ManifestUid manifestUid; // The Manifest which generated the event
+    ManifestGID manifestUid; // The Manifest which generated the event
     ScopeMetaData metaData; // The data of the new scope
 };
 
 struct DropScopeEventData {
-    ManifestUid manifestUid; // The Manifest which generated the event
+    ManifestGID manifestUid; // The Manifest which generated the event
     ScopeID sid; // The scope the event belongs to
 };
 
@@ -51,7 +52,7 @@ std::string to_string(const DropScopeEventData& event);
  */
 struct CreateEventDcpData {
     explicit CreateEventDcpData(const CreateEventData& ev)
-        : manifestUid(ev.manifestUid),
+        : manifestUid(ev.manifestUid.getRevision()),
           sid(ev.metaData.sid),
           cid(ev.metaData.cid) {
     }
@@ -73,7 +74,7 @@ struct CreateEventDcpData {
  */
 struct CreateWithMaxTtlEventDcpData {
     explicit CreateWithMaxTtlEventDcpData(const CreateEventData& ev)
-        : manifestUid(ev.manifestUid),
+        : manifestUid(ev.manifestUid.getRevision()),
           sid(ev.metaData.sid),
           cid(ev.metaData.cid),
           maxTtl(htonl(gsl::narrow_cast<uint32_t>(
@@ -99,7 +100,9 @@ struct CreateWithMaxTtlEventDcpData {
  */
 struct DropEventDcpData {
     explicit DropEventDcpData(const DropEventData& data)
-        : manifestUid(data.manifestUid), sid(data.sid), cid(data.cid) {
+        : manifestUid(data.manifestUid.getRevision()),
+          sid(data.sid),
+          cid(data.cid) {
     }
 
     /// The manifest uid stored in network byte order ready for sending
@@ -120,7 +123,7 @@ struct DropEventDcpData {
  */
 struct CreateScopeEventDcpData {
     explicit CreateScopeEventDcpData(const CreateScopeEventData& data)
-        : manifestUid(data.manifestUid), sid(data.metaData.sid) {
+        : manifestUid(data.manifestUid.getRevision()), sid(data.metaData.sid) {
     }
     /// The manifest uid stored in network byte order ready for sending
     ManifestUidNetworkOrder manifestUid;
@@ -136,7 +139,7 @@ struct CreateScopeEventDcpData {
  */
 struct DropScopeEventDcpData {
     explicit DropScopeEventDcpData(const DropScopeEventData& data)
-        : manifestUid(data.manifestUid), sid(data.sid) {
+        : manifestUid(data.manifestUid.getRevision()), sid(data.sid) {
     }
 
     /// The manifest uid stored in network byte order ready for sending

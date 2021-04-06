@@ -40,7 +40,7 @@ Manifest::Manifest(std::shared_ptr<Manager> manager)
 
 Manifest::Manifest(std::shared_ptr<Manager> manager,
                    const KVStore::Manifest& data)
-    : manifestUid(data.manifestUid),
+    : manifestUid({data.manifestUid, {/*todo come read kvstore*/}}),
       manager(std::move(manager)),
       dropInProgress(data.droppedCollectionsExist) {
     for (const auto& scope : data.scopes) {
@@ -180,7 +180,7 @@ std::optional<Manifest::ScopeCreation> Manifest::applyScopeCreates(
     return rv;
 }
 
-void Manifest::updateUid(ManifestUid uid, bool reset) {
+void Manifest::updateUid(ManifestGID uid, bool reset) {
     if (reset) {
         manifestUid.reset(uid);
     } else {
@@ -199,18 +199,21 @@ ManifestUpdateStatus Manifest::update(::VBucket& vb,
     auto status = canUpdate(manifest);
     if (status != ManifestUpdateStatus::Success) {
         EP_LOG_WARN(
-                "Manifest::update {} error:{} vb-uid:{:#x} manifest-uid:{:#x}",
+                "Manifest::update {} error:{} vb-uid:{:#x} vb-hid:{}, "
+                "manifest-uid:{:#x} manifest-hid:{}",
                 vb.getId(),
                 to_string(status),
-                manifestUid,
-                manifest.getUid());
+                manifestUid.getRevision(),
+                manifestUid.getHistoryID().to_string(),
+                manifest.getUid(),
+                manifest.getHistoryID().to_string());
         return status;
     }
 
     auto changes = processManifest(manifest);
 
     // If manifest was equal. expect no changes (unless forced)
-    if (manifest.getUid() == manifestUid && !manifest.isForcedUpdate()) {
+    if (manifest.getUid() == manifestUid.getRevision() && !changes.forced) {
         if (changes.empty()) {
             return ManifestUpdateStatus::Success;
         } else {
@@ -219,7 +222,7 @@ ManifestUpdateStatus Manifest::update(::VBucket& vb,
                     "Manifest::update {} with equal uid:{:#x} but differences "
                     "scopes+:{}, collections+:{}, scopes-:{}, collections-:{}",
                     vb.getId(),
-                    manifestUid,
+                    manifestUid.getRevision(),
                     changes.scopesToCreate.size(),
                     changes.collectionsToCreate.size(),
                     changes.scopesToDrop.size(),
@@ -283,7 +286,7 @@ void Manifest::completeUpdate(mutex_type::UpgradeHolder&& upgradeLock,
         auto uid = changeset.empty() ? changeset.uid : manifestUid;
         dropScope(wHandle,
                   vb,
-                  changeset.uid,
+                  uid,
                   *finalScopeForceDrop,
                   OptionalSeqno{/*no-seqno*/},
                   changeset.forced);
@@ -349,14 +352,15 @@ static bool isImmutablePropertyModified(const Collections::Scope& newEntry,
 
 ManifestUpdateStatus Manifest::canUpdate(
         const Collections::Manifest& manifest) const {
+    bool forceUpdate = manifest.isForcedUpdate(manifestUid.getHistoryID());
     // Cannot go backwards (unless forced)
-    if (manifest.getUid() < manifestUid && !manifest.isForcedUpdate()) {
+    if (manifest.getUid() < manifestUid.getRevision() && !forceUpdate) {
         return ManifestUpdateStatus::Behind;
     }
 
     for (const auto& [cid, entry] : map) {
         auto itr = manifest.findCollection(cid);
-        if (itr != manifest.end() && !manifest.isForcedUpdate() &&
+        if (itr != manifest.end() && !forceUpdate &&
             isImmutablePropertyModified(itr->second, entry)) {
             return ManifestUpdateStatus::ImmutablePropertyModified;
         }
@@ -364,7 +368,7 @@ ManifestUpdateStatus Manifest::canUpdate(
 
     for (const auto& [sid, entry] : scopes) {
         auto itr = manifest.findScope(sid);
-        if (itr != manifest.endScopes() && !manifest.isForcedUpdate() &&
+        if (itr != manifest.endScopes() && !forceUpdate &&
             isImmutablePropertyModified(itr->second, entry->name)) {
             return ManifestUpdateStatus::ImmutablePropertyModified;
         }
@@ -375,7 +379,7 @@ ManifestUpdateStatus Manifest::canUpdate(
 
 void Manifest::createCollection(const WriteHandle& wHandle,
                                 ::VBucket& vb,
-                                ManifestUid newManUid,
+                                ManifestGID newManUid,
                                 ScopeCollectionPair identifiers,
                                 std::string_view collectionName,
                                 cb::ExpiryLimit maxTtl,
@@ -408,7 +412,7 @@ void Manifest::createCollection(const WriteHandle& wHandle,
             collectionName,
             identifiers.first,
             seqno,
-            newManUid,
+            newManUid.getRevision(),
             maxTtl.has_value()
                     ? ", maxttl:" + std::to_string(maxTtl.value().count())
                     : "",
@@ -464,7 +468,7 @@ void Manifest::addNewScopeEntry(
 
 void Manifest::dropCollection(WriteHandle& wHandle,
                               ::VBucket& vb,
-                              ManifestUid newManUid,
+                              ManifestGID newManUid,
                               CollectionID cid,
                               OptionalSeqno optionalSeqno,
                               bool isForcedDrop) {
@@ -514,7 +518,7 @@ void Manifest::dropCollection(WriteHandle& wHandle,
             cid,
             itr->second.getScopeID(),
             seqno,
-            newManUid,
+            newManUid.getRevision(),
             processingTombstone ? ", tombstone" : "",
             optionalSeqno.has_value() ? ", replica" : "",
             isForcedDrop ? ", forced" : "");
@@ -555,7 +559,7 @@ const ScopeSharedMetaData& Manifest::getScopeEntry(ScopeID sid) const {
 
 void Manifest::createScope(const WriteHandle& wHandle,
                            ::VBucket& vb,
-                           ManifestUid newManUid,
+                           ManifestGID newManUid,
                            ScopeID sid,
                            std::string_view scopeName,
                            OptionalSeqno optionalSeqno,
@@ -566,9 +570,10 @@ void Manifest::createScope(const WriteHandle& wHandle,
     updateUid(newManUid, optionalSeqno.has_value() || isForcedAdd);
 
     flatbuffers::FlatBufferBuilder builder;
+    Collections::FlatbufferHistoryID hid(0, 0);
     auto scope = CreateScope(
             builder,
-            getManifestUid(),
+            CreateFlatbufferManifestGID(builder, getManifestUid(), &hid),
             uint32_t(sid),
             builder.CreateString(scopeName.data(), scopeName.size()));
     builder.Finish(scope);
@@ -586,14 +591,14 @@ void Manifest::createScope(const WriteHandle& wHandle,
                 sid,
                 scopeName,
                 seqno,
-                manifestUid,
+                manifestUid.getRevision(),
                 optionalSeqno.has_value() ? ", replica" : "",
                 isForcedAdd ? ", forced" : "");
 }
 
 void Manifest::dropScope(const WriteHandle& wHandle,
                          ::VBucket& vb,
-                         ManifestUid newManUid,
+                         ManifestGID newManUid,
                          ScopeID sid,
                          OptionalSeqno optionalSeqno,
                          bool isForcedDrop) {
@@ -618,7 +623,11 @@ void Manifest::dropScope(const WriteHandle& wHandle,
     updateUid(newManUid, optionalSeqno.has_value() || isForcedDrop);
 
     flatbuffers::FlatBufferBuilder builder;
-    auto scope = CreateDroppedScope(builder, getManifestUid(), uint32_t(sid));
+    Collections::FlatbufferHistoryID hid(0, 0);
+    auto scope = CreateDroppedScope(
+            builder,
+            CreateFlatbufferManifestGID(builder, getManifestUid(), &hid),
+            uint32_t(sid));
     builder.Finish(scope);
 
     auto item = SystemEventFactory::makeScopeEvent(
@@ -641,14 +650,16 @@ void Manifest::dropScope(const WriteHandle& wHandle,
                 vb.getId(),
                 sid,
                 seqno,
-                manifestUid,
+                manifestUid.getRevision(),
                 optionalSeqno.has_value() ? ", replica" : "",
                 isForcedDrop ? ", forced" : "");
 }
 
 Manifest::ManifestChanges Manifest::processManifest(
         const Collections::Manifest& manifest) const {
-    ManifestChanges rv{manifest.getUid(), manifest.isForcedUpdate()};
+    bool forceUpdate = manifest.isForcedUpdate(manifestUid.getHistoryID());
+    ManifestChanges rv{{manifest.getUid(), manifest.getHistoryID()},
+                       forceUpdate};
 
     // First iterate through the collections of this VB::Manifest
     for (const auto& [cid, entry] : map) {
@@ -658,7 +669,7 @@ Manifest::ManifestChanges Manifest::processManifest(
         if (itr == manifest.end()) {
             // Not found, so this collection should be dropped.
             rv.collectionsToDrop.push_back(cid);
-        } else if (manifest.isForcedUpdate() &&
+        } else if (forceUpdate &&
                    isImmutablePropertyModified(itr->second, entry)) {
             // Found and this was a forced update with an immutable property
             // modification. This becomes drop and (re)create
@@ -678,12 +689,19 @@ Manifest::ManifestChanges Manifest::processManifest(
         if (itr == manifest.endScopes()) {
             // Not found, so this scope should be dropped.
             rv.scopesToDrop.push_back(sid);
-        } else if (manifest.isForcedUpdate() &&
+        } else if (forceUpdate &&
                    isImmutablePropertyModified(itr->second, entry->name)) {
             // Found and this was a forced update with an immutable property
             // modification. This becomes drop and (re)create
             rv.scopesToForceDrop.push_back(sid);
             rv.scopesToCreate.push_back({itr->first, itr->second.name});
+
+            // collections of old need drop/create
+            for (const auto& m : itr->second.collections) {
+                rv.collectionsToDrop.push_back(m.cid);
+                rv.collectionsToCreate.push_back(
+                        {std::make_pair(m.sid, m.cid), m.name, m.maxTtl});
+            }
         }
     }
 
@@ -793,10 +811,11 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
         bool deleted,
         OptionalSeqno seq) {
     flatbuffers::FlatBufferBuilder builder;
+    Collections::FlatbufferHistoryID hid(0, 0);
     if (!deleted) {
         auto collection = CreateCollection(
                 builder,
-                uid,
+                CreateFlatbufferManifestGID(builder, uid, &hid),
                 uint32_t(entry.getScopeID()),
                 uint32_t(cid),
                 entry.getMaxTtl().has_value(),
@@ -807,7 +826,10 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
         builder.Finish(collection);
     } else {
         auto collection = CreateDroppedCollection(
-                builder, uid, uint32_t(entry.getScopeID()), uint32_t(cid));
+                builder,
+                CreateFlatbufferManifestGID(builder, uid, &hid),
+                uint32_t(entry.getScopeID()),
+                uint32_t(cid));
         builder.Finish(collection);
     }
 
@@ -923,7 +945,9 @@ CreateEventData Manifest::getCreateEventData(std::string_view flatbufferData) {
     if (collection->ttlValid()) {
         maxTtl = std::chrono::seconds(collection->maxTtl());
     }
-    return {ManifestUid(collection->uid()),
+    Expects(collection->id()->historyId());
+    return {ManifestGID(ManifestUid{collection->id()->revision()},
+                        HistoryID{*collection->id()->historyId()}),
             {collection->scopeId(),
              collection->collectionId(),
              collection->name()->str(),
@@ -935,8 +959,10 @@ DropEventData Manifest::getDropEventData(std::string_view flatbufferData) {
                                              "getDropEventData");
     auto droppedCollection = flatbuffers::GetRoot<DroppedCollection>(
             (const uint8_t*)flatbufferData.data());
+    Expects(droppedCollection->id()->historyId());
 
-    return {ManifestUid(droppedCollection->uid()),
+    return {ManifestGID(ManifestUid{droppedCollection->id()->revision()},
+                        HistoryID{*droppedCollection->id()->historyId()}),
             droppedCollection->scopeId(),
             droppedCollection->collectionId()};
 }
@@ -946,8 +972,10 @@ CreateScopeEventData Manifest::getCreateScopeEventData(
     verifyFlatbuffersData<Scope>(flatbufferData, "getCreateScopeEventData");
     auto scope = flatbuffers::GetRoot<Scope>(
             reinterpret_cast<const uint8_t*>(flatbufferData.data()));
+    Expects(scope->id()->historyId());
 
-    return {ManifestUid(scope->uid()),
+    return {ManifestGID(ManifestUid{scope->id()->revision()},
+                        HistoryID{*scope->id()->historyId()}),
             {scope->scopeId(), scope->name()->str()}};
 }
 
@@ -957,8 +985,11 @@ DropScopeEventData Manifest::getDropScopeEventData(
                                         "getDropScopeEventData");
     auto droppedScope = flatbuffers::GetRoot<DroppedScope>(
             reinterpret_cast<const uint8_t*>(flatbufferData.data()));
+    Expects(droppedScope->id()->historyId());
 
-    return {ManifestUid(droppedScope->uid()), droppedScope->scopeId()};
+    return {ManifestGID(ManifestUid{droppedScope->id()->revision()},
+                        HistoryID{*droppedScope->id()->historyId()}),
+            droppedScope->scopeId()};
 }
 
 std::string Manifest::getExceptionString(const std::string& thrower,
@@ -1054,15 +1085,11 @@ void Manifest::decrementItemCount(CollectionID collection) const {
 
 bool Manifest::addCollectionStats(Vbid vbid,
                                   const StatCollector& collector) const {
-    fmt::memory_buffer key;
+    manifestUid.addStats(vbid, collector);
 
+    fmt::memory_buffer key;
     format_to(key, "vb_{}:collections", vbid.get());
     collector.addStat(std::string_view(key.data(), key.size()), map.size());
-
-    key.resize(0);
-
-    format_to(key, "vb_{}:manifest:uid", vbid.get());
-    collector.addStat(std::string_view(key.data(), key.size()), manifestUid);
 
     for (const auto& entry : map) {
         if (!entry.second.addStats(entry.first.to_string(), vbid, collector)) {
@@ -1074,15 +1101,11 @@ bool Manifest::addCollectionStats(Vbid vbid,
 }
 
 bool Manifest::addScopeStats(Vbid vbid, const StatCollector& collector) const {
-    fmt::memory_buffer key;
+    manifestUid.addStats(vbid, collector);
 
+    fmt::memory_buffer key;
     format_to(key, "vb_{}:scopes", vbid.get());
     collector.addStat(std::string_view(key.data(), key.size()), scopes.size());
-
-    key.resize(0);
-
-    format_to(key, "vb_{}:manifest:uid", vbid.get());
-    collector.addStat(std::string_view(key.data(), key.size()), manifestUid);
 
     // Get names
     for (const auto& [sid, value] : scopes) {
@@ -1338,8 +1361,7 @@ std::ostream& operator<<(std::ostream& os,
 }
 
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
-    os << "VB::Manifest: "
-       << "uid:" << manifest.manifestUid
+    os << "VB::Manifest: " << manifest.manifestUid
        << ", scopes.size:" << manifest.scopes.size()
        << ", map.size:" << manifest.map.size() << std::endl;
     for (const auto& [cid, entry] : manifest.map) {

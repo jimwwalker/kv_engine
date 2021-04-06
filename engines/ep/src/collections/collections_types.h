@@ -12,6 +12,7 @@
 #pragma once
 
 #include "atomic.h"
+#include "collections/history_id.h"
 #include "monotonic.h"
 
 #include <memcached/types.h>

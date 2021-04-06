@@ -13,7 +13,7 @@
 
 #include "bloomfilter.h"
 #include "checkpoint_types.h"
-#include "collections/collections_types.h"
+#include "collections/manifest_gid.h"
 #include "dcp/dcp-types.h"
 #include "hash_table.h"
 #include "hlc.h"
@@ -781,7 +781,7 @@ public:
      * @param maxTtl An optional maxTTL for the collection
      * @param bySeqno The seqno assigned to the collection create event.
      */
-    void replicaCreateCollection(Collections::ManifestUid uid,
+    void replicaCreateCollection(Collections::ManifestGID uid,
                                  ScopeCollectionPair identifiers,
                                  std::string_view collectionName,
                                  cb::ExpiryLimit maxTtl,
@@ -795,7 +795,7 @@ public:
      * @param cid CollectionID to drop
      * @param bySeqno The seqno assigned to the collection drop event.
      */
-    void replicaDropCollection(Collections::ManifestUid uid,
+    void replicaDropCollection(Collections::ManifestGID uid,
                                CollectionID cid,
                                int64_t bySeqno);
 
@@ -808,7 +808,7 @@ public:
      * @param scopeName name of the added scope
      * @param bySeqno The seqno assigned to the scope create event.
      */
-    void replicaCreateScope(Collections::ManifestUid uid,
+    void replicaCreateScope(Collections::ManifestGID uid,
                             ScopeID sid,
                             std::string_view scopeName,
                             int64_t bySeqno);
@@ -821,7 +821,7 @@ public:
      * @param sid ScopeID to drop
      * @param bySeqno The seqno assigned to the scope drop event.
      */
-    void replicaDropScope(Collections::ManifestUid uid,
+    void replicaDropScope(Collections::ManifestGID uid,
                           ScopeID sid,
                           int64_t bySeqno);
 

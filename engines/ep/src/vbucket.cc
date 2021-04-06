@@ -1779,7 +1779,7 @@ Collections::VB::ManifestUpdateStatus VBucket::updateFromManifest(
     return manifest->update(*this, m);
 }
 
-void VBucket::replicaCreateCollection(Collections::ManifestUid uid,
+void VBucket::replicaCreateCollection(Collections::ManifestGID uid,
                                       ScopeCollectionPair identifiers,
                                       std::string_view collectionName,
                                       cb::ExpiryLimit maxTtl,
@@ -1788,20 +1788,20 @@ void VBucket::replicaCreateCollection(Collections::ManifestUid uid,
             *this, uid, identifiers, collectionName, maxTtl, bySeqno);
 }
 
-void VBucket::replicaDropCollection(Collections::ManifestUid uid,
+void VBucket::replicaDropCollection(Collections::ManifestGID uid,
                                     CollectionID cid,
                                     int64_t bySeqno) {
     manifest->wlock().replicaDrop(*this, uid, cid, bySeqno);
 }
 
-void VBucket::replicaCreateScope(Collections::ManifestUid uid,
+void VBucket::replicaCreateScope(Collections::ManifestGID uid,
                                  ScopeID sid,
                                  std::string_view scopeName,
                                  int64_t bySeqno) {
     manifest->wlock().replicaCreateScope(*this, uid, sid, scopeName, bySeqno);
 }
 
-void VBucket::replicaDropScope(Collections::ManifestUid uid,
+void VBucket::replicaDropScope(Collections::ManifestGID uid,
                                ScopeID sid,
                                int64_t bySeqno) {
     manifest->wlock().replicaDropScope(*this, uid, sid, bySeqno);

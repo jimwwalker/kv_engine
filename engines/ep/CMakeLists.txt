@@ -242,6 +242,7 @@ SET(COLLECTIONS_SOURCE src/collections/collections_types.cc
                        src/collections/kvstore.cc
                        src/collections/manager.cc
                        src/collections/manifest.cc
+                       src/collections/manifest_gid.cc
                        src/collections/persist_manifest_task.cc
                        ${CMAKE_CURRENT_BINARY_DIR}/src/collections/events_generated.h
                        ${CMAKE_CURRENT_BINARY_DIR}/src/collections/kvstore_generated.h

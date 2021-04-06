@@ -139,6 +139,10 @@ public:
         return false;
     }
 
+    bool isForcedUpdate(HistoryID historyID) const {
+        return this->historyID != historyID;
+    }
+
     HistoryID getHistoryID() const {
         return historyID;
     }

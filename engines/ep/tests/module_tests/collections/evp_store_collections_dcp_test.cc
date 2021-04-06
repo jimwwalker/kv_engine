@@ -59,7 +59,9 @@ TEST_P(CollectionsDcpParameterizedTest, test_dcp_consumer) {
     std::string collection = "meat";
     CollectionID cid = CollectionEntry::meat.getId();
     ScopeID sid = ScopeEntry::shop1.getId();
-    Collections::ManifestUid manifestUid(0xcafef00d);
+    Collections::ManifestUid revision{0xcafef00d};
+    Collections::HistoryID hid{TestHistoryID};
+    Collections::ManifestGID manifestUid{revision, hid};
     Collections::CreateEventData createEventData{
             manifestUid, {sid, cid, collection, {/*no ttl*/}}};
     Collections::CreateEventDcpData createEventDcpData{createEventData};
@@ -152,7 +154,9 @@ TEST_F(CollectionsDcpTest, stream_request_uid) {
     std::string collection = "meat";
     CollectionID cid = CollectionEntry::meat.getId();
     ScopeID sid = ScopeEntry::shop1.getId();
-    Collections::ManifestUid manifestUid(0xcafef00d);
+    Collections::ManifestUid revision{0xcafef00d};
+    Collections::HistoryID hid{TestHistoryID};
+    Collections::ManifestGID manifestUid{revision, hid};
     Collections::CreateEventData createEventData{
             manifestUid, {sid, cid, collection, {/*no ttl*/}}};
     Collections::CreateEventDcpData eventDcpData{createEventData};
@@ -349,17 +353,17 @@ TEST_F(CollectionsDcpTest, MB_38019) {
     // node, then go ahead by two extra changes.
     replica->checkpointManager->createSnapshot(
             1, 3, 0, CheckpointType::Memory, 3);
-    replica->replicaCreateCollection(Collections::ManifestUid(uid),
+    replica->replicaCreateCollection({uid, cm.getHistoryID()},
                                      {ScopeID::Default, CollectionEntry::fruit},
                                      "fruit",
                                      {},
                                      1);
-    replica->replicaCreateCollection(Collections::ManifestUid(++uid),
+    replica->replicaCreateCollection({++uid, cm.getHistoryID()},
                                      {ScopeID::Default, CollectionEntry::meat},
                                      "meat",
                                      {},
                                      2);
-    replica->replicaCreateCollection(Collections::ManifestUid(++uid),
+    replica->replicaCreateCollection({++uid, cm.getHistoryID()},
                                      {ScopeID::Default, CollectionEntry::dairy},
                                      "dairy",
                                      {},
@@ -2887,10 +2891,10 @@ void CollectionsDcpPersistentOnly::resurrectionStatsTest(
     auto stats = vb->getManifest().lock(target.getId()).getPersistedStats();
 
     // Sizes are manually verified from dbdump and other manual checks
-    // 57 for the value, 14 for the key and 18 for the v1 metadata
+    // 74 for the value, 14 for the key and 18 for the v1 metadata
     // 14 for the value, 7 for the key and 18 for the v1 metadata
     size_t systemeventSize =
-            57 + 14 + MetaData::getMetaDataSize(MetaData::Version::V1);
+            74 + 14 + MetaData::getMetaDataSize(MetaData::Version::V1);
     size_t itemSize =
             14 + key1.size() + MetaData::getMetaDataSize(MetaData::Version::V1);
     if (isMagma()) {
@@ -3177,7 +3181,9 @@ TEST_P(CollectionsDcpParameterizedTest, DISABLED_replica_active_state_diverge) {
 
     std::string collection = "fruit";
     CollectionID cid = CollectionEntry::fruit.getId();
-    Collections::ManifestUid manifestUid(cm.getUid());
+    Collections::ManifestUid revision{cm.getUid()};
+    Collections::HistoryID hid{TestHistoryID};
+    Collections::ManifestGID manifestUid{revision, hid};
     Collections::CreateEventData createEventData{
             manifestUid, {ScopeID::Default, cid, collection, {/*no ttl*/}}};
     Collections::CreateEventDcpData createEventDcpData{createEventData};

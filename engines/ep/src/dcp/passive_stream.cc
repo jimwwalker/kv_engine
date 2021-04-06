@@ -874,7 +874,7 @@ cb::engine_errc PassiveStream::processCreateCollection(
         VBucket& vb, const CreateCollectionEvent& event) {
     try {
         vb.replicaCreateCollection(
-                event.getManifestUid(),
+                Collections::ManifestGID{event.getManifestUid(), {}},
                 {event.getScopeID(), event.getCollectionID()},
                 event.getKey(),
                 event.getMaxTtl(),
@@ -892,9 +892,10 @@ cb::engine_errc PassiveStream::processCreateCollection(
 cb::engine_errc PassiveStream::processDropCollection(
         VBucket& vb, const DropCollectionEvent& event) {
     try {
-        vb.replicaDropCollection(event.getManifestUid(),
-                                 event.getCollectionID(),
-                                 event.getBySeqno());
+        vb.replicaDropCollection(
+                Collections::ManifestGID{event.getManifestUid(), {}},
+                event.getCollectionID(),
+                event.getBySeqno());
     } catch (std::exception& e) {
         log(spdlog::level::level_enum::warn,
             "PassiveStream::processDropCollection {} exception {}",
@@ -908,10 +909,11 @@ cb::engine_errc PassiveStream::processDropCollection(
 cb::engine_errc PassiveStream::processCreateScope(
         VBucket& vb, const CreateScopeEvent& event) {
     try {
-        vb.replicaCreateScope(event.getManifestUid(),
-                              event.getScopeID(),
-                              event.getKey(),
-                              event.getBySeqno());
+        vb.replicaCreateScope(
+                Collections::ManifestGID{event.getManifestUid(), {}},
+                event.getScopeID(),
+                event.getKey(),
+                event.getBySeqno());
     } catch (std::exception& e) {
         log(spdlog::level::level_enum::warn,
             "PassiveStream::processCreateScope {} exception {}",
@@ -926,7 +928,9 @@ cb::engine_errc PassiveStream::processDropScope(VBucket& vb,
                                                 const DropScopeEvent& event) {
     try {
         vb.replicaDropScope(
-                event.getManifestUid(), event.getScopeID(), event.getBySeqno());
+                Collections::ManifestGID{event.getManifestUid(), {}},
+                event.getScopeID(),
+                event.getBySeqno());
     } catch (std::exception& e) {
         log(spdlog::level::level_enum::warn,
             "PassiveStream::processDropScope {} exception {}",

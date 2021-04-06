@@ -22,18 +22,18 @@ CollectionsManifest::CollectionsManifest() {
     add(ScopeEntry::defaultS);
     add(CollectionEntry::defaultC);
     updateUid(0);
-    json["history_id"] = "00112233445566778899aabbccddeeff";
+    setHistoryID(TestHistoryID);
 }
 
 CollectionsManifest::CollectionsManifest(NoDefault) {
     add(ScopeEntry::defaultS);
-    json["history_id"] = "00112233445566778899aabbccddeeff";
+    setHistoryID(TestHistoryID);
 }
 
 CollectionsManifest::CollectionsManifest(const CollectionEntry::Entry& entry)
     : CollectionsManifest() {
     add(entry);
-    json["history_id"] = "00112233445566778899aabbccddeeff";
+    setHistoryID(TestHistoryID);
 }
 
 CollectionsManifest& CollectionsManifest::add(const ScopeEntry::Entry& entry) {
@@ -245,4 +245,10 @@ void CollectionsManifest::setUid(const std::string& uid) {
     updateUid();
 }
 
+void CollectionsManifest::setHistoryID(std::string_view historyId) {
+    json["history_id"] = historyId;
+}
 
+std::string CollectionsManifest::getHistoryID() const {
+    return json["history_id"];
+}

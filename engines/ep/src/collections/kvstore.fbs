@@ -60,11 +60,6 @@ table DroppedCollections {
     entries:[Dropped];
 }
 
-table CommittedManifest {
-    uid:ulong;
-}
-
 root_type OpenCollections;
 root_type DroppedCollections;
 root_type Scopes;
-root_type CommittedManifest;

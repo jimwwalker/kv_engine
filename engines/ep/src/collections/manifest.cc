@@ -370,7 +370,9 @@ flatbuffers::DetachedBuffer Manifest::toFlatbuffer() const {
     auto scopeVector = builder.CreateVector(fbScopes);
     auto hid = historyID.toFlatbuffer();
     auto toWrite = Collections::Persist::CreateManifest(
-            builder, uid, &hid, scopeVector);
+            builder,
+            Collections::CreateFlatbufferManifestGID(builder, uid, &hid),
+            scopeVector);
     builder.Finish(toWrite);
     return builder.Release();
 }
@@ -394,8 +396,8 @@ Manifest::Manifest(std::string_view flatbufferData, Manifest::FlatBuffers tag)
     auto manifest = flatbuffers::GetRoot<Collections::Persist::Manifest>(
             reinterpret_cast<const uint8_t*>(flatbufferData.data()));
 
-    uid = manifest->uid();
-    historyID = *manifest->historyID();
+    uid = manifest->id()->revision();
+    historyID = *manifest->id()->historyId();
 
     for (const Collections::Persist::Scope* scope : *manifest->scopes()) {
         std::vector<CollectionEntry> scopeCollections;
@@ -679,7 +681,7 @@ cb::engine_error Manifest::isSuccessor(const Manifest& successor) const {
             } // else this cid has been removed and that's fine
         }
     } else if (uid == successor.getUid()) {
-        if (*this != successor) {
+        if (!isEqualContent(successor)) {
             return cb::engine_error(
                     cb::engine_errc::cannot_apply_collections_manifest,
                     "equal uid but not an equal manifest");

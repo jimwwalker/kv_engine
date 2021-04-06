@@ -206,6 +206,8 @@ void Flush::recordSystemEvent(const Item& item) {
 }
 
 void Flush::setManifestUid(ManifestUid in) {
+    // @todo: this is better if we have a seqno of greatest system event
+    // that way we can get the manifestId and correct history-id
     manifestUid = std::max<ManifestUid>(manifestUid, in);
 }
 
@@ -225,7 +227,7 @@ void Flush::recordCreateCollection(const Item& item) {
             itr->second.low = collection;
         }
     }
-    setManifestUid(createEvent.manifestUid);
+    setManifestUid(createEvent.manifestUid.getRevision());
 }
 
 void Flush::recordDropCollection(const Item& item) {
@@ -250,7 +252,7 @@ void Flush::recordDropCollection(const Item& item) {
                     0, uint64_t(item.getBySeqno()), dropEvent.cid};
         }
     }
-    setManifestUid(dropEvent.manifestUid);
+    setManifestUid(dropEvent.manifestUid.getRevision());
 }
 
 void Flush::recordCreateScope(const Item& item) {
@@ -271,7 +273,7 @@ void Flush::recordCreateScope(const Item& item) {
         }
     }
 
-    setManifestUid(scopeEvent.manifestUid);
+    setManifestUid(scopeEvent.manifestUid.getRevision());
 }
 
 void Flush::recordDropScope(const Item& item) {
@@ -289,13 +291,14 @@ void Flush::recordDropScope(const Item& item) {
         }
     }
 
-    setManifestUid(dropEvent.manifestUid);
+    setManifestUid(dropEvent.manifestUid.getRevision());
 }
 
 flatbuffers::DetachedBuffer Flush::encodeManifestUid() {
     flatbuffers::FlatBufferBuilder builder;
-    auto toWrite =
-            Collections::KVStore::CreateCommittedManifest(builder, manifestUid);
+    Collections::FlatbufferHistoryID hid(0, 0);
+    auto toWrite = Collections::CreateFlatbufferManifestGID(
+            builder, manifestUid, &hid);
     builder.Finish(toWrite);
     return builder.Release();
 }

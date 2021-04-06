@@ -8,12 +8,14 @@
 //   the file licenses/APL2.txt.
 //
 
+include "manifest.fbs";
+
 // Schema for the value of collection system events
 
 namespace Collections.VB;
 
 table Collection {
-    uid:ulong;
+    id:FlatbufferManifestGID;
     scopeId:uint;
     collectionId:uint;
     ttlValid:bool;
@@ -22,19 +24,19 @@ table Collection {
 }
 
 table DroppedCollection {
-   uid:ulong;
+   id:FlatbufferManifestGID;
    scopeId:uint;
    collectionId:uint;
 }
 
 table Scope {
-    uid:ulong;
+    id:FlatbufferManifestGID;
     scopeId:uint;
     name:string;
 }
 
 table DroppedScope {
-    uid:ulong;
+    id:FlatbufferManifestGID;
     scopeId:uint;
 }
 

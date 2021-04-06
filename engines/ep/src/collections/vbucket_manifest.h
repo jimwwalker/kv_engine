@@ -13,6 +13,7 @@
 
 #include "collections/collections_types.h"
 #include "collections/manifest.h"
+#include "collections/manifest_gid.h"
 #include "collections/system_event_types.h"
 #include "collections/vbucket_manifest_entry.h"
 #include "ep_types.h"
@@ -288,7 +289,7 @@ public:
      * the bucket Collections::Manifest.
      */
     struct ManifestChanges {
-        explicit ManifestChanges(ManifestUid uid, bool forced)
+        explicit ManifestChanges(ManifestGID uid, bool forced)
             : uid(uid), forced(forced) {
         }
         std::vector<ScopeCreation> scopesToCreate;
@@ -296,7 +297,7 @@ public:
         std::vector<ScopeID> scopesToForceDrop;
         std::vector<CollectionCreation> collectionsToCreate;
         std::vector<CollectionID> collectionsToDrop;
-        const ManifestUid uid{0};
+        const ManifestGID uid;
         const bool forced{false};
 
         bool empty() const {
@@ -385,7 +386,7 @@ protected:
      */
     void createCollection(const WriteHandle& wHandle,
                           ::VBucket& vb,
-                          ManifestUid newManUid,
+                          ManifestGID newManUid,
                           ScopeCollectionPair identifiers,
                           std::string_view collectionName,
                           cb::ExpiryLimit maxTtl,
@@ -407,7 +408,7 @@ protected:
      */
     void dropCollection(WriteHandle& wHandle,
                         ::VBucket& vb,
-                        ManifestUid newManUid,
+                        ManifestGID newManUid,
                         CollectionID cid,
                         OptionalSeqno optionalSeqno,
                         bool isForcedDrop);
@@ -428,7 +429,7 @@ protected:
      */
     void createScope(const WriteHandle& wHandle,
                      ::VBucket& vb,
-                     ManifestUid newManUid,
+                     ManifestGID newManUid,
                      ScopeID sid,
                      std::string_view scopeName,
                      OptionalSeqno optionalSeqno,
@@ -449,17 +450,17 @@ protected:
      */
     void dropScope(const WriteHandle& wHandle,
                    ::VBucket& vb,
-                   ManifestUid newManUid,
+                   ManifestGID newManUid,
                    ScopeID sid,
                    OptionalSeqno optionalSeqno,
                    bool isForcedDrop);
 
     /**
-     * Update the manifestUid
+     * Update the manifest identifiers
      * @param uid new value
      * @param reset Use reset so uid can go backwards
      */
-    void updateUid(ManifestUid uid, bool reset);
+    void updateUid(ManifestGID uid, bool reset);
 
     /**
      * Does the key contain a valid collection?
@@ -709,9 +710,12 @@ protected:
      */
     container::const_iterator getManifestIterator(CollectionID id) const;
 
-    /// @return the manifest UID that last updated this vb::manifest
+    /**
+     * @return the manifest UID that was last completelty processed by this
+     * vb::manifest
+     */
     ManifestUid getManifestUid() const {
-        return manifestUid;
+        return manifestUid.getRevision();
     }
 
     /**
@@ -942,8 +946,10 @@ protected:
      */
     mutable mutex_type rwlock;
 
-    /// The manifest UID which updated this vb::manifest
-    ManifestUid manifestUid{0};
+    /**
+     * The manifest+history-ID of the last fully processed manifest
+     */
+    ManifestGID manifestUid;
 
     /// Manager of collections
     const std::shared_ptr<Manager> manager;

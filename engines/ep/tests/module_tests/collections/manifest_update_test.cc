@@ -13,6 +13,7 @@
  * Tests for Collection functionality in EPStore.
  */
 
+#include "checkpoint_manager.h"
 #include "collections/history_id.h"
 #include "collections/manager.h"
 #include "collections/shared_metadata_table.h"
@@ -452,4 +453,268 @@ TEST(HistoryID, basic) {
         } catch (const std::exception&) {
         }
     }
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesCollectionCreate) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm(CollectionEntry::fruit);
+    setCollections(cookie, cm.add(CollectionEntry::meat));
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    vb->replicaCreateCollection({uid, cm.getHistoryID()},
+                                {ScopeID::Default, CollectionEntry::fruit},
+                                "fruit",
+                                {},
+                                1);
+    vb->replicaCreateCollection({++uid, cm.getHistoryID()},
+                                {ScopeID::Default, CollectionEntry::meat},
+                                "meat",
+                                {},
+                                2);
+
+    vb->checkpointManager->createSnapshot(2, 3, 0, CheckpointType::Memory, 3);
+
+    vb->replicaDropCollection(
+            {++uid, cm.getHistoryID()}, CollectionEntry::fruit, 3);
+
+    EXPECT_FALSE(vb->lockCollections().exists(CollectionEntry::fruit));
+
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    // EXPECT fruit to be present`
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::fruit));
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesCollectionDropped) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm(CollectionEntry::fruit);
+    setCollections(cookie, cm);
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    vb->replicaCreateCollection({uid, cm.getHistoryID()},
+                                {ScopeID::Default, CollectionEntry::fruit},
+                                "fruit",
+                                {},
+                                1);
+    vb->replicaCreateCollection({++uid, cm.getHistoryID()},
+                                {ScopeID::Default, CollectionEntry::meat},
+                                "meat",
+                                {},
+                                2);
+
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::meat));
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    // EXPECT meat to be gone
+    EXPECT_FALSE(vb->lockCollections().exists(CollectionEntry::meat));
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesCollectionRecreateNewName) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm(CollectionEntry::fruit);
+    setCollections(cookie, cm);
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    vb->replicaCreateCollection({uid, cm.getHistoryID()},
+                                {ScopeID::Default, CollectionEntry::fruit},
+                                "fruit",
+                                {},
+                                1);
+    vb->replicaCreateCollection({++uid, cm.getHistoryID()},
+                                {ScopeID::Default, CollectionEntry::meat},
+                                "SOMEOTHERNAME",
+                                {},
+                                2);
+
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::meat));
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    cm.add(CollectionEntry::meat);
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    // EXPECT meat to remain, but was recreated
+    auto handle = vb->getManifest().lock(CollectionEntry::meat.getId());
+    EXPECT_TRUE(handle.valid());
+    EXPECT_TRUE(handle.isLogicallyDeleted(3));
+    EXPECT_FALSE(handle.isLogicallyDeleted(4));
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesCollectionRecreateNewScope) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm;
+    cm.add(ScopeEntry::shop1);
+    setCollections(cookie, cm);
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    vb->replicaCreateScope(
+            {uid, cm.getHistoryID()}, ScopeEntry::shop1, "supermarket", 1);
+    vb->replicaCreateCollection({uid, cm.getHistoryID()},
+                                {ScopeEntry::shop1, CollectionEntry::fruit},
+                                "fruit",
+                                {},
+                                2);
+
+    EXPECT_EQ(ScopeEntry::shop1.getId(),
+              vb->getManifest().lock().getScopeID(CollectionEntry::fruit));
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    cm.add(CollectionEntry::fruit); // going into default collection
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    EXPECT_EQ(ScopeID::Default,
+              vb->getManifest().lock().getScopeID(CollectionEntry::fruit));
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesScopeDrop) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm;
+    setCollections(cookie, cm);
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    // The name of this scope is different to the 'active'
+    vb->replicaCreateScope(
+            {uid, cm.getHistoryID()}, ScopeEntry::shop1, "supermeerkat", 1);
+    vb->replicaCreateCollection({uid, cm.getHistoryID()},
+                                {ScopeEntry::shop1, CollectionEntry::fruit},
+                                "fruit",
+                                {},
+                                2);
+
+    EXPECT_EQ(ScopeEntry::shop1.getId(),
+              vb->getManifest().lock().getScopeID(CollectionEntry::fruit));
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    // Fruit's scope has gone, so fruit cannot exist
+    EXPECT_FALSE(vb->lockCollections().exists(CollectionEntry::fruit));
+    // And scope is gone
+    EXPECT_FALSE(vb->lockCollections().isScopeValid(ScopeEntry::shop1));
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesScopeCreate) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm;
+    cm.add(ScopeEntry::shop1);
+    setCollections(cookie, cm);
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    // The name of this scope is different to the 'active'
+    vb->replicaCreateScope(
+            {uid, cm.getHistoryID()}, ScopeEntry::shop1, "supermarket", 1);
+    vb->replicaDropScope({uid, cm.getHistoryID()}, ScopeEntry::shop1, 2);
+
+    EXPECT_FALSE(vb->lockCollections().isScopeValid(ScopeEntry::shop1));
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    // And scope is back
+    EXPECT_TRUE(vb->lockCollections().isScopeValid(ScopeEntry::shop1));
+}
+
+TEST_P(CollectionsManifestUpdate, HistoryIDForcesScopeRecreate) {
+    store->setVBucketState(vbid, vbucket_state_replica, {});
+    VBucketPtr vb = store->getVBucket(vbid);
+
+    // Begin with one view of the collections manifest
+    CollectionsManifest cm;
+    setCollections(cookie, cm);
+    auto uid = cm.getUid();
+
+    // Drive the replica as if DCP was pushing changes, first a snapshot must
+    // be created, then create a different view of collections
+    vb->checkpointManager->createSnapshot(1, 2, 0, CheckpointType::Memory, 2);
+
+    // The name of this scope is different to the 'active'
+    vb->replicaCreateScope(
+            {uid, cm.getHistoryID()}, ScopeEntry::shop1, "supermeerkat", 1);
+    vb->replicaCreateCollection({uid, cm.getHistoryID()},
+                                {ScopeEntry::shop1, CollectionEntry::fruit},
+                                "fruit",
+                                {},
+                                2);
+
+    EXPECT_EQ(ScopeEntry::shop1.getId(),
+              vb->getManifest().lock().getScopeID(CollectionEntry::fruit));
+    // To correct the replica when it is brought into being active the following
+    // is required. A change of history-ID, being told about it and a promotion.
+    cm.setHistoryID(AltHistoryID);
+    // Add the conflicting state
+    cm.add(ScopeEntry::shop1);
+    cm.add(CollectionEntry::fruit, ScopeEntry::shop1);
+    setCollections(cookie, cm);
+    store->setVBucketState(vbid, vbucket_state_active, {});
+
+    EXPECT_EQ(ScopeEntry::shop1.getId(),
+              vb->getManifest().lock().getScopeID(CollectionEntry::fruit));
+    // Verify the fruit got 'moved' to be after the recreate of the scope
+    // MB-45505 located a bug in the 'force' code where this wasn't happening
+    // and the fruit collection remained, but prior to the scope changing, which
+    // violates the sequencing of events, i.e. create collection cannot exist
+    // before its owning scope.
+    auto handle = vb->getManifest().lock(CollectionEntry::fruit);
+    EXPECT_TRUE(handle.isLogicallyDeleted(3));
+    // Collection was re-created at a seqno > than the scope, we don't record
+    // the scope start seqno (in-memory) so just check the raw seqs
+    EXPECT_FALSE(handle.isLogicallyDeleted(6));
+    EXPECT_FALSE(handle.isLogicallyDeleted(7));
 }
