@@ -648,7 +648,7 @@ STAT(connagg_total_uncompressed_data_size,
      dcp_total_uncompressed_data_size, )
 
 STAT(manifest_uid, , none, , )
-STAT(manifest_force, "force", none, , )
+STAT(manifest_history_id, "history_id", none, , )
 
 STAT(collection_name, "name", none, , )
 STAT(collection_scope_name, "scope_name", none, , )

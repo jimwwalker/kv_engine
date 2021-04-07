@@ -38,7 +38,7 @@ table Scope {
 
 table Manifest {
    uid:ulong;
-   force:bool;
+   historyID:FlatbufferHistoryID;
    scopes:[Scope];
 }
 

@@ -289,7 +289,8 @@ KVBucket::KVBucket(EventuallyPersistentEngine& theEngine)
       backfillMemoryThreshold(0.95),
       statsSnapshotTaskId(0),
       lastTransTimePerItem(0),
-      collectionsManager(std::make_shared<Collections::Manager>()),
+      collectionsManager(std::make_shared<Collections::Manager>(
+              engine.getConfiguration().getQuorumHistoryId())),
       xattrEnabled(true),
       maxTtl(engine.getConfiguration().getMaxTtl()) {
     cachedResidentRatio.activeRatio.store(0);

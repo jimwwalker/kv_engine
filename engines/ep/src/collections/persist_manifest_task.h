@@ -41,13 +41,15 @@ public:
     /**
      * Load back what this task writes.
      *
-     * This returns an optional unique_ptr. If the optional has no value, then
+     * This returns an optional Manifest. If the optional has no value, then
      * tryAndLoad failed - something went wrong (logged as CRITICAL).
      *
-     * If the returned optional has a value, it could be a nullptr. This occurs
-     * for when there is no previous state to load (first warmup).
+     * @param dbpath The path to look in for an existing data file
+     * @param historyId to use if no file is found and an epoch manifest is
+     *        to be constructed.
      */
-    static std::optional<Manifest> tryAndLoad(std::string_view dbpath);
+    static std::optional<Manifest> tryAndLoad(std::string_view dbpath,
+                                              std::string_view historyId);
 
 private:
     cb::engine_errc doTaskCore();

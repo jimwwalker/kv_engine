@@ -66,7 +66,7 @@ public:
     VBucketPtr vb;
     CollectionsManifest cm;
     std::shared_ptr<Collections::Manager> manager =
-            std::make_shared<Collections::Manager>();
+            std::make_shared<Collections::Manager>(TestHistoryID);
     Collections::VB::Manifest vbm{manager};
     // Tests need entry data which appear in default and 'shop1' scopes
     std::unique_ptr<Collections::VB::ManifestEntry> entryInDefaultScope =

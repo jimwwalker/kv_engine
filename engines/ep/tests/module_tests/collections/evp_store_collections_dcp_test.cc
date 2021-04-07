@@ -3067,26 +3067,27 @@ void CollectionsDcpParameterizedTest::replicateForcedUpdate(uint64_t newUid,
 }
 
 TEST_P(CollectionsDcpParameterizedTest,
-       replicate_forced_update_with_lower_uid) {
+       DISABLED_replicate_forced_update_with_lower_uid) {
     replicateForcedUpdate(2, false);
 }
 
 TEST_P(CollectionsDcpParameterizedTest,
-       replicate_forced_update_with_equal_uid) {
+       DISABLED_replicate_forced_update_with_equal_uid) {
     replicateForcedUpdate(4, false);
 }
 
 TEST_P(CollectionsDcpPersistentOnly,
-       replicate_forced_update_with_lower_uid_then_warmup) {
+       DISABLED_replicate_forced_update_with_lower_uid_then_warmup) {
     replicateForcedUpdate(2, true);
 }
 
 TEST_P(CollectionsDcpPersistentOnly,
-       replicate_forced_update_with_equal_uid_then_warmup) {
+       DISABLED_replicate_forced_update_with_equal_uid_then_warmup) {
     replicateForcedUpdate(4, true);
 }
 
-TEST_P(CollectionsDcpParameterizedTest, force_update_multiple_changes) {
+TEST_P(CollectionsDcpParameterizedTest,
+       DISABLED_force_update_multiple_changes) {
     // Create diverged manifests cm and cm1. First update to cm then force
     // update to cm1. The test is primarily testing that the force update sends
     // system events in the correct order.
@@ -3156,7 +3157,7 @@ TEST_P(CollectionsDcpParameterizedTest, force_update_multiple_changes) {
 // partition). The test adds 'fruit' to 'shop1' scope in the current manifest
 // yet drives the replicas so that the same collection (id) is in a different
 // scope.
-TEST_P(CollectionsDcpParameterizedTest, replica_active_state_diverge) {
+TEST_P(CollectionsDcpParameterizedTest, DISABLED_replica_active_state_diverge) {
     // Set the manifest with the shop1 collection
     CollectionsManifest cm;
     cm.add(ScopeEntry::shop1);

@@ -22,15 +22,18 @@ CollectionsManifest::CollectionsManifest() {
     add(ScopeEntry::defaultS);
     add(CollectionEntry::defaultC);
     updateUid(0);
+    json["history_id"] = "00112233445566778899aabbccddeeff";
 }
 
 CollectionsManifest::CollectionsManifest(NoDefault) {
     add(ScopeEntry::defaultS);
+    json["history_id"] = "00112233445566778899aabbccddeeff";
 }
 
 CollectionsManifest::CollectionsManifest(const CollectionEntry::Entry& entry)
     : CollectionsManifest() {
     add(entry);
+    json["history_id"] = "00112233445566778899aabbccddeeff";
 }
 
 CollectionsManifest& CollectionsManifest::add(const ScopeEntry::Entry& entry) {

@@ -32,6 +32,7 @@
 
 #include <folly/portability/GMock.h>
 #include <platform/dirutils.h>
+#include <utilities/test_manifest.h>
 
 #include <fstream>
 #include <memory>
@@ -504,7 +505,7 @@ protected:
     std::unique_ptr<CouchKVStore> kvstore;
     std::vector<queued_item> items;
     Collections::VB::Manifest manifest{
-            std::make_shared<Collections::Manager>()};
+            std::make_shared<Collections::Manager>(TestHistoryID)};
     VB::Commit flush;
     Vbid vbid = Vbid(0);
 };
@@ -1341,7 +1342,7 @@ protected:
     Vbid vbid;
     CouchKVStoreConfig config;
     Collections::VB::Manifest manifest{
-            std::make_shared<Collections::Manager>()};
+            std::make_shared<Collections::Manager>(TestHistoryID)};
     VB::Commit flush;
 };
 

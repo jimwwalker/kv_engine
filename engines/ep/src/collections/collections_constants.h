@@ -21,5 +21,5 @@ static constexpr nlohmann::json::value_t UidType =
         nlohmann::json::value_t::string;
 static constexpr nlohmann::json::value_t StreamIdType =
         nlohmann::json::value_t::number_unsigned;
-static constexpr nlohmann::json::value_t ForceUpdateType =
-        nlohmann::json::value_t::boolean;
+static constexpr nlohmann::json::value_t HistoryIdType =
+        nlohmann::json::value_t::string;

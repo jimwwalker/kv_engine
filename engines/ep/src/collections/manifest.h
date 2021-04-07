@@ -18,6 +18,7 @@
 #include <unordered_map>
 
 #include "collections/collections_types.h"
+#include "collections/history_id.h"
 #include "memcached/engine_common.h"
 #include "memcached/engine_error.h"
 
@@ -63,10 +64,17 @@ struct Scope {
 class Manifest {
 public:
     /**
+     * Require a default constructor as the Manager manages via
+     * folly::Synchronized which has no route to calling another constructor
+     */
+    Manifest() = default;
+
+    /**
      * Constructs an epoch manifest
      * Default scope, default collection and uid of 0
      */
-    Manifest();
+    struct Epoch {};
+    Manifest(std::string_view historyID, Epoch tag);
 
     /*
      * Create a manifest from json.
@@ -79,6 +87,7 @@ public:
     explicit Manifest(std::string_view flatbufferData, FlatBuffers tag);
 
     Manifest(Manifest&&);
+
     /**
      * Assignment operator that is aware of a forced assign (so uid can go back)
      */
@@ -124,11 +133,14 @@ public:
     cb::engine_error isSuccessor(const Manifest& successor) const;
 
     /**
-     * Is this manifest a 'force:true' update where we must accept it no
-     * questions asked?
+     * @todo: Remove this later in patch series
      */
     bool isForcedUpdate() const {
-        return force;
+        return false;
+    }
+
+    HistoryID getHistoryID() const {
+        return historyID;
     }
 
     /**
@@ -330,7 +342,9 @@ private:
                                  ScopeID::Default}}}}};
     collectionContainer collections;
     ManifestUid uid{0};
-    bool force{false};
+    // Temporary default initialise of historyID, this will eventually be
+    // from flatbuffer or from bucket config
+    HistoryID historyID{"00112233445566778899aabbccddeeff"};
 };
 
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest);

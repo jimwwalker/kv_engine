@@ -90,7 +90,7 @@ private:
  */
 class Manager {
 public:
-    Manager();
+    Manager(std::string_view historyID);
 
     /**
      * Update the bucket with the latest JSON collections manifest.
@@ -192,7 +192,8 @@ public:
      * @return false if the manifest was found but cannot be loaded (e.g.
      * corruption or system error)
      */
-    bool warmupLoadManifest(const std::string& dbpath);
+    bool warmupLoadManifest(std::string_view dbpath,
+                            std::string_view quorumHistoryId);
 
     /**
      * Perform actions for a completed warmup - currently check if any

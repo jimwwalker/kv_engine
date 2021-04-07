@@ -28,7 +28,10 @@
 #include <optional>
 #include <utility>
 
-Collections::Manager::Manager() {
+Collections::Manager::Manager(std::string_view historyID) {
+    // Construct an epoch manifest with the given history-ID and make it current
+    auto newManifest = std::make_unique<Manifest>(historyID, Manifest::Epoch{});
+    *currentManifest.wlock() = std::move(*newManifest);
 }
 
 cb::engine_error Collections::Manager::update(KVBucket& bucket,
@@ -303,14 +306,16 @@ void Collections::Manager::addScopeStats(
     currentManifest.rlock()->addScopeStats(bucket, collector);
 }
 
-bool Collections::Manager::warmupLoadManifest(const std::string& dbpath) {
-    auto rv = Collections::PersistManifestTask::tryAndLoad(dbpath);
+bool Collections::Manager::warmupLoadManifest(
+        std::string_view dbpath, std::string_view quorumHistoryId) {
+    auto rv = Collections::PersistManifestTask::tryAndLoad(dbpath,
+                                                           quorumHistoryId);
     if (rv.has_value()) {
         EP_LOG_INFO(
                 "Collections::Manager::warmupLoadManifest: starting at "
-                "uid:{:#x} force:{}",
+                "uid:{:#x} hid:{}",
                 rv.value().getUid(),
-                rv.value().isForcedUpdate());
+                rv.value().getHistoryID().to_string());
         *currentManifest.wlock() = std::move(rv.value());
         return true;
     }

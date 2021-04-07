@@ -40,7 +40,7 @@ public:
         cookie = create_mock_cookie();
 
         vbManifest = std::make_unique<FakeManifest>(
-                std::make_shared<Collections::Manager>());
+                std::make_shared<Collections::Manager>(TestHistoryID));
 
         const auto firstCid = 10;
         const auto colCount = state.range(0);

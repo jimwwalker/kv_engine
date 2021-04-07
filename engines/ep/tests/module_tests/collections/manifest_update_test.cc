@@ -35,7 +35,7 @@ TEST_P(CollectionsManifestUpdate, update_epoch) {
     setCollections(cookie, cm);
 }
 
-TEST_P(CollectionsManifestUpdate, update_add1) {
+TEST_P(CollectionsManifestUpdate, DISABLED_update_add1) {
     CollectionsManifest cm, cm1;
     cm.add(CollectionEntry::Entry{"fruit", 22});
     EXPECT_FALSE(store->getVBucket(vbid)->lockCollections().exists(22));
@@ -68,7 +68,7 @@ TEST_P(CollectionsManifestUpdate, update_add1) {
 }
 
 // Force change a scope name
-TEST_P(CollectionsManifestUpdate, update_scope_name_forced) {
+TEST_P(CollectionsManifestUpdate, DISABLED_update_scope_name_forced) {
     // Create diverged manifests cm and cm1
     CollectionsManifest cm, cm1;
 
@@ -98,7 +98,7 @@ TEST_P(CollectionsManifestUpdate, update_scope_name_forced) {
             CollectionEntry::fruit));
 }
 
-TEST_P(CollectionsManifestUpdate, update_add1_with_warmup) {
+TEST_P(CollectionsManifestUpdate, DISABLED_update_add1_with_warmup) {
     CollectionsManifest cm, cm1;
     cm.add(CollectionEntry::Entry{"fruit", 22});
     EXPECT_FALSE(store->getVBucket(vbid)->lockCollections().exists(22));
@@ -168,7 +168,7 @@ TEST_P(CollectionsManifestUpdate, update_add1_with_warmup) {
     store_item(vbid, makeStoredDocKey("clarinet", 22), "soprano");
 }
 
-TEST_P(CollectionsManifestUpdate, update_add1_move1_warmup) {
+TEST_P(CollectionsManifestUpdate, DISABLED_update_add1_move1_warmup) {
     // Begin with fruit in default scope and the addition of a second scope
     CollectionsManifest cm;
     cm.add(CollectionEntry::Entry{"fruit", 22});
@@ -213,7 +213,7 @@ TEST_P(CollectionsManifestUpdate, update_add1_move1_warmup) {
     EXPECT_EQ(ScopeEntry::shop1.uid, scope.value());
 }
 
-TEST_P(CollectionsManifestUpdate, force_update_multiple_changes) {
+TEST_P(CollectionsManifestUpdate, DISABLED_force_update_multiple_changes) {
     // Create diverged manifests, here both have 1 scope, 1 collection, but
     // both with different names.
     CollectionsManifest cm, cm1;

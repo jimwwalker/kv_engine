@@ -22,7 +22,7 @@
 #include <unordered_set>
 
 TEST(ManifestTest, defaultState) {
-    Collections::Manifest m;
+    Collections::Manifest m{TestHistoryID};
     EXPECT_TRUE(m.doesDefaultCollectionExist());
     EXPECT_EQ(1, m.getCollectionCount());
     EXPECT_EQ(0, m.getUid());
@@ -53,26 +53,27 @@ TEST(ManifestTest, validation) {
     std::vector<std::string> invalidManifests = {
             "", // empty
             "not json", // definitely not json
-            R"({"uid"})", // illegal json
+            // illegal json
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid"})",
 
             // valid uid, no scopes object
-            R"({"uid" : "1"})",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1"})",
 
             // valid uid, invalid scopes type
-            R"({"uid":"1"
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid":"1"
                 "scopes" : 0})",
 
             // valid uid, no scopes
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes" : []})",
 
             // valid uid, no default scope
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"not_the_default", "uid":"8",
                 "collections":[]}]})",
 
             // default collection not in default scope
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[]},
                           {"name":"brewerA", "uid":"8",
@@ -80,85 +81,85 @@ TEST(ManifestTest, validation) {
                                     {"name":"_default","uid":"0"}]}]})",
 
             // valid uid, invalid collections type
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[0]}]})",
 
             // valid uid, valid name, no collection uid
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[{"name":"beer"}]}]})",
 
             // valid uid, valid name, no scope uid
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[]},
                           {"name":"scope1",
                                 "collections":[]}]})",
 
             // valid uid, valid collection uid, no collection name
-            R"({"uid": "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid": "1",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[{"uid":"8"}]}]})",
 
             // valid uid, valid scope uid, no scope name
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[]},
                           {"uid":"8",
                                 "collections":[]}]})",
 
             // valid name, invalid collection uid (wrong type)
-            R"({"uid": "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid": "1",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[{"name":"beer", "uid":8}]}]})",
 
             // valid name, invalid scope uid (wrong type)
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[]},
                           {"name":"1", "uid":8,
                                 "collections":[]}]})",
 
             // valid name, invalid collection uid (not hex)
-            R"({"uid":"0",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid":"0",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[{"name":"beer", "uid":"turkey"}]}]})",
 
             // valid name, invalid scope uid (not hex)
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[]},
                           {"name":"1", "uid":"turkey",
                                 "collections":[]}]})",
 
             // invalid collection name (wrong type), valid uid
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[{"name":1, "uid":"8"}]}]})",
 
             // invalid scope name (wrong type), valid uid
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[]},
                           {"name":1, "uid":"8",
                                 "collections":[]}]})",
 
             // duplicate CID
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes" : [{"name":"_default", "uid":"0","
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"lager", "uid":"8"}]}]})",
 
             // duplicate scope id
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"brewerA", "uid":"8","collections":[]},
                     {"name":"brewerB", "uid":"8","collections":[]}]})",
 
             // duplicate cid across scopes
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"brewery", "uid":"8"},
@@ -168,117 +169,117 @@ TEST(ManifestTest, validation) {
 
             // Invalid manifest UIDs
             // Missing UID
-            R"({"scopes":[{"name":"_default", "uid":"0"}]})",
+            R"({"history_id":"00112233445566778899aabbccddeeff","scopes":[{"name":"_default", "uid":"0"}]})",
 
             // UID wrong type
-            R"({"uid" : 1,
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : 1,
                 "scopes":[{"name":"_default", "uid":"0"}]})",
 
             // UID cannot be converted to a value
-            R"({"uid" : "thisiswrong",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "thisiswrong",
                 "scopes":[{"name":"_default", "uid":"0"}]})",
 
             // UID cannot be converted to a value
-            R"({"uid" : "12345678901234567890112111",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "12345678901234567890112111",
                 "scopes":[{"name":"_default", "uid":"0}]})",
 
             // UID cannot be 0x prefixed
-            R"({"uid" : "0x101",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "0x101",
                 "scopes":[{"name":"_default", "uid":"0"}]})",
 
             // collection cid cannot be 1
-            R"({"uid" : "101",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "101",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"1"}]}]})",
 
             // collection cid cannot be 7 (1-7 reserved)
-            R"({"uid" : "101",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "101",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"7"}]}]})",
 
             // scope uid cannot be 1
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"brewerA", "uid":"1","collections":[]}]})",
 
             // scope uid cannot be 7 (1-7 reserved)
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"brewerA", "uid":"7","collections":[]}]})",
 
             // scope uid too long
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"brewerA", "uid":"1234567890","collections":[]}]})",
 
             // collection cid too long
-            R"({"uid" : "101",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "101",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"1234567890"}]}]})",
 
             // scope uid too long
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"brewerA", "uid":"1234567890","collections":[]}]})",
 
             // Invalid collection names, no $ prefix allowed yet and empty
             // also denied
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"$beer", "uid":"8"}]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"", "uid":"8"}]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"name_is_far_too_long_for_collections________________________________________________________________________________________________________________________________________________________________________________________________________________________",
                 "uid":"8"}]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"collection.name",
                 "uid":"8"}]}]})",
 
             // Invalid scope names, no $ prefix allowed yet and empty denies
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"$beer", "uid":"8", "collections":[]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"", "uid":"8", "collections":[]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"name_is_far_too_long_for_collections________________________________________________________________________________________________________________________________________________________________________________________________________________________",
                         "uid":"8",
                         "collections":[]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[
                     {"name":"scope.name", "uid":"8", "collections":[]}]})",
 
             // maxTTL invalid cases
             // wrong type
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"brewery","uid":"9","maxTTL":"string"}]}]})",
             // negative (doesn't make sense)
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"brewery","uid":"9","maxTTL":-700}]}]})",
             // too big for 32-bit
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"brewery","uid":"9","maxTTL":4294967296}]}]})",
             // Test duplicate scope names
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"_default","uid":"0"},
@@ -293,7 +294,7 @@ TEST(ManifestTest, validation) {
                                     {"name":"beer", "uid":"c"},
                                     {"name":"brewery", "uid":"d"}]}]})",
             // Test duplicate collection names within the same scope
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"_default","uid":"0"},
@@ -304,41 +305,64 @@ TEST(ManifestTest, validation) {
                                     {"name":"beer", "uid":"a"},
                                     {"name":"beer", "uid":"b"}]}]})",
             // Illegal name for default collection
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"Default","uid":"0"}]}]})",
             // Illegal name for default scope
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"Default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"}]}]})",
             // Illegal name for default collection
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"Default","uid":"0"}]}]})",
+
+            // Bad history_id tests.
+            // missing history_id
+            R"({"uid" : "1",
+                "scopes":[{"name":_default", "uid":"0",
+                "collections":[{"name":"_default","uid":"0"}]}]})",
+            // wrong types
+            R"({"history_id":false,"uid" : "1",
+                "scopes":[{"name":_default", "uid":"0",
+                "collections":[{"name":"_default","uid":"0"}]}]})",
+            R"({"history_id":8812111,"uid" : "1",
+                "scopes":[{"name":_default", "uid":"0",
+                "collections":[{"name":"_default","uid":"0"}]}]})",
+            // Bad value
+            R"({"history_id":"00112233445566778899aabbccddeefz","uid" : "1",
+                "scopes":[{"name":_default", "uid":"0",
+                "collections":[{"name":"_default","uid":"0"}]}]})",
+            R"({"history_id":"00112233445566778899aabbccddeefff","uid" : "1",
+                "scopes":[{"name":_default", "uid":"0",
+                "collections":[{"name":"_default","uid":"0"}]}]})",
+            R"({"history_id":"00112233445566778899aabbccddeef","uid" : "1",
+                "scopes":[{"name":_default", "uid":"0",
+                "collections":[{"name":"_default","uid":"0"}]}]})",
     };
 
     std::vector<std::string> validManifests = {
             // this is the 'epoch' state of collections
-            R"({"uid" : "0",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "0",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"}]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[
                     {"name":"_default", "uid":"0", "collections":[]},
                     {"name":"brewerA", "uid":"8", "collections":[]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"_default","uid":"0"},
@@ -349,18 +373,18 @@ TEST(ManifestTest, validation) {
                                     {"name":"beer", "uid":"a"},
                                     {"name":"brewery", "uid":"b"}]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"beer", "uid":"8"},
@@ -371,41 +395,41 @@ TEST(ManifestTest, validation) {
                                     {"name":"brewery", "uid":"b"}]}]})",
 
             // Extra keys ignored at the moment
-            R"({"extra":"key",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "extra":"key",
                 "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"af"},
                                {"name":"brewery","uid":"8"}]}]})",
 
             // lower-case uid is fine
-            R"({"uid" : "abcd1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "abcd1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[]}]})",
             // upper-case uid is fine
-            R"({"uid" : "ABCD1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "ABCD1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[]}]})",
             // mix-case uid is fine
-            R"({"uid" : "AbCd1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "AbCd1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[]}]})",
 
             // maxTTL valid cases
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"brewery","uid":"9","maxTTL":0}]}]})",
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"brewery","uid":"9","maxTTL":1}]}]})",
             // max u32int
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"},
                                {"name":"brewery","uid":"9","maxTTL":4294967295}]}]})",
 
-            R"({"uid" : "1",
+            R"({"history_id":"00112233445566778899aabbccddeeff", "uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"brewery","uid":"8"}]}]})",
     };
@@ -463,40 +487,40 @@ TEST(ManifestTest, validation) {
     }
 }
 
-TEST(ManifestTest, forceVsNoForce) {
-    Collections::Manifest force(
-            R"({"uid" : "1", "force":true,
+TEST(ManifestTest, differentHistoryId) {
+    Collections::Manifest m1(
+            R"({"uid" : "1", "history_id":"00112233445566778899aabbccddeeff",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"}]}]})");
 
-    Collections::Manifest noForce(
-            R"({"uid" : "1",
+    Collections::Manifest m2(
+            R"({"uid" : "1", "history_id":"ab112233445566778899aabbccddee11",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"_default","uid":"0"}]}]})");
     // The == operator was broken with force not being checked
-    EXPECT_FALSE(force == noForce);
-    EXPECT_TRUE(force != noForce);
+    EXPECT_FALSE(m1 == m2);
+    EXPECT_TRUE(m1 != m2);
 }
 
 TEST(ManifestTest, getUid) {
-    std::vector<std::pair<Collections::ManifestUid, std::string>>
-            validManifests = {{Collections::ManifestUid(1),
-                               R"({"uid" : "1",
+    std::vector<std::pair<Collections::ManifestUid, std::string>> validManifests =
+            {{Collections::ManifestUid(1),
+              R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "1",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})"},
-                              {Collections::ManifestUid(0xabcd),
-                               R"({"uid" : "ABCD",
+             {Collections::ManifestUid(0xabcd),
+              R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "ABCD",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})"},
-                              {Collections::ManifestUid(0xabcd),
-                               R"({"uid" : "abcd",
+             {Collections::ManifestUid(0xabcd),
+              R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "abcd",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})"},
-                              {Collections::ManifestUid(0xabcd),
-                               R"({"uid" : "aBcD",
+             {Collections::ManifestUid(0xabcd),
+              R"({"history_id":"00112233445566778899aabbccddeeff","uid" : "aBcD",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"}]}]})"}};
@@ -509,7 +533,7 @@ TEST(ManifestTest, getUid) {
 
 TEST(ManifestTest, findCollection) {
     std::string manifest =
-            R"({"uid" : "1",
+            R"({"uid" : "1", "history_id":"00112233445566778899aabbccddeeff",
                 "scopes":[{"name":"_default", "uid":"0",
                 "collections":[{"name":"beer", "uid":"8"},
                                {"name":"brewery","uid":"9"},
@@ -675,7 +699,8 @@ TEST(ManifestTest, badNames) {
 }
 
 TEST(ManifestTest, findCollectionByName) {
-    std::string manifest = R"({"uid" : "1",
+    std::string manifest =
+            R"({"uid" : "1", "history_id":"00112233445566778899aabbccddeeff",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"_default", "uid":"0"},
@@ -723,7 +748,8 @@ TEST(ManifestTest, findCollectionByName) {
 }
 
 TEST(ManifestTest, getScopeID) {
-    std::string manifest = R"({"uid" : "1",
+    std::string manifest =
+            R"({"uid" : "1", "history_id":"00112233445566778899aabbccddeeff",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"_default", "uid":"0"},
@@ -782,7 +808,8 @@ TEST(ManifestTest, getScopeID) {
 }
 
 TEST(ManifestTest, getCollectionID) {
-    std::string manifest = R"({"uid" : "1",
+    std::string manifest =
+            R"({"uid" : "1", "history_id":"00112233445566778899aabbccddeeff",
                 "scopes":[{"name":"_default", "uid":"0",
                                 "collections":[
                                     {"name":"_default", "uid":"0"},
@@ -853,8 +880,8 @@ TEST(ManifestTest, isSuccesor) {
     cm.add(ScopeEntry::shop1);
     cm.add(CollectionEntry::dairy, ScopeEntry::shop1);
 
-    Collections::Manifest epoch;
-    Collections::Manifest b1;
+    Collections::Manifest epoch{TestHistoryID};
+    Collections::Manifest b1{TestHistoryID};
     Collections::Manifest b2{std::string{cm}};
     Collections::Manifest c{std::string{cm}};
 
@@ -949,19 +976,4 @@ TEST(ManifestTest, isNotSuccesor) {
     cm.add(CollectionEntry::meat, ScopeEntry::shop1);
     Collections::Manifest incoming3{std::string{cm}};
     EXPECT_NE(cb::engine_errc::success, current.isSuccessor(incoming3).code());
-}
-
-TEST(ManifestTest, forcedUpdate) {
-    std::string manifest = R"({"uid" : "1",
-                "force" : true,
-                "scopes":[{"name":"_default", "uid":"0",
-                                "collections":[
-                                    {"name":"_default", "uid":"0"},
-                                    {"name":"meat", "uid":"8"}]},
-                          {"name":"brewerA", "uid":"8",
-                                "collections":[
-                                    {"name":"beer", "uid":"9"},
-                                    {"name":"meat", "uid":"a"}]}]})";
-    Collections::Manifest cm(manifest);
-    EXPECT_TRUE(cm.isForcedUpdate());
 }

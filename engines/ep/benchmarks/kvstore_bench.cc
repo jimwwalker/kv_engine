@@ -28,6 +28,7 @@
 #include <folly/portability/GTest.h>
 #include <platform/dirutils.h>
 #include <programs/engine_testapp/mock_server.h>
+#include <utilities/test_manifest.h>
 
 using namespace std::string_literals;
 
@@ -131,7 +132,8 @@ protected:
             kvstore->set(qi);
         }
 
-        Collections::VB::Manifest m{std::make_shared<Collections::Manager>()};
+        Collections::VB::Manifest m{
+                std::make_shared<Collections::Manager>(TestHistoryID)};
         VB::Commit f(m);
 
         kvstore->commit(f);

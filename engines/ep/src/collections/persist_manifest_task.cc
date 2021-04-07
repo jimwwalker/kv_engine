@@ -115,12 +115,12 @@ cb::engine_errc PersistManifestTask::doTaskCore() {
 }
 
 std::optional<Manifest> PersistManifestTask::tryAndLoad(
-        std::string_view dbname) {
+        std::string_view dbname, std::string_view historyId) {
     std::string fname{dbname};
     fname += cb::io::DirectorySeparator + std::string(ManifestFileName);
 
     if (!cb::io::isFile(fname)) {
-        return Manifest{};
+        return Manifest{"boom"};
     }
 
     try {

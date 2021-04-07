@@ -30,6 +30,7 @@
 
 #include <engines/ep/src/vb_commit.h>
 #include <memcached/util.h>
+#include <utilities/test_manifest.h>
 #include <random>
 
 using namespace std::string_literals;
@@ -128,7 +129,7 @@ int main(int argc, char** argv) {
         kvstore.rw->set(qi);
     }
     Collections::VB::Manifest manifest{
-            std::make_shared<Collections::Manager>()};
+            std::make_shared<Collections::Manager>(TestHistoryID)};
     VB::Commit commit(manifest);
     kvstore.rw->commit(commit);
 

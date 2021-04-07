@@ -364,7 +364,7 @@ public:
     }
 
     std::shared_ptr<Collections::Manager> collectionsManager =
-            std::make_shared<Collections::Manager>();
+            std::make_shared<Collections::Manager>(TestHistoryID);
     MockVBManifest active{collectionsManager};
     MockVBManifest replica{collectionsManager};
     EPStats global_stats;

@@ -982,7 +982,8 @@ void Warmup::initialize()
     }
 
     if (!store.getCollectionsManager().warmupLoadManifest(
-                store.getEPEngine().getConfiguration().getDbname())) {
+                store.getEPEngine().getConfiguration().getDbname(),
+                store.getEPEngine().getConfiguration().getQuorumHistoryId())) {
         EP_LOG_CRITICAL(
                 "Warmup::initialize aborting as manifest cannot be loaded");
         return;

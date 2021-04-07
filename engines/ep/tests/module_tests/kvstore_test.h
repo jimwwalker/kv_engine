@@ -19,6 +19,7 @@
 
 #include <folly/portability/GMock.h>
 #include <folly/portability/GTest.h>
+#include <utilities/test_manifest.h>
 
 #include <memory>
 #include <string>
@@ -44,7 +45,7 @@ protected:
 
     std::string data_dir;
     Collections::VB::Manifest manifest{
-            std::make_shared<Collections::Manager>()};
+            std::make_shared<Collections::Manager>(TestHistoryID)};
     VB::Commit flush;
     const Vbid vbid = Vbid(0);
     std::mutex vbLock;

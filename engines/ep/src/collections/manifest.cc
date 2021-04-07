@@ -46,7 +46,7 @@ static constexpr char const* UidKey = "uid";
 static constexpr char const* MaxTtlKey = "maxTTL";
 static constexpr nlohmann::json::value_t MaxTtlType =
         nlohmann::json::value_t::number_unsigned;
-static constexpr char const* ForceUpdateKey = "force";
+static constexpr char const* HistoryIdKey = "history_id";
 
 /**
  * Get json sub-object from the json object for key and check the type.
@@ -73,7 +73,8 @@ static void throwIfWrongType(const std::string& errorKey,
                              const nlohmann::json& object,
                              nlohmann::json::value_t expectedType);
 
-Manifest::Manifest() {
+Manifest::Manifest(std::string_view historyID, Manifest::Epoch)
+    : historyID(historyID) {
     buildCollectionIdToEntryMap();
 }
 
@@ -95,12 +96,8 @@ Manifest::Manifest(std::string_view json)
     auto jsonUid = getJsonObject(parsed, UidKey, UidType);
     uid = makeUid(jsonUid.get<std::string>());
 
-    auto forcedUpdate =
-            cb::getOptionalJsonObject(parsed, ForceUpdateKey, ForceUpdateType);
-
-    if (forcedUpdate) {
-        force = forcedUpdate.value().get<bool>();
-    }
+    historyID =
+            HistoryID(cb::getJsonObject(parsed, HistoryIdKey, HistoryIdType));
 
     // Read the scopes within the Manifest
     auto scopes = getJsonObject(parsed, ScopesKey, ScopesType);
@@ -236,12 +233,11 @@ Manifest& Manifest::operator=(Manifest&& other) {
         defaultCollectionExists = other.defaultCollectionExists;
         scopes = std::move(other.scopes);
         collections = std::move(other.collections);
-        if (other.force) {
-            uid.reset(other.uid);
-        } else {
-            uid = other.uid;
-        }
-        force = other.force;
+
+        // The node manifest expects to move forwards, so no reset is used on
+        // the monotonic uid type
+        uid = other.uid;
+        historyID = other.historyID;
     }
 
     return *this;
@@ -311,11 +307,9 @@ nlohmann::json Manifest::toJson(
         const Collections::IsVisibleFunction& isVisible) const {
     nlohmann::json manifest;
     manifest["uid"] = fmt::format("{0:x}", uid);
+    manifest[HistoryIdKey] = historyID.to_string();
     manifest["scopes"] = nlohmann::json::array();
 
-    if (force) {
-        manifest["force"] = true;
-    }
 
     // scope check is correct to see an empty scope
     // collection check is correct as well, if you have no visible collections
@@ -374,8 +368,9 @@ flatbuffers::DetachedBuffer Manifest::toFlatbuffer() const {
     }
 
     auto scopeVector = builder.CreateVector(fbScopes);
+    auto hid = historyID.toFlatbuffer();
     auto toWrite = Collections::Persist::CreateManifest(
-            builder, uid, force, scopeVector);
+            builder, uid, &hid, scopeVector);
     builder.Finish(toWrite);
     return builder.Release();
 }
@@ -400,7 +395,7 @@ Manifest::Manifest(std::string_view flatbufferData, Manifest::FlatBuffers tag)
             reinterpret_cast<const uint8_t*>(flatbufferData.data()));
 
     uid = manifest->uid();
-    force = manifest->force();
+    historyID = *manifest->historyID();
 
     for (const Collections::Persist::Scope* scope : *manifest->scopes()) {
         std::vector<CollectionEntry> scopeCollections;
@@ -431,10 +426,12 @@ void Manifest::addCollectionStats(KVBucket& bucket,
                                   const BucketStatCollector& collector) const {
     try {
         using namespace cb::stats;
-        // manifest_uid is always permitted (e.g. get_collections_manifest
+        // uid/history_id is always permitted (e.g. get_collections_manifest
         // exposes this too). It reveals nothing about scopes or collections but
         // is useful for assisting in access failures
         collector.addStat(Key::manifest_uid, uid);
+        collector.addStat(Key::manifest_history_id, historyID.to_string());
+
         for (const auto& scope : scopes) {
             std::string_view scopeName = scope.second.name;
             auto scopeC = collector.forScope(scopeName, scope.first);
@@ -466,15 +463,11 @@ void Manifest::addScopeStats(KVBucket& bucket,
                              const BucketStatCollector& collector) const {
     try {
         using namespace cb::stats;
-        // manifest_uid is always permitted (e.g. get_collections_manifest
+        // uid/history_id is always permitted (e.g. get_collections_manifest
         // exposes this too). It reveals nothing about scopes or collections but
         // is useful for assisting in access failures
         collector.addStat(Key::manifest_uid, uid);
-
-        // Add force only when set (should be rare)
-        if (force) {
-            collector.addStat(Key::manifest_force, true);
-        }
+        collector.addStat(Key::manifest_history_id, historyID.to_string());
 
         for (const auto& entry : scopes) {
             std::string_view scopeName = entry.second.name;
@@ -603,7 +596,7 @@ bool Scope::operator==(const Scope& other) const {
 }
 
 bool Manifest::operator==(const Manifest& other) const {
-    return (uid == other.uid) && (force == other.force) &&
+    return (uid == other.uid) && (historyID == other.historyID) &&
            isEqualContent(other);
 }
 
@@ -616,12 +609,7 @@ bool Manifest::isEqualContent(const Manifest& other) const {
 }
 
 cb::engine_error Manifest::isSuccessor(const Manifest& successor) const {
-    // if forced return success - anything is permitted to happen
-    if (successor.isForcedUpdate()) {
-        return cb::engine_error(cb::engine_errc::success, "forced update");
-    }
-
-    // else must be a > uid with sane changes or equal uid and no changes
+    // must be a > uid with sane changes or equal uid and no changes
     if (successor.getUid() > uid) {
         // First check that the successor introduces a change in state. There
         // is a special case if current is uid:0 in that we cannot do this check
@@ -720,7 +708,7 @@ bool Manifest::isEpoch() const {
 std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
     os << "Collections::Manifest"
        << ", defaultCollectionExists:" << manifest.defaultCollectionExists
-       << ", uid:" << manifest.uid << ", force:" << manifest.force
+       << ", uid:" << manifest.uid << ", history_id:" << manifest.historyID
        << ", collections.size:" << manifest.collections.size() << std::endl;
     for (const auto& entry : manifest.scopes) {
         os << "scope:{" << std::hex << entry.first << ", " << entry.second.name

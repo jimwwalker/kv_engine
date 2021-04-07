@@ -20,6 +20,7 @@
 #include <benchmark/benchmark.h>
 #include <engines/ep/src/defragmenter.h>
 #include <folly/portability/GTest.h>
+#include <utilities/test_manifest.h>
 #include <valgrind/valgrind.h>
 
 #include <memory>
@@ -59,7 +60,7 @@ public:
                 config,
                 evictionPolicy,
                 std::make_unique<Collections::VB::Manifest>(
-                        std::make_shared<Collections::Manager>()));
+                        std::make_shared<Collections::Manager>(TestHistoryID)));
 
         populateVbucket();
     }

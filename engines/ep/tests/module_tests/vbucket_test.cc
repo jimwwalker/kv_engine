@@ -30,6 +30,8 @@
 
 #include <nlohmann/json.hpp>
 #include <platform/cb_malloc.h>
+#include <utilities/test_manifest.h>
+
 #include <memory>
 
 using namespace std::string_literals;
@@ -56,7 +58,7 @@ VBucketTestBase::VBucketTestBase(VBType vbType,
                               get_mock_server_api());
 
     auto manifest = std::make_unique<Collections::VB::Manifest>(
-            std::make_shared<Collections::Manager>());
+            std::make_shared<Collections::Manager>(TestHistoryID));
 
     switch (vbType) {
     case VBType::Persistent:

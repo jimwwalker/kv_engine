@@ -135,6 +135,7 @@ Entry_(maxScope);
 #undef Entry_
 } // namespace ScopeEntry
 
+constexpr std::string_view TestHistoryID = "00112233445566778899aabbccddeeff";
 struct NoDefault {};
 
 /**
