@@ -238,6 +238,7 @@ SET(COLLECTIONS_SOURCE src/collections/collections_types.cc
                        src/collections/eraser_context.cc
                        src/collections/flush.cc
                        src/collections/flush_accounting.cc
+                       src/collections/history_id.cc
                        src/collections/kvstore.cc
                        src/collections/manager.cc
                        src/collections/manifest.cc

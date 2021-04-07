@@ -13,6 +13,7 @@
  * Tests for Collection functionality in EPStore.
  */
 
+#include "collections/history_id.h"
 #include "collections/manager.h"
 #include "collections/shared_metadata_table.h"
 #include "collections/vbucket_manifest.h"
@@ -411,4 +412,44 @@ TEST(SharedMetaDataTable, basic) {
 
     table.dereference(8, std::move(ref3));
     EXPECT_EQ(0, table.count(8));
+}
+
+TEST(HistoryID, basic) {
+    std::vector<std::string> good = {"00112233445566778899aabbccddeeff",
+                                     "00112233445566778899AABBCCDDEEFF",
+                                     "AAaaBBbBcCdDEEeeFF011a1B04050607"};
+    Collections::HistoryID compare("ff112233445566778899aabbccddeeff");
+    std::vector<std::string> bad = {"",
+                                    "q",
+                                    "1",
+                                    "  ",
+                                    "00z12233445566778899aabbccddeeff",
+                                    "0112233445566778899aabbccddeeff",
+                                    "a0112233445566778899aabbccddeeffa"};
+
+    for (const auto& g : good) {
+        Collections::HistoryID id(g);
+        Collections::HistoryID id1(g);
+
+        std::string lg(g.size(), ' ');
+        // We always return in lower-case a-f
+        std::transform(g.begin(), g.end(), lg.begin(), [](char c) {
+            return std::tolower(c);
+        });
+        EXPECT_EQ(lg, id.to_string());
+        EXPECT_EQ(id1, id);
+        EXPECT_FALSE(id1 != id);
+        EXPECT_NE(compare, id);
+
+        Collections::HistoryID fbuf(id.toFlatbuffer());
+        EXPECT_EQ(lg, fbuf.to_string());
+    }
+
+    for (const auto& b : bad) {
+        try {
+            Collections::HistoryID id(b);
+            FAIL() << "Expected constructor to throw for " << b;
+        } catch (const std::exception&) {
+        }
+    }
 }

@@ -13,6 +13,13 @@
 // object. These are used to store as a file a copy of the current manifest
 // and use it in warm-up.
 //
+namespace Collections;
+
+// Compact form of the historyID, this is a 128bit uuid
+struct FlatbufferHistoryID {
+    data0:uint64;
+    data1:uint64;
+}
 
 namespace Collections.Persist;
 
