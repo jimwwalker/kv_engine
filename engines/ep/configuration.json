@@ -315,10 +315,9 @@
         "dcp_noop_mandatory_for_v5_features": {
             "default": "true",
             "descr": "Forces clients to enable noop for v5 features",
-	    "dynamic": true,
+        "dynamic": true,
             "type": "bool"
         },
-
         "defragmenter_enabled": {
             "default": "true",
             "descr": "True if defragmenter task is enabled",
@@ -328,7 +327,7 @@
         "defragmenter_interval": {
             "default": "10.0",
             "descr": "How often defragmenter task should be run (in seconds).",
-	    "dynamic": true,
+            "dynamic": true,
             "type": "float"
         },
         "defragmenter_age_threshold": {
@@ -346,13 +345,49 @@
         "defragmenter_chunk_duration": {
             "default": "20",
             "descr": "Maximum time (in ms) defragmentation task will run for before being paused (and resumed at the next defragmenter_interval).",
-	    "dynamic": true,
+            "dynamic": true,
             "type": "size_t",
             "validator": {
                 "range": {
                     "min": 1
                 }
             }
+        },
+        "defragmenter_auto" : {
+            "default": "true",
+            "descr": "Determines if the defragmenter is automatically controlled using the bucket's fragmentation as input. When false the values of defragmenter_chunk_duration and defragmenter_interval are used, when true the defragmenter runs using the auto max/min threshold",
+            "dynamic": true,
+            "type": "bool"
+        },
+        "defragmenter_auto_target_perc" : {
+            "default": "12.0",
+            "descr": "Fragmentation % that the auto controlled defragmenter is aiming for. Bucket memory fragmentation above this value results in more aggressive de-fragmentation",
+            "dynamic": true,
+            "type": "float"
+        },
+        "defragmenter_auto_threshold" : {
+            "default": "10000",
+            "descr": "Only consider defragmenting when the bucket's resident item count is above this threshold. As the defragmenter can only reduce memory by reallocating items, the auto mode should only engage when it maybe able to make a difference.",
+            "dynamic": true,
+            "type": "size_t"
+        },
+        "defragmenter_auto_max_sleep" : {
+            "default": "10.0",
+            "descr": "The maximum sleep that the auto controller can set (when automatically controlled)",
+            "dynamic": true,
+            "type": "float"
+        },
+        "defragmenter_auto_min_sleep" : {
+            "default": "0.5",
+            "descr": "The minimum sleep that the auto controller can set (when automatically controlled)",
+            "dynamic": true,
+            "type": "float"
+        },
+        "defragmenter_auto_config" : {
+            "default": "JIM TODO - would be nice as json",
+            "descr": "Todo, would like this to be json",
+            "dynamic": true,
+            "type": "std::string"
         },
         "durability_timeout_task_interval": {
             "default": "25",
