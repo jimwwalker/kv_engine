@@ -1854,11 +1854,6 @@ bool CouchKVStore::tryToCatchUpDbFile(Db& source,
                         .count();
     }
 
-    EP_LOG_INFO("Try to catch up {}: from {} to {} {} stopping flusher",
-                vbid,
-                start.updateSeqNum,
-                end.updateSeqNum,
-                copyWithoutLock ? "without" : "while");
 
     // Get the latest dropped collections from the source so the copy hook can
     // account for items that belong to dropped collections
@@ -1918,10 +1913,6 @@ bool CouchKVStore::tryToCatchUpDbFile(Db& source,
         ret = false;
     }
 
-    logger.info("Catch up of {} to {} complete{}",
-                vbid,
-                end.updateSeqNum,
-                copyWithoutLock ? ", stopping flusher" : "");
     return ret;
 }
 

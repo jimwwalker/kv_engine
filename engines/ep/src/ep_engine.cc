@@ -3225,6 +3225,11 @@ cb::engine_errc EventuallyPersistentEngine::doMemoryStats(
         add_casted_stat(
                 "ep_arena_global_missing_some_keys", true, add_stat, cookie);
     }
+    auto preFragStats = cb::ArenaMalloc::getFragmentationStats(arena);
+    add_casted_stat("ep_frag_perc",
+                    preFragStats.getFragmentationPerc(),
+                    add_stat,
+                    cookie);
     return cb::engine_errc::success;
 }
 

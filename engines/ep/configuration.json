@@ -372,7 +372,7 @@
             "type": "size_t"
         },
         "defragmenter_auto_max_sleep" : {
-            "default": "10.0",
+            "default": "2.0",
             "descr": "The maximum sleep that the auto controller can set (when automatically controlled)",
             "dynamic": true,
             "type": "float"

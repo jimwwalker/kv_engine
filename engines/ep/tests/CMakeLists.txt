@@ -98,6 +98,7 @@ ADD_EXECUTABLE(ep-engine_ep_unit_tests
         module_tests/mutation_log_test.cc
         module_tests/objectregistry_test.cc
         module_tests/mutex_test.cc
+        module_tests/pid_controller_test.cc
         module_tests/probabilistic_counter_test.cc
         module_tests/stats_test.cc
         module_tests/storeddockey_test.cc
@@ -157,6 +158,7 @@ if (NUMA_FOUND)
 endif()
 
 add_sanitizers(ep-engine_ep_unit_tests)
+cb_enable_unity_build(ep-engine_ep_unit_tests)
 
 ADD_EXECUTABLE(ep-engine_couch-fs-stats_test
         ${EventuallyPersistentEngine_SOURCE_DIR}/src/couch-kvstore/couch-fs-stats.cc

@@ -25,7 +25,12 @@ DefragmenterTask::DefragmenterTask(EventuallyPersistentEngine* e,
                                    EPStats& stats_)
     : GlobalTask(e, TaskId::DefragmenterTask, 0, false),
       stats(stats_),
-      epstore_position(engine->getKVBucket()->startPosition()) {
+      epstore_position(engine->getKVBucket()->startPosition()),
+      pid(engine->getConfiguration().getDefragmenterAutoTargetPerc(),
+          0.1,
+          0.0000001,
+          1.0,
+          std::chrono::milliseconds{10000}) {
 }
 
 bool DefragmenterTask::run() {
@@ -33,7 +38,7 @@ bool DefragmenterTask::run() {
     if (engine->getConfiguration().isDefragmenterEnabled()) {
         defrag();
     }
-    snooze(getSleepTime());
+    snooze(getSleepTime().count());
     if (engine->getEpStats().isShutdown) {
         return false;
     }
@@ -52,7 +57,7 @@ void DefragmenterTask::defrag() {
     }
 
     // Print start status.
-    if (getGlobalBucketLogger()->should_log(spdlog::level::debug)) {
+    if (getGlobalBucketLogger()->should_log(spdlog::level::info)) {
         std::stringstream ss;
         ss << getDescription() << " for bucket '" << engine->getName() << "'";
         if (epstore_position == engine->getKVBucket()->startPosition()) {
@@ -66,7 +71,7 @@ void DefragmenterTask::defrag() {
         ss << " Using chunk_duration=" << getChunkDuration().count() << " ms."
            << " mem_used=" << stats.getEstimatedTotalMemoryUsed() << ", "
            << fragStats;
-        EP_LOG_DEBUG("{}", ss.str());
+        EP_LOG_INFO("{}", ss.str());
     }
 
     // Disable thread-caching (as we are about to defragment, and hence don't
@@ -108,7 +113,7 @@ void DefragmenterTask::defrag() {
     bool completed = (epstore_position == engine->getKVBucket()->endPosition());
 
     // Print status.
-    if (getGlobalBucketLogger()->should_log(spdlog::level::debug)) {
+    if (getGlobalBucketLogger()->should_log(spdlog::level::info)) {
         std::stringstream ss;
         ss << getDescription() << " for bucket '" << engine->getName() << "'";
         if (completed) {
@@ -125,8 +130,9 @@ void DefragmenterTask::defrag() {
            << " moved " << visitor.getDefragCount() << "/"
            << visitor.getVisitedCount() << " visited documents."
            << " mem_used=" << stats.getEstimatedTotalMemoryUsed() << ", "
-           << fragStats << ". Sleeping for " << getSleepTime() << " seconds.";
-        EP_LOG_DEBUG("{}", ss.str());
+           << fragStats << ". Sleeping for " << getSleepTime().count()
+           << " seconds.";
+        EP_LOG_INFO("{}", ss.str());
     }
 
     // Delete(reset) visitor if it finished.
@@ -154,8 +160,12 @@ std::chrono::microseconds DefragmenterTask::maxExpectedDuration() const {
     return getChunkDuration() * 10;
 }
 
-double DefragmenterTask::getSleepTime() const {
-    return engine->getConfiguration().getDefragmenterInterval();
+std::chrono::duration<double> DefragmenterTask::getSleepTime() {
+    if (engine->getConfiguration().isDefragmenterAuto()) {
+        return calculateSleepDuration();
+    }
+    return std::chrono::duration<double>{
+            engine->getConfiguration().getDefragmenterInterval()};
 }
 
 size_t DefragmenterTask::getAgeThreshold() const {
@@ -196,4 +206,56 @@ std::chrono::milliseconds DefragmenterTask::getChunkDuration() const {
 
 DefragmentVisitor& DefragmenterTask::getDefragVisitor() {
     return dynamic_cast<DefragmentVisitor&>(prAdapter->getHTVisitor());
+}
+
+std::chrono::duration<double> DefragmenterTask::calculateSleepDuration() {
+    auto fragStats = cb::ArenaMalloc::getFragmentationStats(
+            engine->getArenaMallocClient());
+
+    auto perc = fragStats.getFragmentationPercD();
+
+    // If fragmentation goes below our set-point (SP), we can't continue to use
+    // the PID. More general usage and it would be used to "speed up/slow down"
+    // to reach the SP. We can't now force defragmentation up, we're just happy
+    // it's below the SP. In this case reset and when we go over again begin
+    // the ramping
+    if (perc < engine->getConfiguration().getDefragmenterAutoTargetPerc()) {
+        pid.reset();
+        EP_LOG_INFO("Skipping returning max duration good frag:{}", perc);
+        return std::chrono::duration<double>{
+                engine->getConfiguration().getDefragmenterAutoMaxSleep()};
+    }
+
+    // Above setpoint, calculate a correction
+    // The pid controller in this context will return negative values, so we
+    // want a positive output for the next step.
+    auto correction = 0.0 - pid.step<>(perc);
+
+    // Now map correction to duration as the pid is tracking error based on
+    // the difference from defragmenter_auto_target_perc. The
+    // output of this function is also capped by:
+    //    - defragmenter_auto_max_chunk_duration
+    //    - defragmenter_auto_min_chunk_duration
+
+    // Scale??
+    // as it gets more magnitude we want the sleep time
+    // to get smaller and cap at min/max
+    // scale the correction and subtract from max
+    auto scaled = correction; //* 0.1;
+    auto final1 =
+            engine->getConfiguration().getDefragmenterAutoMaxSleep() - scaled;
+    auto final = final1;
+
+    if (final1 < engine->getConfiguration().getDefragmenterAutoMinSleep()) {
+        final = engine->getConfiguration().getDefragmenterAutoMinSleep();
+    }
+    EP_LOG_INFO(
+            "calculateSleepDuration frag:{}, correction:{} scaled:{}, "
+            "final1:{}, final:{}",
+            perc,
+            correction,
+            scaled,
+            final1,
+            final);
+    return std::chrono::duration<double>{final};
 }

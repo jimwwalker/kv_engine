@@ -12,6 +12,11 @@
 
 #include "globaltask.h"
 #include "kv_bucket_iface.h"
+#include "pid_controller.h"
+
+namespace cb {
+class FragmentationStats;
+}
 
 class DefragmentVisitor;
 class EPStats;
@@ -109,7 +114,9 @@ private:
     void defrag();
 
     /// Duration (in seconds) defragmenter should sleep for between iterations.
-    double getSleepTime() const;
+    std::chrono::duration<double> getSleepTime();
+
+    std::chrono::duration<double> calculateSleepDuration();
 
     // Minimum age (measured in defragmenter task passes) that a document
     // must be to be considered for defragmentation.
@@ -141,4 +148,6 @@ private:
      * complete pass.
      */
     std::unique_ptr<PauseResumeVBAdapter> prAdapter;
+
+    PIDController pid;
 };

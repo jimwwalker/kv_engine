@@ -1057,18 +1057,19 @@ cb::engine_errc EPBucket::scheduleCompaction(
             tasksConfig = config.value();
         }
     }
-
-    EP_LOG_INFO(
-            "Compaction of {}, task:{}, purge_before_ts:{}, "
-            "purge_before_seq:{}, "
-            "drop_deletes:{}, {} with delay:{}s (awaiting completion).",
-            vbid,
-            task->getId(),
-            tasksConfig.purge_before_ts,
-            tasksConfig.purge_before_seq,
-            tasksConfig.drop_deletes,
-            !emplaced ? "rescheduled" : "created",
-            execDelay.count());
+    /*
+        EP_LOG_INFO(
+                "Compaction of {}, task:{}, purge_before_ts:{}, "
+                "purge_before_seq:{}, "
+                "drop_deletes:{}, {} with delay:{}s (awaiting completion).",
+                vbid,
+                task->getId(),
+                tasksConfig.purge_before_ts,
+                tasksConfig.purge_before_seq,
+                tasksConfig.drop_deletes,
+                !emplaced ? "rescheduled" : "created",
+                execDelay.count());
+                */
 
     return cb::engine_errc::would_block;
 }
@@ -1270,28 +1271,29 @@ void EPBucket::compactInternal(LockedVBucketPtr& vb, CompactionConfig& config) {
     } else {
         vb->clearFilter();
     }
-
-    EP_LOG_INFO(
-            "Compaction of {} done ({}). "
-            "purged tombstones:{}, prepares:{}, prepareBytes:{} "
-            "collection_items_erased:alive:{},deleted:{}, "
-            "size/items/tombstones/purge_seqno pre{{{}, {}, {}, {}}}, "
-            "post{{{}, {}, {}, {}}}",
-            vb->getId(),
-            result ? "ok" : "failed",
-            ctx->stats.tombstonesPurged,
-            ctx->stats.preparesPurged,
-            ctx->stats.prepareBytesPurged,
-            ctx->stats.collectionsItemsPurged,
-            ctx->stats.collectionsDeletedItemsPurged,
-            ctx->stats.pre.size,
-            ctx->stats.pre.items,
-            ctx->stats.pre.deletedItems,
-            ctx->stats.pre.purgeSeqno,
-            ctx->stats.post.size,
-            ctx->stats.post.items,
-            ctx->stats.post.deletedItems,
-            ctx->stats.post.purgeSeqno);
+    /*
+        EP_LOG_INFO(
+                "Compaction of {} done ({}). "
+                "purged tombstones:{}, prepares:{}, prepareBytes:{} "
+                "collection_items_erased:alive:{},deleted:{}, "
+                "size/items/tombstones/purge_seqno pre{{{}, {}, {}, {}}}, "
+                "post{{{}, {}, {}, {}}}",
+                vb->getId(),
+                result ? "ok" : "failed",
+                ctx->stats.tombstonesPurged,
+                ctx->stats.preparesPurged,
+                ctx->stats.prepareBytesPurged,
+                ctx->stats.collectionsItemsPurged,
+                ctx->stats.collectionsDeletedItemsPurged,
+                ctx->stats.pre.size,
+                ctx->stats.pre.items,
+                ctx->stats.pre.deletedItems,
+                ctx->stats.pre.purgeSeqno,
+                ctx->stats.post.size,
+                ctx->stats.post.items,
+                ctx->stats.post.deletedItems,
+                ctx->stats.post.purgeSeqno);
+                */
 }
 
 // Running on WriterTask - CompactTask
