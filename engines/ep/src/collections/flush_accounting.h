@@ -42,7 +42,8 @@ public:
      * dropped
      */
     FlushAccounting(
-            const std::vector<Collections::KVStore::DroppedCollection>& v);
+            const std::vector<Collections::KVStore::DroppedCollection>& v,
+            IsCompaction isCompaction);
     /**
      * preset the statistics of the collection. Subsequent updateStats calls
      * then account against preset values.
@@ -117,9 +118,12 @@ public:
      * collections in storage, they can omit the call.
      * @param v vector of DroppedCollection objects representing persisted
      *        dropped collections.
+     * @param isCompaction the compaction usage of flush accounting can setup
+     *        the droppedCollections map, whilst flush cannot.
      */
     void setDroppedCollectionsForStore(
-            const std::vector<Collections::KVStore::DroppedCollection>&);
+            const std::vector<Collections::KVStore::DroppedCollection>& v,
+            IsCompaction isCompaction = IsCompaction::No);
 
     /**
      * For each collection that we have stats tracked for, call the given
@@ -129,6 +133,14 @@ public:
      */
     void forEachCollection(
             std::function<void(CollectionID, const PersistedStats&)> cb) const;
+
+    /**
+     * For each collection tracked in the "droppedCollections", invoke the given
+     * callback function.
+     *
+     * @param cb callback to invoke for each tracked collection
+     */
+    void forEachDroppedCollection(std::function<void(CollectionID)> cb) const;
 
     /**
      * @return reference to the map of collections dropped by the flusher
