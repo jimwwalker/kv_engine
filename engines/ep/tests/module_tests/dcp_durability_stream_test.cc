@@ -4289,9 +4289,9 @@ TEST_P(DurabilityPassiveStreamTest,
     // Test: now process the buffered message. This would previously throw a
     // Monotonic logic_error exception when attempting to push the same
     // seqno to the PDM::receivedSnapshotEnds
-    uint32_t processedBytes = 0;
-    EXPECT_EQ(all_processed,
-              stream->processBufferedMessages(processedBytes, 1));
+    auto result = stream->processBufferedMessages(1);
+    EXPECT_EQ(all_processed, result.first);
+    EXPECT_EQ(0, result.second);
 }
 
 TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpCommit) {
@@ -4352,7 +4352,10 @@ TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpCommit) {
                                        0,
                                        0));
 
-    // No change, snapshot is now buffered
+    // snapshot is now buffered, but we've recorded the amount to ack when ready
+    ackBytes += sizeof(protocol_binary_request_header) +
+                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
+                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_0Value);
     EXPECT_EQ(ackBytes, consumer->getFlowControl().getFreedBytes());
 
     EXPECT_EQ(cb::engine_errc::success,
@@ -4362,7 +4365,9 @@ TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpCommit) {
                                1 /*prepare*/,
                                2 /*commit*/));
 
-    // No change, commit is now buffered
+    // commit is now buffered, but we've recorded the amount to ack when ready
+    ackBytes += sizeof(protocol_binary_request_header) +
+                sizeof(cb::mcbp::request::DcpCommitPayload) + key.size();
     EXPECT_EQ(ackBytes, consumer->getFlowControl().getFreedBytes());
 
     // undo the adjustments so that processing of buffered items will work
@@ -4372,13 +4377,7 @@ TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpCommit) {
     // And process buffered items
     EXPECT_EQ(more_to_process, consumer->processBufferedItems());
     EXPECT_EQ(all_processed, consumer->processBufferedItems());
-
-    // Snapshot and commit processed
-    ackBytes += sizeof(protocol_binary_request_header) +
-                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
-                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_0Value);
-    ackBytes += sizeof(protocol_binary_request_header) +
-                sizeof(cb::mcbp::request::DcpCommitPayload) + key.size();
+    // no further change to the flowcontrol data
     EXPECT_EQ(ackBytes, consumer->getFlowControl().getFreedBytes());
 }
 
@@ -4440,7 +4439,10 @@ TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpAbort) {
                                        0,
                                        0));
 
-    // No change, snapshot is now buffered
+    // snapshot is now buffered
+    ackBytes += sizeof(protocol_binary_request_header) +
+                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
+                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_0Value);
     EXPECT_EQ(ackBytes, consumer->getFlowControl().getFreedBytes());
 
     EXPECT_EQ(cb::engine_errc::success,
@@ -4450,7 +4452,9 @@ TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpAbort) {
                               1 /*prepare*/,
                               2 /*abort*/));
 
-    // No change, commit is now buffered
+    // commit is now buffered
+    ackBytes += sizeof(protocol_binary_request_header) +
+                sizeof(cb::mcbp::request::DcpAbortPayload) + key.size();
     EXPECT_EQ(ackBytes, consumer->getFlowControl().getFreedBytes());
 
     // undo the adjustments so that processing of buffered items will work
@@ -4460,13 +4464,7 @@ TEST_P(DurabilityPassiveStreamPersistentTest, BufferDcpAbort) {
     // And process buffered items
     EXPECT_EQ(more_to_process, consumer->processBufferedItems());
     EXPECT_EQ(all_processed, consumer->processBufferedItems());
-
-    // Snapshot and commit processed
-    ackBytes += sizeof(protocol_binary_request_header) +
-                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
-                sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_0Value);
-    ackBytes += sizeof(protocol_binary_request_header) +
-                sizeof(cb::mcbp::request::DcpAbortPayload) + key.size();
+    // no further change to the flowcontrol data
     EXPECT_EQ(ackBytes, consumer->getFlowControl().getFreedBytes());
 }
 
