@@ -144,3 +144,11 @@ DocKey DocKey::makeDocKeyWithoutCollectionID() const {
     }
     return *this;
 }
+
+std::string DocKey::create(CollectionID cid, const std::string& key) {
+    cb::mcbp::unsigned_leb128<CollectionIDType> leb(uint32_t{cid});
+    std::string ret;
+    std::copy(leb.begin(), leb.end(), std::back_inserter(ret));
+    ret.append(key);
+    return ret;
+}

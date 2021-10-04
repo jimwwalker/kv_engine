@@ -50,13 +50,13 @@ protected:
 TEST_F(CollectionsTests, TestBasicOperations) {
     auto conn = getConnection();
     mutate(*conn,
-           createKey(CollectionEntry::fruit, "TestBasicOperations"),
+           DocKey::create(CollectionEntry::fruit, "TestBasicOperations"),
            MutationType::Add);
     mutate(*conn,
-           createKey(CollectionEntry::fruit, "TestBasicOperations"),
+           DocKey::create(CollectionEntry::fruit, "TestBasicOperations"),
            MutationType::Set);
     mutate(*conn,
-           createKey(CollectionEntry::fruit, "TestBasicOperations"),
+           DocKey::create(CollectionEntry::fruit, "TestBasicOperations"),
            MutationType::Replace);
 }
 
@@ -64,7 +64,9 @@ TEST_F(CollectionsTests, TestInvalidCollection) {
     auto conn = getConnection();
     try {
         // collections 1 to 7 are reserved and invalid from a client
-        mutate(*conn, createKey(1, "TestInvalidCollection"), MutationType::Add);
+        mutate(*conn,
+               DocKey::create(1, "TestInvalidCollection"),
+               MutationType::Add);
         FAIL() << "Einval not detected";
     } catch (const ConnectionError& e) {
         EXPECT_EQ(cb::mcbp::Status::Einval, e.getReason());
@@ -72,7 +74,7 @@ TEST_F(CollectionsTests, TestInvalidCollection) {
     try {
         // collection 1000 is unknown
         mutate(*conn,
-               createKey(1000, "TestInvalidCollection"),
+               DocKey::create(1000, "TestInvalidCollection"),
                MutationType::Add);
         FAIL() << "UnknownCollection not detected";
     } catch (const ConnectionError& e) {
@@ -93,8 +95,9 @@ static BinprotSubdocCommand subdocInsertXattrPath(const std::string& key,
 
 void CollectionsTests::testSubdocRbac(MemcachedConnection& conn,
                                       const std::string& key) {
-    auto fruit = createKey(CollectionEntry::fruit, "TestBasicRbac");
-    auto vegetable = createKey(CollectionEntry::vegetable, "TestBasicRbac");
+    auto fruit = DocKey::create(CollectionEntry::fruit, "TestBasicRbac");
+    auto vegetable =
+            DocKey::create(CollectionEntry::vegetable, "TestBasicRbac");
 
     // Check subdoc, privilege checks happen in 2 places
     // 1) we're checking we can do the xattr write
@@ -156,13 +159,13 @@ TEST_F(CollectionsTests, TestBasicRbac) {
 
     auto conn = getConnection();
     mutate(*conn,
-           createKey(CollectionEntry::defaultC, "TestBasicRbac"),
+           DocKey::create(CollectionEntry::defaultC, "TestBasicRbac"),
            MutationType::Add);
     mutate(*conn,
-           createKey(CollectionEntry::fruit, "TestBasicRbac"),
+           DocKey::create(CollectionEntry::fruit, "TestBasicRbac"),
            MutationType::Add);
     mutate(*conn,
-           createKey(CollectionEntry::vegetable, "TestBasicRbac"),
+           DocKey::create(CollectionEntry::vegetable, "TestBasicRbac"),
            MutationType::Add);
 
     // I'm allowed to read from the default collection and read and write
@@ -172,12 +175,13 @@ TEST_F(CollectionsTests, TestBasicRbac) {
 
     testSubdocRbac(*conn, "TestBasicRbac");
 
-    conn->get(createKey(CollectionEntry::defaultC, "TestBasicRbac"), Vbid{0});
-    conn->get(createKey(CollectionEntry::fruit, "TestBasicRbac"), Vbid{0});
+    conn->get(DocKey::create(CollectionEntry::defaultC, "TestBasicRbac"),
+              Vbid{0});
+    conn->get(DocKey::create(CollectionEntry::fruit, "TestBasicRbac"), Vbid{0});
 
     // I cannot get from the vegetable collection
     try {
-        conn->get(createKey(CollectionEntry::vegetable, "TestBasicRbac"),
+        conn->get(DocKey::create(CollectionEntry::vegetable, "TestBasicRbac"),
                   Vbid{0});
         FAIL() << "Should not be able to fetch in vegetable collection";
     } catch (const ConnectionError& error) {
@@ -191,12 +195,14 @@ TEST_F(CollectionsTests, TestBasicRbac) {
 
     // I'm only allowed to write in Fruit
     mutate(*conn,
-           createKey(CollectionEntry::fruit, "TestBasicRbac"),
+           DocKey::create(CollectionEntry::fruit, "TestBasicRbac"),
            MutationType::Set);
     for (auto c : std::vector<CollectionID>{
                  {CollectionEntry::defaultC, CollectionEntry::vegetable}}) {
         try {
-            mutate(*conn, createKey(c, "TestBasicRbac"), MutationType::Set);
+            mutate(*conn,
+                   DocKey::create(c, "TestBasicRbac"),
+                   MutationType::Set);
             FAIL() << "Should only be able to store in the fruit collection";
         } catch (const ConnectionError& error) {
             if (c == CollectionEntry::defaultC.getId()) {
@@ -266,7 +272,7 @@ TEST_F(CollectionsTests, ResurrectCollection) {
     // Store a key to the collection
     auto conn = getConnection();
     mutate(*conn,
-           createKey(CollectionEntry::vegetable, "Generation1"),
+           DocKey::create(CollectionEntry::vegetable, "Generation1"),
            MutationType::Add);
 
     auto bucket = cluster->getBucket("default");
@@ -276,19 +282,20 @@ TEST_F(CollectionsTests, ResurrectCollection) {
     cluster->collections.add(CollectionEntry::vegetable);
     bucket->setCollectionManifest(cluster->collections.getJson());
     mutate(*conn,
-           createKey(CollectionEntry::vegetable, "Generation2"),
+           DocKey::create(CollectionEntry::vegetable, "Generation2"),
            MutationType::Add);
 
     // Generation 1 is lost, the first drop was accepted and the keys created
     // before the resurrection of vegetable are dropped.
     try {
-        conn->get(createKey(CollectionEntry::vegetable, "Generation1"),
+        conn->get(DocKey::create(CollectionEntry::vegetable, "Generation1"),
                   Vbid{0});
         FAIL() << "Should not be able to fetch in Generation1 key";
     } catch (const ConnectionError& error) {
         ASSERT_TRUE(error.isNotFound()) << to_string(error.getReason());
     }
-    conn->get(createKey(CollectionEntry::vegetable, "Generation2"), Vbid{0});
+    conn->get(DocKey::create(CollectionEntry::vegetable, "Generation2"),
+              Vbid{0});
 }
 
 // Remove the data directory and SetCollection should fail, but work again

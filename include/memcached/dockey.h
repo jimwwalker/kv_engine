@@ -432,6 +432,15 @@ struct DocKey : DocKeyInterface<DocKey> {
         return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
     }
 
+    /**
+     * Create a collection enabled key
+     *
+     * @param cid The collection identifier
+     * @param key The key to encode
+     * @return a key which may be used on a collection enabled connection
+     */
+    static std::string create(CollectionID cid, const std::string& key);
+
 private:
     cb::const_byte_buffer buffer;
     DocKeyEncodesCollectionId encoding{DocKeyEncodesCollectionId::No};

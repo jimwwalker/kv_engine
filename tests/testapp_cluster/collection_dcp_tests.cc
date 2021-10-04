@@ -322,7 +322,7 @@ TEST_F(CollectionsRbacCollection, CollectionStreamPrivsLost) {
 
     // Poke a mutation in, second snapshot will be created that triggers the end
     connNoStream->store(
-            createKey(CollectionEntry::vegetable, "k1"), Vbid(0), "v1");
+            DocKey::create(CollectionEntry::vegetable, "k1"), Vbid(0), "v1");
 
     // run DCP until we get the stream-end, don't attempt to validate the
     // exact message in-between as we can't guarantee how the checkpoints
