@@ -1939,8 +1939,17 @@ cb::engine_errc DcpConsumer::control(uint32_t opaque,
             setFlowControlBufSize(result);
             return cb::engine_errc::success;
         }
+    } else if (key == "always_buffer_operations" && value == "true") {
+        // Warn about this because only tests should be here
+        logger->warn("Always buffering operations");
+        alwaysBufferOperations = true;
+        return cb::engine_errc::success;
     }
 
     logger->warn("Invalid ctrl parameter {} {}", key, value);
     return cb::engine_errc::invalid_arguments;
+}
+
+bool DcpConsumer::shouldBufferOperations() const {
+    return alwaysBufferOperations;
 }
