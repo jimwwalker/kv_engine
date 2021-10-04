@@ -132,6 +132,17 @@ public:
      */
     void setClientCertData(MemcachedConnection& connection);
 
+    /**
+     * Create a std::string storing a document value that encodes startValue
+     * and the xattrs
+     *
+     * @param startValue the 'body' of the document
+     * @param xattrList vector of XATTR key / value pairs to store.
+     */
+    std::string createXattrValue(
+            const std::string& startValue,
+            const std::vector<std::pair<std::string, std::string>>& xattrList);
+
 protected:
     // per test setup function.
     void SetUp() override;

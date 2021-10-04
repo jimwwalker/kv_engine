@@ -31,6 +31,8 @@
 #include <platform/strerror.h>
 #include <platform/string_hex.h>
 #include <protocol/mcbp/ewb_encode.h>
+#include <xattr/blob.h>
+
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -308,6 +310,22 @@ void TestappTest::setClientCertData(MemcachedConnection& connection) {
                               std::string("/tests/cert/client.pem"));
     connection.setSslKeyFile(SOURCE_ROOT +
                              std::string("/tests/cert/client.key"));
+}
+
+std::string TestappTest::createXattrValue(
+        const std::string& startValue,
+        const std::vector<std::pair<std::string, std::string>>& xattrList) {
+    std::string value;
+
+    cb::xattr::Blob xattrs;
+    for (const auto& kv : xattrList) {
+        xattrs.set(kv.first, kv.second);
+    }
+    auto encoded = xattrs.finalize();
+    EXPECT_TRUE(cb::xattr::validate(encoded)) << "Invalid xattr encoding";
+    value = encoded;
+    value.append(startValue);
+    return value;
 }
 
 bool TestappTest::isJSON(std::string_view value) {
