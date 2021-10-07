@@ -105,6 +105,41 @@ TEST_P(CollectionsSyncWriteParamTest,
                   cb::engine_errc::success);
 }
 
+TEST_P(CollectionsSyncWriteParamTest, seqno_advanced_replaces_one_prepare) {
+    VBucketPtr vb = store->getVBucket(vbid);
+    CollectionsManifest cm{};
+    setCollections(cookie,
+                   cm.add(CollectionEntry::meat).add(CollectionEntry::dairy));
+    // filter only CollectionEntry::dairy
+    // turn on OSO
+    // 0 flags
+    // no sync_repl
+    createDcpObjects({{R"({"collections":["c"]})"}}, false, 0, false);
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    notifyAndStepToCheckpoint(cb::mcbp::ClientOpcode::DcpSnapshotMarker);
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSystemEvent,
+                  cb::engine_errc::success);
+
+    // 1 pending item - this must still trigger a seqno advance for the snapshot
+    store_item(
+            vbid,
+            StoredDocKey{"key", CollectionEntry::dairy},
+            std::string("milk"),
+            0,
+            {cb::engine_errc::sync_write_pending},
+            PROTOCOL_BINARY_RAW_BYTES,
+            cb::durability::Requirements(cb::durability::Level::Majority,
+                                         cb::durability::Timeout::Infinity()));
+
+    // 1 prepare
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    notifyAndStepToCheckpoint(cb::mcbp::ClientOpcode::DcpSnapshotMarker);
+    stepAndExpect(cb::mcbp::ClientOpcode::DcpSeqnoAdvanced,
+                  cb::engine_errc::success);
+}
+
 TEST_P(CollectionsSyncWriteParamTest, drop_collection_with_pending_write) {
     VBucketPtr vb = store->getVBucket(vbid);
     CollectionsManifest cm{};

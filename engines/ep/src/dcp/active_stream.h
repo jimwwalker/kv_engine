@@ -669,6 +669,14 @@ private:
      */
     void queueSeqnoAdvanced();
 
+    /**
+     * Enqueue a single snapshot + seqno advance
+     * @param start value of snapshot start
+     * @param end value of snapshot end
+     * @param flags value of snapshot flags
+     */
+    void snapshotSeqnoAdvanced(uint64_t start, uint64_t end, uint32_t flags);
+
     /* The last sequence number queued from memory, but is yet to be
        snapshotted and put onto readyQ */
     std::atomic<uint64_t> lastReadSeqnoUnSnapshotted;
