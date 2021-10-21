@@ -46,6 +46,15 @@ static constexpr char const* UidKey = "uid";
 static constexpr char const* MaxTtlKey = "maxTTL";
 static constexpr nlohmann::json::value_t MaxTtlType =
         nlohmann::json::value_t::number_unsigned;
+static constexpr char const* LimitsKey = "limits";
+static constexpr nlohmann::json::value_t LimitsType =
+        nlohmann::json::value_t::object;
+static constexpr char const* KvKey = "kv";
+static constexpr nlohmann::json::value_t KvType =
+        nlohmann::json::value_t::object;
+static constexpr char const* DataSizeKey = "data_size";
+static constexpr nlohmann::json::value_t DataSizeType =
+        nlohmann::json::value_t::number_unsigned;
 
 /**
  * Get json sub-object from the json object for key and check the type.
@@ -200,8 +209,13 @@ Manifest::Manifest(std::string_view json)
                     CollectionEntry{cidValue, cnameValue, maxTtl, sidValue});
         }
 
-        this->scopes.emplace(sidValue,
-                             Scope{nameValue, std::move(scopeCollections)});
+        // Check for limits - only support for data_size
+        auto dataLimit = processLimits(
+                cb::getOptionalJsonObject(scope, LimitsKey, LimitsType));
+
+        this->scopes.emplace(
+                sidValue,
+                Scope{dataLimit, nameValue, std::move(scopeCollections)});
     }
 
     // Now build the collection id to collection-entry map
@@ -217,6 +231,23 @@ Manifest::Manifest(std::string_view json)
     } else if (findScope(ScopeID::Default) == this->scopes.end()) {
         throwInvalid("the default scope was not defined");
     }
+}
+
+std::optional<size_t> Manifest::processLimits(
+        std::optional<nlohmann::json> limits) {
+    if (!limits) {
+        return {};
+    }
+    auto kv = cb::getOptionalJsonObject(*limits, KvKey, KvType);
+    if (!kv) {
+        return {};
+    }
+
+    auto dataSize = cb::getOptionalJsonObject(*kv, DataSizeKey, DataSizeType);
+    if (!dataSize) {
+        return {};
+    }
+    return *dataSize;
 }
 
 Manifest::Manifest(Manifest&& other) {
@@ -348,12 +379,24 @@ flatbuffers::DetachedBuffer Manifest::toFlatbuffer() const {
         }
         auto collectionVector = builder.CreateVector(fbCollections);
 
-        auto newEntry = Collections::Persist::CreateScope(
-                builder,
-                uint32_t(scope.first),
-                builder.CreateString(scope.second.name),
-                collectionVector);
-        fbScopes.push_back(newEntry);
+        if (scope.second.dataLimit) {
+            auto limits = Collections::Persist::CreateScopeLimits(
+                    builder, true, scope.second.dataLimit.value());
+            auto newEntry = Collections::Persist::CreateScope(
+                    builder,
+                    uint32_t(scope.first),
+                    builder.CreateString(scope.second.name),
+                    collectionVector,
+                    limits);
+            fbScopes.push_back(newEntry);
+        } else {
+            auto newEntry = Collections::Persist::CreateScope(
+                    builder,
+                    uint32_t(scope.first),
+                    builder.CreateString(scope.second.name),
+                    collectionVector);
+            fbScopes.push_back(newEntry);
+        }
     }
 
     auto scopeVector = builder.CreateVector(fbScopes);
@@ -400,9 +443,16 @@ Manifest::Manifest(std::string_view flatbufferData, Manifest::FlatBuffers tag)
                     cid, collection->name()->str(), maxTtl, scope->scopeId()});
         }
 
-        this->scopes.emplace(
-                scope->scopeId(),
-                Scope{scope->name()->str(), std::move(scopeCollections)});
+        std::optional<size_t> dataSize;
+
+        if (scope->limits() && scope->limits()->dataSizeEnabled()) {
+            dataSize = scope->limits()->dataSize();
+        }
+
+        this->scopes.emplace(scope->scopeId(),
+                             Scope{dataSize,
+                                   scope->name()->str(),
+                                   std::move(scopeCollections)});
     }
 
     // Now build the collection id to collection-entry map
@@ -465,7 +515,14 @@ void Manifest::addScopeStats(KVBucket& bucket,
             const auto name = entry.second.name;
 
             scopeC.addStat(Key::scope_name, name);
-            scopeC.addStat(Key::scope_collection_count, entry.second.collections.size());
+            scopeC.addStat(Key::scope_collection_count,
+                           entry.second.collections.size());
+
+            if (entry.second.dataLimit) {
+                scopeC.addStat(Key::scope_data_limit,
+                               entry.second.dataLimit.value());
+            }
+
             // add each collection name and id
             for (const auto& colEntry : entry.second.collections) {
                 auto collectionC =
@@ -565,7 +622,8 @@ bool CollectionEntry::operator==(const CollectionEntry& other) const {
 
 bool Scope::operator==(const Scope& other) const {
     bool equal = name == other.name &&
-                 collections.size() == other.collections.size();
+                 collections.size() == other.collections.size() &&
+                 dataLimit == other.dataLimit;
     if (equal) {
         for (const auto& c : collections) {
             equal &= std::find(other.collections.begin(),
@@ -681,8 +739,13 @@ std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
        << ", uid:" << manifest.uid
        << ", collections.size:" << manifest.collections.size() << std::endl;
     for (const auto& entry : manifest.scopes) {
-        os << "scope:{" << std::hex << entry.first << ", " << entry.second.name
-           << ", collections:[";
+        os << "scope:{" << std::hex << entry.first << ", " << entry.second.name;
+
+        if (entry.second.dataLimit) {
+            os << ", dataLimit:" << entry.second.dataLimit.value();
+        }
+        os << ", collections:[";
+
         for (const auto& collection : entry.second.collections) {
             os << "{cid:" << collection.cid.to_string() << ", sid:" << std::hex
                << collection.sid << ", " << collection.name

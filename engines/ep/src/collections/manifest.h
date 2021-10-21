@@ -45,6 +45,7 @@ struct CollectionEntry {
 };
 
 struct Scope {
+    std::optional<size_t> dataLimit;
     std::string name;
     std::vector<CollectionEntry> collections;
     bool operator==(const Scope& other) const;
@@ -293,6 +294,12 @@ private:
     bool isEqualContent(const Manifest& other) const;
 
     /**
+     * Parse the optional limits section of a scope object
+     * @return The value of 'data_size' if found
+     */
+    std::optional<size_t> processLimits(std::optional<nlohmann::json> limits);
+
+    /**
      * Check if the std::string represents a legal collection name.
      * Current validation is to ensure we block creation of _ prefixed
      * collections and only accept $default for $ prefixed names.
@@ -315,7 +322,8 @@ private:
      * default initialisation stores just the default scope.
      */
     scopeContainer scopes = {{ScopeID::Default,
-                              {DefaultScopeName,
+                              {std::nullopt,
+                               DefaultScopeName,
                                {{CollectionID::Default,
                                  DefaultCollectionName,
                                  cb::NoExpiryLimit,
