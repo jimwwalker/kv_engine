@@ -234,6 +234,11 @@ public:
     std::optional<ScopeID> getScopeID(CollectionID cid) const;
 
     /**
+     * Get the data limit for the scope
+     */
+    DataLimit getScopeDataLimit(ScopeID sid) const;
+
+    /**
      * @returns this manifest as nlohmann::json object
      */
     nlohmann::json toJson(

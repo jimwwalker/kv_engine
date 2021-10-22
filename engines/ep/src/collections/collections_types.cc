@@ -157,11 +157,16 @@ ScopeSharedMetaDataView::ScopeSharedMetaDataView(
 }
 
 std::string ScopeSharedMetaDataView::to_string() const {
-    return "Scope: name:" + std::string(name);
+    std::string rv = "Scope: name:" + std::string(name);
+
+    if (dataLimit) {
+        rv += ", limit:" + std::to_string(dataLimit.value());
+    }
+    return rv;
 }
 
 ScopeSharedMetaData::ScopeSharedMetaData(const ScopeSharedMetaDataView& view)
-    : name(view.name) {
+    : name(view.name), dataLimit(view.dataLimit) {
 }
 
 bool ScopeSharedMetaData::operator==(

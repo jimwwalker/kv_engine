@@ -294,6 +294,7 @@ public:
     struct ScopeCreation {
         ScopeID sid;
         std::string name;
+        DataLimit dataLimit;
     };
 
     /**
@@ -421,6 +422,7 @@ protected:
      * @param newManUid the uid of the manifest which made the change
      * @param sid ScopeID
      * @param scopeName Name of the added scope
+     * @param dataLimit An optional limit on the data stored in the scope
      * @param optionalSeqno Either a seqno to assign to the new collection or
      *        none (none means the checkpoint will assign a seqno).
      */
@@ -429,6 +431,7 @@ protected:
                      ManifestUid newManUid,
                      ScopeID sid,
                      std::string_view scopeName,
+                     DataLimit dataLimit,
                      OptionalSeqno optionalSeqno);
 
     /**
@@ -532,6 +535,9 @@ protected:
 
         entry->second.updateDiskSize(delta);
     }
+
+    void updateScopeSize(const container::const_iterator entry,
+                         ssize_t delta) const;
 
     void setDiskSize(const container::const_iterator entry,
                      size_t newValue) const {
@@ -760,8 +766,12 @@ protected:
      *
      * @param sid is of the new scope
      * @param name The name of the scope
+     * @param limit A limit for the data stored in the scope
+     * @return The scopes metadata object (shared)
      */
-    void addNewScopeEntry(ScopeID sid, std::string_view name);
+    ScopeSharedMetaData& addNewScopeEntry(ScopeID sid,
+                                          std::string_view name,
+                                          DataLimit limit);
 
     /**
      * Add a scope to the manifest. This will fail if the scope already exists.
@@ -769,9 +779,8 @@ protected:
      * @param sid is of the new scope
      * @param sharedMeta The name of the scope (the shared view)
      */
-    void addNewScopeEntry(
-            ScopeID sid,
-            SingleThreadedRCPtr<const ScopeSharedMetaData> sharedMeta);
+    void addNewScopeEntry(ScopeID sid,
+                          SingleThreadedRCPtr<ScopeSharedMetaData> sharedMeta);
 
     /**
      * Get the ManifestEntry for the given collection. Throws a
@@ -783,13 +792,25 @@ protected:
     const ManifestEntry& getManifestEntry(CollectionID collectionID) const;
 
     /**
-     * Get the ScopeSharedMetaData for the given scope. Throws a
-     * std::logic_error if the collection was not found.
+     * Get the ScopeSharedMetaData for the given scope. This is the 'immutable'
+     * data that is the same for a scope globally.
+     *
+     * Throws a std::logic_error if the scope was not found.
      *
      * @param sid id of the scope to lookup
-     * @return a const reference to the scope's metadata
+     * @return a const reference to the scope's shared metadata
      */
-    const ScopeSharedMetaData& getScopeEntry(ScopeID sid) const;
+    const ScopeSharedMetaData& getScopeSharedMetaData(ScopeID sid) const;
+
+    /**
+     * Get all the data we have for the given scope.
+     * Throws a std::logic_error if the scope was not found.
+     *
+     * @param sid id of the scope to lookup
+     * @return a const reference to the scope's ScopeData
+     */
+    struct ScopeData;
+    const ScopeData& getScopeData(ScopeID sid) const;
 
     /**
      * Process a Collections::Manifest to determine if collections need adding
@@ -884,15 +905,27 @@ protected:
     }
 
     /**
+     * Get the status of the scope of the collection in terms of the dataSize
+     * and optional dataLimit. If a dataLimit exists returns succcess if the
+     * dataSize does not exceed the dataLimit.
+     * @return the status for the collection's scope
+     */
+    cb::engine_errc getScopeDataLimitStatus(
+            const container::const_iterator entry, size_t nBytes) const;
+
+    /**
      * The current set of collections
      */
     container map;
 
     /**
-     * The current scopes and their names.
+     * All the data we store about a scope and a map of scope to the data
      */
-    std::unordered_map<ScopeID, SingleThreadedRCPtr<const ScopeSharedMetaData>>
-            scopes;
+    struct ScopeData {
+        mutable cb::RelaxedAtomic<size_t> dataSize;
+        SingleThreadedRCPtr<ScopeSharedMetaData> sharedMeta;
+    };
+    std::unordered_map<ScopeID, ScopeData> scopes;
 
     // Information we need to retain for a collection that is dropped but the
     // drop event has not been persisted by the flusher.

@@ -11,6 +11,7 @@
 
 #include "vbucket_manifest_handles.h"
 #include "collections/collection_persisted_stats.h"
+#include "ep_engine.h"
 
 #include <iostream>
 
@@ -44,6 +45,22 @@ size_t StatsReadHandle::getOpsGet() const {
 
 void ReadHandle::dump() const {
     std::cerr << *manifest << std::endl;
+}
+
+cb::engine_errc CachingReadHandle::handleWriteStatus(
+        EventuallyPersistentEngine& engine,
+        const CookieIface* cookie,
+        size_t nBytes) {
+    // Collection not found
+    if (!valid()) {
+        engine.setUnknownCollectionErrorContext(cookie, getManifestUid());
+        return cb::engine_errc::unknown_collection;
+    }
+
+    // Writable?
+    // if (isScopeLimitsApplicable())
+    { return manifest->getScopeDataLimitStatus(itr, nBytes); }
+    return cb::engine_errc::success;
 }
 
 void CachingReadHandle::dump() {

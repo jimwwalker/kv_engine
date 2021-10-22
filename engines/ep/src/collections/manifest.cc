@@ -611,6 +611,14 @@ std::optional<ScopeID> Manifest::getScopeID(CollectionID cid) const {
     return {};
 }
 
+DataLimit Manifest::getScopeDataLimit(ScopeID sid) const {
+    auto scopeItr = scopes.find(sid);
+    if (scopeItr == scopes.end()) {
+        return std::nullopt;
+    }
+    return scopeItr->second.dataLimit;
+}
+
 void Manifest::dump() const {
     std::cerr << *this << std::endl;
 }
@@ -742,7 +750,7 @@ std::ostream& operator<<(std::ostream& os, const Manifest& manifest) {
         os << "scope:{" << std::hex << entry.first << ", " << entry.second.name;
 
         if (entry.second.dataLimit) {
-            os << ", dataLimit:" << entry.second.dataLimit.value();
+            os << ", dataLimit:" << std::dec << entry.second.dataLimit.value();
         }
         os << ", collections:[";
 

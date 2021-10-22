@@ -77,7 +77,7 @@ public:
         }
         // Check all scopes can be found
         for (const auto& [sid, entry] : scopes) {
-            if (*entry != rhs.getScopeEntry(sid)) {
+            if (*entry.sharedMeta != rhs.getScopeSharedMetaData(sid)) {
                 return false;
             }
         }

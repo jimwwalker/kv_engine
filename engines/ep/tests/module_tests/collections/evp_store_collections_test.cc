@@ -4242,6 +4242,24 @@ TEST_P(CollectionsPersistentParameterizedTest, WarmupWithANewUUID_MB_48398) {
     EXPECT_EQ(cm.getUid(), vb->lockCollections().getManifestUid());
 }
 
+TEST_F(CollectionsTest, ScopeWithLimitBasic) {
+    CollectionsManifest cm;
+    cm.add(ScopeEntry::shop1, 0); // 0 data limit
+    cm.add(CollectionEntry::fruit, ScopeEntry::shop1);
+    cm.add(ScopeEntry::shop2, 10000); // 0 data limit
+    cm.add(CollectionEntry::vegetable, ScopeEntry::shop2);
+    auto vb = store->getVBucket(vbid);
+    vb->updateFromManifest(makeManifest(cm));
+
+    // Cannot write
+    store_item(vbid,
+               StoredDocKey{"k1", CollectionEntry::fruit},
+               "v1",
+               0,
+               {cb::engine_errc::too_big});
+    store_item(vbid, StoredDocKey{"k1", CollectionEntry::vegetable}, "v1");
+}
+
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
                          CollectionsExpiryLimitTest,
                          ::testing::Bool(),

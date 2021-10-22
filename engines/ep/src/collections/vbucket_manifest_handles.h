@@ -13,6 +13,8 @@
 
 #include "collections/vbucket_manifest.h"
 
+class CookieIface;
+class EventuallyPersistentEngine;
 class StatCollector;
 
 namespace Collections::VB {
@@ -268,6 +270,10 @@ public:
         return itr != manifest->end();
     }
 
+    cb::engine_errc handleWriteStatus(EventuallyPersistentEngine& engine,
+                                      const CookieIface* cookie,
+                                      size_t nBytes);
+
     /**
      * @return the key used in construction
      */
@@ -508,6 +514,10 @@ public:
         manifest->updateDiskSize(itr, delta);
     }
 
+    void updateScopeSize(ssize_t delta) const {
+        manifest->updateScopeSize(itr, delta);
+    }
+
     void setDiskSize(size_t newValue) const {
         manifest->setDiskSize(itr, newValue);
     }
@@ -614,6 +624,7 @@ public:
      * @param manifestUid the uid of the manifest which made the change
      * @param sid ScopeID of the new scope
      * @param scopeName name of the new scope
+     *
      * @param startSeqno The start-seqno assigned to the scope
      */
     void replicaCreateScope(::VBucket& vb,
@@ -626,6 +637,7 @@ public:
                              manifestUid,
                              sid,
                              scopeName,
+                             {/* no data limit replicated*/},
                              OptionalSeqno{startSeqno});
     }
 
