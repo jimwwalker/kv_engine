@@ -63,6 +63,11 @@ public:
         return sharedMeta->name;
     }
 
+    /// @return the optional data limit
+    DataLimit getDataLimit() const {
+        return sharedMeta->dataLimit;
+    }
+
     /**
      * Take the ScopeSharedMetaData from this entry (moves the data) to
      * the caller.
