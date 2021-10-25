@@ -135,6 +135,11 @@ public:
         return getStatsForFlush(collection, seqno);
     }
 
+    bool doesScopeWithDataLimitExist() const {
+        std::shared_lock<mutex_type> readLock(rwlock);
+        return scopeWithDataLimitExists;
+    }
+
     void dump() {
         std::cerr << *this << std::endl;
     }
@@ -1074,6 +1079,9 @@ TEST_F(VBucketManifestTest, add_scope_with_limit) {
     const size_t limit = 800;
     EXPECT_TRUE(manifest.update(cm.add(
             ScopeEntry::shop2, limit * manifest.config.getMaxVbuckets())));
+    EXPECT_TRUE(manifest.getActiveManifest().doesScopeWithDataLimitExist());
+    // replica won't know until it is made active
+    EXPECT_FALSE(manifest.getReplicaManifest().doesScopeWithDataLimitExist());
 
     // To be sure that the datalimit was compared check it explicitly on one
     // manifest
@@ -1087,6 +1095,19 @@ TEST_F(VBucketManifestTest, add_scope_with_limit) {
     auto limit2 = replica.getDataLimit(ScopeEntry::shop2);
     EXPECT_EQ(0, limit1);
     EXPECT_EQ(limit, limit2);
+}
+
+TEST_F(VBucketManifestTest, scope_with_limit_exists) {
+    EXPECT_FALSE(manifest.getActiveManifest().doesScopeWithDataLimitExist());
+    cm.add(ScopeEntry::shop1, 0);
+    EXPECT_TRUE(manifest.update(cm.add(ScopeEntry::shop2, 819200)));
+    EXPECT_TRUE(manifest.getActiveManifest().doesScopeWithDataLimitExist());
+    cm.remove(ScopeEntry::shop1);
+    EXPECT_TRUE(manifest.update(cm));
+    EXPECT_TRUE(manifest.getActiveManifest().doesScopeWithDataLimitExist());
+    cm.remove(ScopeEntry::shop2);
+    EXPECT_TRUE(manifest.update(cm));
+    EXPECT_FALSE(manifest.getActiveManifest().doesScopeWithDataLimitExist());
 }
 
 class VBucketManifestCachingReadHandle : public VBucketManifestTest {};
