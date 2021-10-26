@@ -576,6 +576,8 @@ protected:
     void updateScopeDataSize(const container::const_iterator entry,
                              ssize_t delta) const;
 
+    void updateScopeDataSize(ScopeID sid, ssize_t delta) const;
+
     void setDiskSize(const container::const_iterator entry,
                      size_t newValue) const {
         if (entry == map.end()) {

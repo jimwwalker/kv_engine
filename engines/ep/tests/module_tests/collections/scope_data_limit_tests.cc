@@ -216,3 +216,26 @@ TEST_P(CollectionsDcpParameterizedTest, active_updates_limit) {
                       .getDataLimit(ScopeEntry::shop1)
                       .value());
 }
+
+TEST_F(CollectionsTest, ScopeWithManyCollectionsWarmup) {
+    auto vb = store->getVBucket(vbid);
+
+    CollectionsManifest cm;
+    cm.add(ScopeEntry::shop1);
+    cm.add(CollectionEntry::fruit, ScopeEntry::shop1);
+    cm.add(CollectionEntry::vegetable, ScopeEntry::shop1);
+    cm.add(CollectionEntry::dairy, ScopeEntry::shop1);
+    setCollections(cookie, cm);
+    flushVBucketToDiskIfPersistent(vbid, 4);
+
+    // Create and flush items for the default and meat collections
+    store_items(
+            2, vbid, makeStoredDocKey("f", CollectionEntry::fruit), "value");
+    store_items(2,
+                vbid,
+                makeStoredDocKey("v", CollectionEntry::vegetable),
+                "value");
+    store_items(
+            2, vbid, makeStoredDocKey("d", CollectionEntry::dairy), "value");
+    flushVBucketToDiskIfPersistent(vbid, 6);
+}

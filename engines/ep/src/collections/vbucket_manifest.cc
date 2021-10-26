@@ -1082,13 +1082,14 @@ void Manifest::updateScopeDataSize(const container::const_iterator entry,
                                               "iterator is invalid");
     }
 
-    // Need to go from cid to sid
-    auto scope = scopes.find(entry->second.getScopeID());
+    updateScopeDataSize(entry->second.getScopeID(), delta);
+}
+
+void Manifest::updateScopeDataSize(ScopeID sid, ssize_t delta) const {
+    auto scope = scopes.find(sid);
     if (scope == scopes.end()) {
         throwException<std::logic_error>(
-                __FUNCTION__,
-                "scope not found for " +
-                        entry->second.getScopeID().to_string());
+                __FUNCTION__, "scope not found for " + sid.to_string());
     }
     scope->second.updateDataSize(delta);
 }
