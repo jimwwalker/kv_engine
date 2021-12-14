@@ -27,6 +27,7 @@
 #include "flusher.h"
 #include "item.h"
 #include "kvshard.h"
+#include "range_scans/range_scan_task.h"
 #include "stored_value_factories.h"
 #include "tasks.h"
 #include "vbucket_bgfetch_item.h"
@@ -582,6 +583,12 @@ UniqueDCPBackfillPtr EPVBucket::createDCPBackfill(
         CollectionID cid) {
     /* create a DCPBackfillByIdDisk object */
     return std::make_unique<DCPBackfillByIdDisk>(*e.getKVBucket(), stream, cid);
+}
+
+UniqueDCPBackfillPtr EPVBucket::createRangeScanTask(
+        EventuallyPersistentEngine& e, const DocKey& start, const DocKey& end) {
+    return std::make_unique<RangeScanTask>(
+            getId(), *e.getKVBucket(), start, end);
 }
 
 cb::mcbp::Status EPVBucket::evictKey(

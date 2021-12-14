@@ -1542,6 +1542,22 @@ public:
             CollectionID cid) = 0;
 
     /**
+     * Creates a RangeScanTask object to scan the vbucket from start to end.
+     * The task should be executed via BackfillManager::schedule
+     *
+     * @param e ref to EventuallyPersistentEngine
+     * @param start The key to start scanning
+     * @param end The key to end scanning
+     *
+     * @return pointer to the task object created. Caller to own this
+     *         object and hence must handle deletion.
+     */
+    virtual std::unique_ptr<DCPBackfillIface> createRangeScanTask(
+            EventuallyPersistentEngine& e,
+            const DocKey& start,
+            const DocKey& end) = 0;
+
+    /**
      * Debug - print a textual description of the VBucket to the given stream,
      * or stderr.
      */

@@ -134,6 +134,11 @@ public:
             std::shared_ptr<ActiveStream> stream,
             CollectionID cid) override;
 
+    std::unique_ptr<DCPBackfillIface> createRangeScanTask(
+            EventuallyPersistentEngine& e,
+            const DocKey& start,
+            const DocKey& end) override;
+
     /**
      * Creates a range iterator for the underlying SequenceList 'optionally'.
      * Under scenarios like where we want to limit the number of range iterators
