@@ -271,6 +271,22 @@ public:
         return seqList->getNumStaleItems();
     }
 
+    cb::engine_errc createRangeScan(const DocKey&,
+                                    const DocKey&,
+                                    RangeScanDataHandlerIFace&,
+                                    const CookieIface*,
+                                    RangeScanKeyOnly) override {
+        return cb::engine_errc::not_supported;
+    }
+
+    cb::engine_errc continueRangeScan(RangeScanId) override {
+        return cb::engine_errc::not_supported;
+    }
+
+    cb::engine_errc cancelRangeScan(RangeScanId) override {
+        return cb::engine_errc::not_supported;
+    }
+
 protected:
     /* Data structure for in-memory sequential storage */
     std::unique_ptr<SequenceList> seqList;

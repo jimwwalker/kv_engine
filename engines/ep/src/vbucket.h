@@ -17,6 +17,7 @@
 #include "dcp/dcp-types.h"
 #include "hash_table.h"
 #include "hlc.h"
+#include "range_scans/range_scan_types.h"
 #include "vbucket_fwd.h"
 #include "vbucket_notify_context.h"
 #include "vbucket_types.h"
@@ -51,6 +52,7 @@ class ItemMetaData;
 class KVBucket;
 class PassiveDurabilityMonitor;
 class PreLinkDocumentContext;
+class RangeScan;
 class RollbackResult;
 class FrontEndBGFetchItem;
 struct VBQueueItemCtx;
@@ -114,6 +116,7 @@ public:
 class EventuallyPersistentEngine;
 class FailoverTable;
 class KVShard;
+class RangeScanDataHandlerIFace;
 class VBucketMemoryDeletionTask;
 
 /**
@@ -1631,6 +1634,40 @@ public:
      *  the bucket configuration.
      */
     size_t getCheckpointMaxSize() const;
+
+    /**
+     * Create a new range scan, creation uses an I/O task and would_block
+     *
+     * @param start key for the start of the range
+     * @param end key for the end of the range
+     * @param handler object that will receive callbacks when the scan continues
+     * @param cookie connection cookie to notify when done
+     * @param keyOnly key/value configuration of the scan
+     *
+     * @return would_block if the scan was found and successfully scheduled
+     */
+     virtual cb::engine_errc createRangeScan(const DocKey& start,
+                                             const DocKey& end,
+                                             RangeScanDataHandlerIFace& handler,
+                                             const CookieIface* cookie,
+                                             RangeScanKeyOnly keyOnly) = 0;
+
+    /**
+     * Continue the range scan with the given identifier. The scan itself will
+     * be scheduled to run on an I/O task
+     * @param id The identifier of the scan to continue
+     * @return would_block if the scan was found and successfully scheduled
+     */
+    virtual cb::engine_errc continueRangeScan(RangeScanId id) = 0;
+
+    /**
+     * Cancel the range scan with the given identifier. The cancel itself will
+     * be scheduled to run on an I/O task
+     * @param id The identifier of the scan to continue
+     * @return would_block if the scan was found and successfully scheduled for
+     *         cancellation
+     */
+    virtual cb::engine_errc cancelRangeScan(RangeScanId id) = 0;
 
     std::unique_ptr<FailoverTable> failovers;
 
