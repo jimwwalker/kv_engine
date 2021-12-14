@@ -1104,3 +1104,19 @@ void EphemeralVBucket::doCollectionsStats(
         readHandle.decrementItemCount(collection);
     }
 }
+
+cb::engine_errc EphemeralVBucket::createRangeScan(const DocKey&,
+                                                  const DocKey&,
+                                                  RangeScanDataHandlerIFace&,
+                                                  const CookieIface*,
+                                                  cb::rangescan::KeyOnly) {
+    return cb::engine_errc::not_supported;
+}
+
+cb::engine_errc EphemeralVBucket::continueRangeScan(cb::rangescan::Id) {
+    return cb::engine_errc::not_supported;
+}
+
+cb::engine_errc EphemeralVBucket::cancelRangeScan(cb::rangescan::Id) {
+    return cb::engine_errc::not_supported;
+}
