@@ -30,7 +30,7 @@ backfill_status_t DCPBackfillByIdDisk::create() {
                 "({}) backfill create ended prematurely as the associated "
                 "stream is deleted by the producer conn ",
                 getVBucketId());
-        transitionState(backfill_state_done);
+        transitionState(State::done);
         return backfill_finished;
     }
 
@@ -88,14 +88,14 @@ backfill_status_t DCPBackfillByIdDisk::create() {
 
         stream->log(spdlog::level::level_enum::warn, "{}", log.str());
         stream->setDead(cb::mcbp::DcpStreamEndStatus::BackfillFail);
-        transitionState(backfill_state_done);
+        transitionState(State::done);
     } else {
         bool markerSent = stream->markOSODiskSnapshot(scanCtx->maxSeqno);
 
         if (markerSent) {
-            transitionState(backfill_state_scanning);
+            transitionState(State::scan);
         } else {
-            transitionState(backfill_state_completing);
+            transitionState(State::complete);
         }
     }
 
@@ -123,7 +123,7 @@ backfill_status_t DCPBackfillByIdDisk::scan() {
         return backfill_success;
     }
 
-    transitionState(backfill_state_completing);
+    transitionState(State::complete);
 
     return backfill_success;
 }
@@ -137,7 +137,7 @@ void DCPBackfillByIdDisk::complete(bool cancelled) {
                 "stream is deleted by the producer conn; {}",
                 getVBucketId(),
                 cancelled ? "cancelled" : "finished");
-        transitionState(backfill_state_done);
+        transitionState(State::done);
         return;
     }
 
@@ -152,5 +152,5 @@ void DCPBackfillByIdDisk::complete(bool cancelled) {
                 cid.to_string(),
                 cancelled ? "cancelled" : "finished");
 
-    transitionState(backfill_state_done);
+    transitionState(State::done);
 }

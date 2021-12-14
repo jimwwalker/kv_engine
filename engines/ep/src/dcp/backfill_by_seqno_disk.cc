@@ -40,7 +40,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
                 "({}) backfill create ended prematurely as the associated "
                 "stream is deleted by the producer conn ",
                 getVBucketId());
-        transitionState(backfill_state_done);
+        transitionState(State::done);
         return backfill_finished;
     }
     uint64_t lastPersistedSeqno = bucket.getLastPersistedSeqno(vbid);
@@ -81,7 +81,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
                     startSeqno,
                     stream->isPointInTimeEnabled() == PointInTimeEnabled::Yes);
         stream->setDead(cb::mcbp::DcpStreamEndStatus::BackfillFail);
-        transitionState(backfill_state_done);
+        transitionState(State::done);
         return backfill_finished;
     }
 
@@ -93,7 +93,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
                     "failed to access collections stats on disk for {}.",
                     getVBucketId());
         stream->setDead(cb::mcbp::DcpStreamEndStatus::BackfillFail);
-        transitionState(backfill_state_done);
+        transitionState(State::done);
         return backfill_finished;
     }
 
@@ -134,7 +134,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
                     collHigh.value_or(-1));
 
         stream->setDead(cb::mcbp::DcpStreamEndStatus::Rollback);
-        transitionState(backfill_state_done);
+        transitionState(State::done);
     } else {
         bool markerSent = markDiskSnapshot(*stream, *scanCtx, *kvstore);
 
@@ -142,9 +142,9 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
             // This value may be an overestimate - it includes prepares/aborts
             // which will not be sent if the stream is not sync write aware
             stream->setBackfillRemaining(scanCtx->documentCount);
-            transitionState(backfill_state_scanning);
+            transitionState(State::scan);
         } else {
-            transitionState(backfill_state_completing);
+            transitionState(State::complete);
         }
     }
 
@@ -172,7 +172,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::scan() {
     switch (kvstore->scan(bySeqnoCtx)) {
     case scan_success:
         stream->setBackfillScanLastRead(scanCtx->lastReadSeqno);
-        transitionState(backfill_state_completing);
+        transitionState(State::complete);
         return backfill_success;
     case scan_again:
         // Scan should run again (e.g. was paused by callback)
@@ -205,7 +205,7 @@ void DCPBackfillBySeqnoDisk::complete(bool cancelled) {
                 "stream is deleted by the producer conn; {}",
                 getVBucketId(),
                 cancelled ? "cancelled" : "finished");
-        transitionState(backfill_state_done);
+        transitionState(State::done);
         return;
     }
 
@@ -221,7 +221,7 @@ void DCPBackfillBySeqnoDisk::complete(bool cancelled) {
                 endSeqno,
                 cancelled ? "cancelled" : "finished");
 
-    transitionState(backfill_state_done);
+    transitionState(State::done);
 }
 
 std::pair<bool, std::optional<uint64_t>>
