@@ -139,6 +139,10 @@ public:
                                            std::shared_ptr<ActiveStream> stream,
                                            CollectionID cid) override;
 
+    UniqueDCPBackfillPtr createRangeScanTask(EventuallyPersistentEngine& e,
+                                             const DocKey& start,
+                                             const DocKey& end) override;
+
     uint64_t getPersistenceSeqno() const override {
         return persistenceSeqno.load();
     }

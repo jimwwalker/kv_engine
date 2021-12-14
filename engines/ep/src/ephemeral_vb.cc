@@ -314,6 +314,12 @@ std::unique_ptr<DCPBackfillIface> EphemeralVBucket::createDCPBackfill(
             "variant)");
 }
 
+std::unique_ptr<DCPBackfillIface> EphemeralVBucket::createRangeScanTask(
+        EventuallyPersistentEngine& e, const DocKey& start, const DocKey& end) {
+    throw std::runtime_error(
+            "Unexpected call to EphemeralVBucket::createRangeScanTask");
+}
+
 std::optional<SequenceList::RangeIterator> EphemeralVBucket::makeRangeIterator(
         bool isBackfill) {
     return seqList->makeRangeIterator(isBackfill);
