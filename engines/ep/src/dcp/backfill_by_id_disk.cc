@@ -106,7 +106,8 @@ backfill_status_t DCPBackfillByIdDisk::create() {
         if (markerSent) {
             transitionState(State::scan);
         } else {
-            transitionState(State::complete);
+            complete();
+            return backfill_finished;
         }
     }
 
@@ -130,14 +131,14 @@ backfill_status_t DCPBackfillByIdDisk::scan() {
 
     switch (kvstore->scan(static_cast<ByIdScanContext&>(*scanCtx))) {
     case ScanStatus::Success:
-        transitionState(State::complete);
+        complete();
         return backfill_success;
     case ScanStatus::Yield:
         // Scan should run again (e.g. was paused by callback)
         return backfill_success;
     case ScanStatus::Cancelled:
         // Aborted as vbucket/stream have gone away, normal behaviour
-        complete(true);
+        complete();
         return backfill_finished;
     case ScanStatus::Failed:
         // Scan did not complete successfully. Propagate error to stream.

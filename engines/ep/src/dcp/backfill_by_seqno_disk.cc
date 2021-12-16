@@ -147,7 +147,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
             stream->setBackfillRemaining(scanCtx->documentCount);
             transitionState(State::scan);
         } else {
-            transitionState(State::complete);
+            complete();
         }
     }
 
@@ -175,14 +175,14 @@ backfill_status_t DCPBackfillBySeqnoDisk::scan() {
     switch (kvstore->scan(bySeqnoCtx)) {
     case ScanStatus::Success:
         stream->setBackfillScanLastRead(scanCtx->lastReadSeqno);
-        transitionState(State::complete);
+        complete();
         return backfill_success;
     case ScanStatus::Yield:
         // Scan should run again (e.g. was paused by callback)
         return backfill_success;
     case ScanStatus::Cancelled:
         // Aborted as vbucket/stream have gone away, normal behaviour
-        complete(true);
+        complete();
         return backfill_finished;
     case ScanStatus::Failed:
         // Scan did not complete successfully. Backfill is missing data,

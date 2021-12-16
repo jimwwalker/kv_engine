@@ -169,9 +169,6 @@ backfill_status_t DCPBackfillDisk::run() {
         return create();
     case State::scan:
         return scan();
-    case State::complete:
-        complete();
-        return backfill_finished;
     case State::done:
         return backfill_finished;
     }
@@ -198,9 +195,6 @@ std::ostream& operator<<(std::ostream& os, DCPBackfillDisk::State state) {
         break;
     case DCPBackfillByIdDisk::State::scan:
         os << "State::scan";
-        break;
-    case DCPBackfillByIdDisk::State::complete:
-        os << "State::complete";
         break;
     case DCPBackfillByIdDisk::State::done:
         os << "State::done";
@@ -229,14 +223,8 @@ void DCPBackfillDisk::transitionState(State newState) {
             validTransition = true;
         }
         break;
-    case State::complete:
-        if (state == State::create || state == State::scan) {
-            validTransition = true;
-        }
-        break;
     case State::done:
-        if (state == State::create || state == State::scan ||
-            state == State::complete) {
+        if (state == State::create || state == State::scan) {
             validTransition = true;
         }
         break;

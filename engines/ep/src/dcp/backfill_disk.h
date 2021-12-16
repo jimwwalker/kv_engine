@@ -89,18 +89,15 @@ protected:
      *
      * Valid transitions are:
      *
-     * create->scan->complete->done
      * create->scan->done
-     * create->complete->done
      * create->done
      */
-    enum class State { create, scan, complete, done };
+    enum class State { create, scan, done };
     friend std::ostream& operator<<(std::ostream&, State);
 
     backfill_status_t run() override;
     void cancel() override;
     void transitionState(State newState);
-
 
     /**
      * Create the scan, initialising scanCtx from KVStore initScanContext
