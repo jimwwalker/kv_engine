@@ -94,7 +94,8 @@ backfill_status_t DCPBackfillByIdDisk::create() {
         if (markerSent) {
             transitionState(State::scan);
         } else {
-            transitionState(State::complete);
+            complete();
+            return backfill_finished;
         }
     }
 
@@ -122,7 +123,7 @@ backfill_status_t DCPBackfillByIdDisk::scan() {
         return backfill_success;
     }
 
-    transitionState(State::complete);
+    complete();
 
     return backfill_success;
 }

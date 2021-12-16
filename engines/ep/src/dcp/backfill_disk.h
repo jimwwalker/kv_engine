@@ -71,7 +71,7 @@ protected:
      * create->complete->done
      * create->done
      */
-    enum class State { create, scan, complete, done };
+    enum class State { create, scan, done };
 
     backfill_status_t run() override;
     void cancel() override;
