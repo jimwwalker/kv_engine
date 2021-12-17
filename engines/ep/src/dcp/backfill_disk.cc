@@ -170,7 +170,7 @@ backfill_status_t DCPBackfillDisk::run() {
     case State::scan:
         return scan();
     case State::complete:
-        complete(false);
+        complete();
         return backfill_finished;
     case State::done:
         return backfill_finished;
@@ -184,7 +184,10 @@ backfill_status_t DCPBackfillDisk::run() {
 void DCPBackfillDisk::cancel() {
     std::lock_guard<std::mutex> lh(lock);
     if (state != State::done) {
-        complete(true);
+        EP_LOG_WARN(
+                "DCPBackfillDisk::cancel ({}) cancelled before reaching "
+                "State::done",
+                getVBucketId());
     }
 }
 
