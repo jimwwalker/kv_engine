@@ -113,20 +113,20 @@ public:
      */
     virtual backfill_status_t scan() = 0;
 
-protected:
+private:
     /// States of a backfill
     enum class State { Create, Scan, Done };
     friend std::ostream& operator<<(std::ostream&, State);
 
     /**
-     * Changes the state after checking the transition is valid
+     * Validate if currentState can be changed to newState and if so write to
+     * currentState
      */
-    void transitionState(State newState);
+    static void transitionState(State& currentState, State newState);
 
-    // @todo: change to folly::Sync, but some further refactoring to come
-    std::mutex lock;
-    State state;
+    folly::Synchronized<State> state;
 
+protected:
     /**
      * Ptr to the associated Active DCP stream. Backfill can be run for only
      * an active DCP stream.
