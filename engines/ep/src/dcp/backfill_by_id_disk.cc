@@ -92,7 +92,6 @@ backfill_status_t DCPBackfillByIdDisk::create() {
         bool markerSent = stream->markOSODiskSnapshot(scanCtx->maxSeqno);
 
         if (markerSent) {
-            transitionState(State::Scan);
             status = backfill_success;
         } else {
             complete(*stream);
