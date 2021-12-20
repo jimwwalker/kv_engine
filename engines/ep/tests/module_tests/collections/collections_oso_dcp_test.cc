@@ -299,7 +299,9 @@ void CollectionsOSODcpTest::testTwoCollections(bool backfillWillPause,
         txHighSeqno = std::max(txHighSeqno, producers->last_byseqno.load());
     }
 
-    step();
+    // Backfill will now have completed
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->stepWithBorderGuard(*producers));
 
     if (osoMode == OutOfOrderSnapshots::YesWithSeqnoAdvanced &&
         txHighSeqno != highSeqno) {

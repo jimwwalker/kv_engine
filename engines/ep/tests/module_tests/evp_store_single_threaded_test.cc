@@ -297,14 +297,8 @@ void SingleThreadedKVBucketTest::runBackfill() {
     auto& lpAuxioQ = *task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
     // backfill:create()
     runNextTask(lpAuxioQ);
-    // backfill:scan()
+    // backfill:scan() -> complete
     runNextTask(lpAuxioQ);
-
-    // 1 Extra step for persistent backfill
-    if (isPersistent()) {
-        // backfill:finished()
-        runNextTask(lpAuxioQ);
-    }
 }
 
 void SingleThreadedKVBucketTest::notifyAndRunToCheckpoint(
@@ -1237,7 +1231,6 @@ TEST_F(MB29369_SingleThreadedEPBucketTest,
     // complete).
     runNextTask(lpAuxioQ, "Backfilling items for a DCP Connection");
     runNextTask(lpAuxioQ, "Backfilling items for a DCP Connection");
-    runNextTask(lpAuxioQ, "Backfilling items for a DCP Connection");
 
     // Validate. We _should_ get two mutations: key1 & key2, but we have to
     // respin the checkpoint task for key2
@@ -1674,10 +1667,7 @@ TEST_P(STParamPersistentBucketTest, MB22960_cursor_dropping_data_loss) {
     runNextTask(lpAuxioQ);
     // backfill:scan()
     runNextTask(lpAuxioQ);
-    // backfill:complete()
-    runNextTask(lpAuxioQ);
-    // backfill:finished()
-    runNextTask(lpAuxioQ);
+
     // inMemoryPhase and pendingBackfill is true and so transitions to
     // backfillPhase
     // take snapshot marker off the ReadyQ
@@ -1686,7 +1676,6 @@ TEST_P(STParamPersistentBucketTest, MB22960_cursor_dropping_data_loss) {
     resp = mock_stream->next(*producer);
     // backfillPhase - take doc "key2" off the ReadyQ
     resp = mock_stream->next(*producer);
-    runNextTask(lpAuxioQ);
     runNextTask(lpAuxioQ);
     runNextTask(lpAuxioQ);
     // Assert that the callback (and hence backfill) was only invoked twice
@@ -1707,9 +1696,6 @@ TEST_P(STParamPersistentBucketTest, MB22960_cursor_dropping_data_loss) {
     EXPECT_EQ(nullptr, resp);
     EXPECT_EQ(1, ckpt_mgr.getNumCheckpoints());
     EXPECT_EQ(2, ckpt_mgr.getNumOfCursors());
-
-    // BackfillManagerTask
-    runNextTask(lpAuxioQ);
 
     // Stop Producer checkpoint processor task
     producer->cancelCheckpointCreatorTask();
@@ -1875,12 +1861,8 @@ TEST_P(STParamPersistentBucketTest,
     EXPECT_EQ(1, lpAuxioQ.getFutureQueueSize());
     auto& lpNonIoQ = *task_executor->getLpTaskQ()[NONIO_TASK_IDX];
     EXPECT_EQ(1, lpNonIoQ.getFutureQueueSize());
-    // backfill:create()
-    runNextTask(lpAuxioQ, "Backfilling items for a DCP Connection");
-    // backfill:scan()
-    runNextTask(lpAuxioQ, "Backfilling items for a DCP Connection");
-    // backfill:complete()
-    runNextTask(lpAuxioQ, "Backfilling items for a DCP Connection");
+    runBackfill();
+
     // inMemoryPhase and pendingBackfill is true and so transitions to
     // backfillPhase
     // take snapshot marker off the ReadyQ
@@ -3529,13 +3511,7 @@ TEST_P(STParamPersistentBucketTest, MB_29541) {
     // shipped all items to ensure the state transition to takeover-send would
     // indeed block (unless we have the fix applied...)
 
-    // Manually drive the backfill (not using notifyAndStepToCheckpoint)
-
-    auto& lpAuxioQ = *task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
-    // backfill:create()
-    runNextTask(lpAuxioQ);
-    // backfill:scan()
-    runNextTask(lpAuxioQ);
+    runBackfill();
 
     // Now drain all items before we proceed to complete
     EXPECT_EQ(cb::engine_errc::success, producer->step(producers));
@@ -3545,11 +3521,6 @@ TEST_P(STParamPersistentBucketTest, MB_29541) {
         EXPECT_EQ(cb::mcbp::ClientOpcode::DcpMutation, producers.last_op);
         EXPECT_EQ(key, producers.last_key);
     }
-
-    // backfill:complete()
-    runNextTask(lpAuxioQ);
-    // backfill:finished()
-    runNextTask(lpAuxioQ);
 
     producers.last_op = cb::mcbp::ClientOpcode::Invalid;
 
@@ -3637,14 +3608,11 @@ TEST_P(STParamPersistentBucketTest, MB_31481) {
             dynamic_cast<ActiveStream*>(producer->findStream(vbid).get());
     ASSERT_NE(nullptr, vb0Stream);
 
-    // Manually drive the backfill (not using notifyAndStepToCheckpoint)
-    auto& lpAuxioQ = *task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
     // Trigger slow stream handle
     ASSERT_TRUE(vb0Stream->handleSlowStream());
-    // backfill:create()
-    runNextTask(lpAuxioQ);
-    // backfill:scan()
-    runNextTask(lpAuxioQ);
+
+    // Backfill. This will create and run the scan (which completes)
+    runBackfill();
 
     ASSERT_TRUE(producer->getReadyQueue().exists(vbid));
 
@@ -3658,14 +3626,9 @@ TEST_P(STParamPersistentBucketTest, MB_31481) {
         ASSERT_EQ(key, producers.last_key);
     }
 
-    // Another producer step should report EWOULDBLOCK (no more data) as all
-    // items have been backfilled.
-    EXPECT_EQ(cb::engine_errc::would_block, producer->step(producers));
+    // Next item is the end stream
     // Also the readyQ should be empty
-    EXPECT_TRUE(producer->getReadyQueue().empty());
-
-    // backfill:complete()
-    runNextTask(lpAuxioQ);
+    EXPECT_EQ(1, producer->getReadyQueue().size());
 
     // Notified to allow stream to transition to in-memory phase.
     EXPECT_TRUE(producer->getReadyQueue().exists(vbid));
@@ -3686,9 +3649,6 @@ TEST_P(STParamPersistentBucketTest, MB_31481) {
 
     // Similarly, the readyQ should be empty again
     EXPECT_TRUE(producer->getReadyQueue().empty());
-
-    // backfill:finished() - just to cleanup.
-    runNextTask(lpAuxioQ);
 
     // Stop Producer checkpoint processor task
     producer->cancelCheckpointCreatorTask();

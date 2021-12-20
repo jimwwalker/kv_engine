@@ -28,7 +28,7 @@ backfill_status_t DCPBackfillByIdDisk::create() {
         EP_LOG_WARN(
                 "DCPBackfillByIdDisk::create(): "
                 "({}) backfill create ended prematurely as the associated "
-                "stream is deleted by the producer conn ",
+                "stream is deleted by the producer conn",
                 getVBucketId());
         return backfill_finished;
     }
@@ -73,12 +73,12 @@ backfill_status_t DCPBackfillByIdDisk::create() {
             ranges,
             DocumentFilter::ALL_ITEMS,
             valFilter);
+    backfill_status_t status = backfill_finished;
     if (!scanCtx) {
         auto vb = bucket.getVBucket(getVBucketId());
         std::stringstream log;
         log << "DCPBackfillByIdDisk::create(): (" << getVBucketId()
-            << ") cannot be scanned. Associated stream is set to dead state."
-            << " failed to create scan ";
+            << ") initByIdScanContext failed";
         if (vb) {
             log << VBucket::toString(vb->getState());
         } else {
@@ -93,24 +93,29 @@ backfill_status_t DCPBackfillByIdDisk::create() {
 
         if (markerSent) {
             transitionState(State::scan);
+            status = backfill_success;
         } else {
-            complete();
-            return backfill_finished;
+            complete(*stream);
         }
     }
 
-    return backfill_success;
+    return status;
 }
 
 backfill_status_t DCPBackfillByIdDisk::scan() {
     auto stream = streamPtr.lock();
     if (!stream) {
-        complete();
+        EP_LOG_WARN(
+                "DCPBackfillByIdDisk::scan(): "
+                "({}) backfill scan ended prematurely as the associated stream "
+                "is deleted by the producer conn",
+                getVBucketId());
         return backfill_finished;
-    }
-
-    if (!(stream->isActive())) {
-        complete();
+    } else if (!stream->isActive()) {
+        stream->log(spdlog::level::warn,
+                    "DCPBackfillByIdDisk::scan(): ({}) ended prematurely as "
+                    "stream is not active",
+                    getVBucketId());
         return backfill_finished;
     }
 
@@ -123,30 +128,15 @@ backfill_status_t DCPBackfillByIdDisk::scan() {
         return backfill_success;
     }
 
-    complete();
-
-    return backfill_success;
+    complete(*stream);
+    return backfill_finished;
 }
 
-void DCPBackfillByIdDisk::complete() {
-    auto stream = streamPtr.lock();
-    if (!stream) {
-        EP_LOG_WARN(
-                "DCPBackfillByIdDisk::complete(): "
-                "({}) backfill ended prematurely as the associated "
-                "stream is deleted by the producer",
-                getVBucketId());
-        transitionState(State::done);
-        return;
-    }
-
-    stream->completeOSOBackfill(
+void DCPBackfillByIdDisk::complete(ActiveStream& stream) {
+    stream.completeOSOBackfill(
             scanCtx->maxSeqno, runtime, scanCtx->diskBytesRead);
-
-    stream->log(spdlog::level::level_enum::debug,
-                "({}) Backfill task cid:{} complete",
-                vbid,
-                cid.to_string());
-
-    transitionState(State::done);
+    stream.log(spdlog::level::level_enum::debug,
+               "({}) Backfill task cid:{} complete",
+               vbid,
+               cid.to_string());
 }
