@@ -11,15 +11,10 @@
 
 #pragma once
 #include "callbacks.h"
-#include "dcp/backfill.h"
-
-#include <chrono>
-#include <mutex>
 
 class ActiveStream;
 class KVBucket;
-class VBucket;
-enum class ValueFilter;
+class ScanContext;
 
 /* Callback to get the items that are found to be in the cache */
 class CacheCallback : public StatusCallback<CacheLookup> {
@@ -51,49 +46,11 @@ private:
     std::weak_ptr<ActiveStream> streamPtr;
 };
 
-class DCPBackfillDisk : public virtual DCPBackfill {
+class DCPBackfillDisk {
 public:
     explicit DCPBackfillDisk(KVBucket& bucket);
 
-    ~DCPBackfillDisk() override;
-
 protected:
-    /**
-     * States for the backfill, these reflect which create/scan/done
-     * function is invoked when the backfill is told to run.
-     *
-     * All transitions are from "left to right", no state can go back.
-     *
-     * Valid transitions are:
-     *
-     * create->scan->done
-     * create->done
-     */
-    enum class State { create, scan, done };
-
-    backfill_status_t run() override;
-    void cancel() override;
-    void transitionState(State newState);
-
-    static std::string to_string(State state);
-
-    /**
-     * Create the scan, e.g. open a disk snapshot and set the ScanContext
-     * @return success if everything opened correctly or snooze if the task
-     *         should delay before the next run.
-     */
-    virtual backfill_status_t create() = 0;
-
-    /**
-     * Run the scan, reading keys/values from disk and copying them to an end
-     * point, e.g. an ActiveStream
-     * @return success if the scan should be invoked again or finished when
-     *         complete (scan doesn't have to be 100% done to finish).
-     */
-    virtual backfill_status_t scan() = 0;
-
-    std::mutex lock;
-    State state{State::create};
 
     KVBucket& bucket;
 
