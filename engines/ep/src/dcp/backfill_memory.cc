@@ -28,7 +28,7 @@ DCPBackfillMemoryBuffered::DCPBackfillMemoryBuffered(
         std::shared_ptr<ActiveStream> s,
         uint64_t startSeqno,
         uint64_t endSeqno)
-    : DCPBackfill(s),
+    : DCPBackfillToStream(s),
       DCPBackfillBySeqno(startSeqno, endSeqno),
       evb(evb),
       rangeItr(nullptr) {
