@@ -15,6 +15,7 @@
 class ActiveStream;
 class KVBucket;
 class ScanContext;
+class VBucket;
 
 /* Callback to get the items that are found to be in the cache */
 class CacheCallback : public StatusCallback<CacheLookup> {
