@@ -19,7 +19,7 @@
 DCPBackfillByIdDisk::DCPBackfillByIdDisk(KVBucket& bucket,
                                          std::shared_ptr<ActiveStream> s,
                                          CollectionID cid)
-    : DCPBackfill(s), DCPBackfillDisk(bucket), cid(cid) {
+    : DCPBackfillToStream(s), DCPBackfillDisk(bucket), cid(cid) {
 }
 
 backfill_status_t DCPBackfillByIdDisk::create() {

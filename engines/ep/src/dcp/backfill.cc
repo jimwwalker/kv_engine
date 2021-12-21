@@ -13,8 +13,7 @@
 
 #include <phosphor/phosphor.h>
 
-DCPBackfill::DCPBackfill(std::shared_ptr<ActiveStream> s)
-    : streamPtr(s), vbid(s->getVBucket()) {
+DCPBackfill::DCPBackfill(Vbid vbid) : vbid(vbid) {
     *state.wlock() = State::Create;
 }
 
@@ -111,10 +110,4 @@ void DCPBackfill::transitionState(State& currentState, State newState) {
     }
 
     currentState = newState;
-}
-
-// Task should be cancelled if the stream cannot be obtained or is now dead
-bool DCPBackfill::shouldCancel() const {
-    auto stream = streamPtr.lock();
-    return !stream || !stream->isActive();
 }
