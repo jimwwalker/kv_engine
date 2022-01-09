@@ -102,6 +102,10 @@ public:
         return value < other.value;
     }
 
+    bool operator>(const CollectionID& other) const {
+        return value > other.value;
+    }
+
     bool isDefaultCollection() const {
         return value == Default;
     }

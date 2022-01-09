@@ -25,8 +25,9 @@
 #include "flusher.h"
 #include "item.h"
 #include "kvstore/kvstore.h"
-#include "kvstore/persistence_callback.h"
 #include "kvstore/kvstore_transaction_context.h"
+#include "kvstore/persistence_callback.h"
+#include "range_scans/range_scans.h"
 #include "replicationthrottle.h"
 #include "rollback_result.h"
 #include "tasks.h"
@@ -239,7 +240,7 @@ private:
 };
 
 EPBucket::EPBucket(EventuallyPersistentEngine& theEngine)
-    : KVBucket(theEngine) {
+    : KVBucket(theEngine), rangeScans(std::make_unique<RangeScans>(*this)) {
     auto& config = engine.getConfiguration();
     const std::string& policy = config.getItemEvictionPolicy();
     if (policy.compare("value_only") == 0) {
@@ -2377,4 +2378,21 @@ void EPBucket::releaseBlockedCookies() {
             engine.notifyIOComplete(cookie, cb::engine_errc::failed);
         }
     }
+}
+
+std::pair<cb::engine_errc, int> EPBucket::createAndScheduleRangeScan(
+        Vbid vbid, const DocKey& start, const DocKey& end) {
+    VBucketPtr vb = getVBucket(vbid);
+    if (!vb) {
+        return {cb::engine_errc::not_my_vbucket, 0};
+    }
+    // Can only scan an active VB (state will be rechecked as the scan runs)
+    folly::SharedMutex::ReadHolder rlh(vb->getStateLock());
+    if (vb->getState() != vbucket_state_active) {
+        return {cb::engine_errc::not_my_vbucket, 0};
+    }
+
+    return {cb::engine_errc::success,
+            rangeScans->createAndSchedule(
+                    *this, dynamic_cast<EPVBucket&>(*vb), start, end)};
 }

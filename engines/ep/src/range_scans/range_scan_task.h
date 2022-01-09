@@ -15,7 +15,10 @@
 #include "dcp/backfill_disk.h"
 #include "kvstore/kvstore.h"
 
+#include <memory>
+
 class KVBucket;
+class RangeScanContext;
 
 /**
  * Class implementing the DCPBackfill API to run a RangeScan
@@ -27,6 +30,7 @@ public:
      */
     RangeScanTask(Vbid vbid,
                   KVBucket& bucket,
+                  const std::shared_ptr<RangeScanContext>& context,
                   const DocKey& start,
                   const DocKey& end);
 
@@ -45,4 +49,6 @@ protected:
     backfill_status_t scan() override;
 
     ByIdRange range;
+
+    std::weak_ptr<RangeScanContext> context;
 };

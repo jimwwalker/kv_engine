@@ -11,6 +11,7 @@
 #pragma once
 
 #include "dcp/backfill_by_seqno_disk.h"
+#include "range_scans/range_scans.h"
 #include "vbucket.h"
 #include "vbucket_bgfetch_item.h"
 
@@ -272,6 +273,11 @@ public:
 
     void notifyFlusher() override;
 
+    std::pair<RangeScanID, std::shared_ptr<RangeScanContext>>
+    createRangeScanContext(BackfillManager& bfManager);
+
+    std::shared_ptr<RangeScanContext> getRangeScanContext(RangeScanID id) const;
+
 protected:
     /**
      * queue a background fetch of the specified item.
@@ -402,6 +408,8 @@ private:
      * file revision we will unlink from disk.
      */
     std::unique_ptr<KVStoreRevision> deferredDeletionFileRevision;
+
+    VB::RangeScans rangeScans;
 
     friend class EPVBucketTest;
 };

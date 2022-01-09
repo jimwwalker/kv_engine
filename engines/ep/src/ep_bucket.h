@@ -30,6 +30,7 @@ class BucketStatCollector;
 class CompactTask;
 struct CompactionContext;
 struct CompactionStats;
+class RangeScans;
 
 /**
  * Eventually Persistent Bucket
@@ -301,6 +302,9 @@ public:
 
     Flusher* getOneFlusher() override;
 
+    std::pair<cb::engine_errc, int> createAndScheduleRangeScan(
+            Vbid vbid, const DocKey& start, const DocKey& end);
+
     /// Hook that gets called after a the EPBuckets purge seqno has been update
     /// during an implicit compaction
     TestingHook<> postPurgeSeqnoImplicitCompactionHook;
@@ -456,6 +460,8 @@ protected:
      * before we update the stats.
      */
     TestingHook<> postCompactionCompletionStatsUpdateHook;
+
+    std::unique_ptr<RangeScans> rangeScans;
 };
 
 std::ostream& operator<<(std::ostream& os, const EPBucket::FlushResult& res);

@@ -325,12 +325,8 @@ void SingleThreadedKVBucketTest::runBackfill() {
     auto& lpAuxioQ = *task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
     // backfill:create()
     runNextTask(lpAuxioQ);
-<<<<<<< HEAD
 
-    // backfill:scan()
-=======
     // backfill:scan() -> complete
->>>>>>> af31d2cee (MB-35297: Return finished when create/scan are complete)
     runNextTask(lpAuxioQ);
 }
 

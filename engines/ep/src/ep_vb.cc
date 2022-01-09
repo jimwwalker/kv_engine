@@ -589,8 +589,7 @@ UniqueDCPBackfillPtr EPVBucket::createDCPBackfill(
 
 UniqueDCPBackfillPtr EPVBucket::createRangeScanTask(
         EventuallyPersistentEngine& e, const DocKey& start, const DocKey& end) {
-    return std::make_unique<RangeScanTask>(
-            getId(), *e.getKVBucket(), start, end);
+    return nullptr;
 }
 
 cb::mcbp::Status EPVBucket::evictKey(
@@ -1236,4 +1235,14 @@ void EPVBucket::clearCMAndResetDiskQueueStats(uint64_t seqno) {
 
 std::unique_ptr<KVStoreRevision> EPVBucket::takeDeferredDeletionFileRevision() {
     return std::move(deferredDeletionFileRevision);
+}
+
+std::pair<RangeScanID, std::shared_ptr<RangeScanContext>>
+EPVBucket::createRangeScanContext(BackfillManager& bfManager) {
+    return rangeScans.createRangeScanContext(bfManager);
+}
+
+std::shared_ptr<RangeScanContext> EPVBucket::getRangeScanContext(
+        RangeScanID id) const {
+    return rangeScans.getRangeScanContext(id);
 }
