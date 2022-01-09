@@ -30,15 +30,17 @@ public:
 
 RangeScanTask::RangeScanTask(Vbid vbid,
                              KVBucket& bucket,
+                             const std::shared_ptr<RangeScanContext>& context,
                              const DocKey& start,
                              const DocKey& end)
     : DCPBackfill(vbid),
       DCPBackfillDisk(bucket),
-      range(DiskDocKey{start}, DiskDocKey{end}) {
+      range(DiskDocKey{start}, DiskDocKey{end}),
+      context(context) {
 }
 
 bool RangeScanTask::shouldCancel() const {
-    return false;
+    return !context.lock();
 }
 
 backfill_status_t RangeScanTask::create() {

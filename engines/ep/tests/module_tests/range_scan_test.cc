@@ -10,13 +10,13 @@
  */
 
 #include "dcp/backfill.h"
-#include "kv_bucket.h"
+#include "ep_bucket.h"
 #include "tests/module_tests/evp_store_single_threaded_test.h"
 #include "tests/module_tests/test_helpers.h"
 
-class RangeScanTest : public STParameterizedBucketTest {
+class RangeScanTest : public STParamPersistentBucketTest {
     void SetUp() override {
-        STParameterizedBucketTest::SetUp();
+        STParamPersistentBucketTest::SetUp();
 
         setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
     }
@@ -24,10 +24,10 @@ class RangeScanTest : public STParameterizedBucketTest {
 
 // Basic test covers current code (which doesn't do much)
 TEST_P(RangeScanTest, create_and_run) {
-    auto backfill = store->getVBucket(vbid)->createRangeScanTask(
-            store->getEPEngine(), makeStoredDocKey("a"), makeStoredDocKey("b"));
-    EXPECT_EQ(backfill_success, backfill->run()); // create
-    EXPECT_EQ(backfill_finished, backfill->run()); // scan
+    EXPECT_EQ(cb::engine_errc::success,
+              getEPBucket().doRangeScan(
+                      vbid, makeStoredDocKey("a"), makeStoredDocKey("b")));
+    runBackfill();
 }
 
 INSTANTIATE_TEST_SUITE_P(

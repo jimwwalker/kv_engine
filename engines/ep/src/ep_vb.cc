@@ -587,8 +587,7 @@ UniqueDCPBackfillPtr EPVBucket::createDCPBackfill(
 
 UniqueDCPBackfillPtr EPVBucket::createRangeScanTask(
         EventuallyPersistentEngine& e, const DocKey& start, const DocKey& end) {
-    return std::make_unique<RangeScanTask>(
-            getId(), *e.getKVBucket(), start, end);
+    return nullptr;
 }
 
 cb::mcbp::Status EPVBucket::evictKey(
@@ -1209,4 +1208,14 @@ void EPVBucket::clearCMAndResetDiskQueueStats(uint64_t seqno) {
     dirtyQueueSize.fetch_sub(size);
     stats.diskQueueSize.fetch_sub(size);
     dirtyQueueAge.store(0);
+}
+
+std::shared_ptr<RangeScanContext> EPVBucket::createRangeScan() {
+    static int scanId = 0;
+    // lock me, atomic me? yeah lock me
+    scanId++;
+    auto [itr, emplaced] = rangeScans.rangeScans.try_emplace(
+            scanId, std::make_shared<RangeScanContext>());
+    Expects(emplaced);
+    return itr->second;
 }
