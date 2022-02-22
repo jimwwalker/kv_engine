@@ -1809,12 +1809,11 @@ ScanStatus MagmaKVStore::scan(BySeqnoScanContext& ctx) const {
                             seqno);
                 }
                 continue;
-            } else if (ctx.getCacheCallback().getStatus() ==
-                       cb::engine_errc::no_memory) {
+            } else if (ctx.getCacheCallback().shouldYield()) {
                 if (logger->should_log(spdlog::level::TRACE)) {
                     logger->TRACE(
                             "MagmaKVStore::scan lookup->callback {} "
-                            "key:{} returned cb::engine_errc::no_memory",
+                            "key:{} requested yield",
                             ctx.vbid,
                             cb::UserData{diskKey.to_string()});
                 }
@@ -1871,11 +1870,11 @@ ScanStatus MagmaKVStore::scan(BySeqnoScanContext& ctx) const {
         if (callbackStatus == cb::engine_errc::success) {
             ctx.lastReadSeqno = seqno;
             continue;
-        } else if (callbackStatus == cb::engine_errc::no_memory) {
+        } else if (ctx.getValueCallback().shouldYield()) {
             if (logger->should_log(spdlog::level::TRACE)) {
                 logger->TRACE(
                         "MagmaKVStore::scan callback {} "
-                        "key:{} returned cb::engine_errc::no_memory",
+                        "key:{} requested yield",
                         ctx.vbid,
                         cb::UserData{diskKey.to_string()});
             }
