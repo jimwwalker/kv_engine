@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <memcached/dockey.h>
+
 #include <folly/Synchronized.h>
 
 #include <deque>
@@ -18,6 +20,9 @@
 
 class BackfillManager;
 class Item;
+class RangeScanResult;
+class RangeScanResultKey;
+class RangeScanResultValue;
 
 class RangeScanContext {
 public:
@@ -39,6 +44,8 @@ public:
      */
     bool store(std::unique_ptr<Item> item);
 
+    bool store(DocKey key);
+
     void storeEndSentinel();
 
     /**
@@ -47,20 +54,17 @@ public:
     size_t getSize() const {
         return queue.rlock()->size();
     }
+    using resultType = std::unique_ptr<RangeScanResult>;
 
     /**
-     * @return the 'front' item and reduce the queue size
+     * @return the 'front' and reduce the queue size
      */
-    std::unique_ptr<Item> popFront() {
-        return queue.withWLock([](auto& queue) {
-            auto item = std::move(queue.front());
-            queue.pop_front();
-            return item;
-        });
-    }
+    resultType popFront();
 
 private:
     BackfillManager& bfManager; // needed for updating bytes read
-    folly::Synchronized<std::deque<std::unique_ptr<Item>>> queue;
+
+    using container = std::deque<resultType>;
+    folly::Synchronized<container> queue;
     std::atomic<bool> scanComplete{false};
 };

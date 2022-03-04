@@ -378,6 +378,7 @@ ADD_LIBRARY(ep_objs OBJECT
             src/linked_list.cc
             src/range_lock_manager.cc
             src/range_scans/range_scan_context.cc
+            src/range_scans/range_scan_result.cc
             src/range_scans/range_scan_task.cc
             src/range_scans/range_scans.cc
             src/rollback_result.cc

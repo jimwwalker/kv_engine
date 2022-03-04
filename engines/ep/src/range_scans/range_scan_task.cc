@@ -170,9 +170,7 @@ void RangeScanCacheCallback::callback(CacheLookup& lookup) {
     }
 
     if (locked->isKeyOnly()) {
-        // @todo consider memory reduction, the Item is mostly unused
-        locked->store(std::make_unique<Item>(
-                lookup.getKey().getDocKey(), 0, 0, nullptr, 0));
+        locked->store(lookup.getKey().getDocKey());
         setStatus(cb::engine_errc::key_already_exists);
         return;
     }

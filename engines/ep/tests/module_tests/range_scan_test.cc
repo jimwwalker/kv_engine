@@ -12,6 +12,7 @@
 #include "dcp/backfill.h"
 #include "ep_bucket.h"
 #include "ep_vb.h"
+#include "range_scans/range_scan_result.h"
 #include "tests/module_tests/evp_store_single_threaded_test.h"
 #include "tests/module_tests/test_helpers.h"
 
@@ -119,20 +120,23 @@ void RangeScanTest::testRangeScan(
     auto ctx = epVB.getRangeScanContext(scan.second);
     ASSERT_TRUE(ctx);
 
-    // Subtract one to remove the null sentinel
-    EXPECT_EQ(expectedKeys.size(), ctx->getSize() - 1);
+    // Expect one extra for the end marker
+    EXPECT_EQ(expectedKeys.size() + 1, ctx->getSize());
 
-    while (ctx->getSize()) {
-        auto item = ctx->popFront();
-        if (item) {
-            auto itr = expectedKeys.find(item->getKey());
-            EXPECT_NE(itr, expectedKeys.end());
-            EXPECT_EQ((*itr).to_string(), item->getValueView());
-        } else {
-            // sentinel popped, expect empty
-            EXPECT_EQ(0, ctx->getSize());
-        }
+    for (int ii = ctx->getSize() - 1; ii > 0; ii--) {
+        auto result = ctx->popFront();
+        ASSERT_TRUE(result);
+        EXPECT_FALSE(result->isEnd());
+
+        auto itr = expectedKeys.find(StoredDocKey{result->getKey()});
+        EXPECT_NE(itr, expectedKeys.end());
+        EXPECT_TRUE(result->compare((*itr).to_string()));
     }
+
+    // And finally the end is signalled
+    auto result = ctx->popFront();
+    EXPECT_TRUE(result->isEnd());
+    EXPECT_EQ(cb::engine_errc::success, result->getStatus());
 }
 
 // Test that if we set the range to be "user" - "user\xFF" our scan returns
@@ -283,26 +287,6 @@ TEST_P(RangeScanTest, lessThanWithZeroSuffix) {
     std::string key = "uuu";
     key += char(0);
     testLessThan(key);
-}
-
-// Can only scan active vbuckets
-TEST_P(RangeScanTest, detectVbucketStateChangeAtScan) {
-    // Keys are needed so we get a callback which and we detect the state change
-    // leading to the scan stop
-    auto testData = generateTestKeys();
-    for (const auto& key : testData) {
-        storeAndFlush(key);
-    }
-    auto scan = getEPBucket().createAndScheduleRangeScan(
-            vbid,
-            makeStoredDocKey("\0", collection),
-            makeStoredDocKey("\xFF", collection));
-    ASSERT_EQ(cb::engine_errc::success, scan.first);
-    EXPECT_NE(0, scan.second);
-    // change state when the KVStore::scan begins
-    runBackfill([this]() {
-        setVBucketStateAndRunPersistTask(vbid, vbucket_state_replica);
-    });
 }
 
 INSTANTIATE_TEST_SUITE_P(FullAndvalueEviction,

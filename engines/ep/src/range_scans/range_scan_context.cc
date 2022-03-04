@@ -10,22 +10,44 @@
  */
 
 #include "range_scans/range_scan_context.h"
+
 #include "dcp/backfill-manager.h"
 #include "item.h"
+#include "range_scans/range_scan_result.h"
 
 RangeScanContext::RangeScanContext(BackfillManager& bfManager)
     : bfManager(bfManager) {
 }
 
 bool RangeScanContext::store(std::unique_ptr<Item> item) {
-    if (item && !bfManager.bytesCheckAndRead(item->size())) {
+    Expects(item);
+    if (!bfManager.bytesCheckAndRead(item->size())) {
         return false;
     }
 
-    queue.wlock()->emplace_back(std::move(item));
+    queue.wlock()->emplace_back(
+            std::make_unique<RangeScanResultValue>(std::move(item)));
     return true;
 }
 
+bool RangeScanContext::store(DocKey key) {
+    if (!bfManager.bytesCheckAndRead(key.size())) {
+        return false;
+    }
+
+    queue.wlock()->emplace_back(std::make_unique<RangeScanResultKey>(key));
+    return true;
+}
+
+RangeScanContext::resultType RangeScanContext::popFront() {
+    return queue.withWLock([](auto& queue) {
+        auto result = std::move(queue.front());
+        queue.pop_front();
+        return result;
+    });
+}
+
 void RangeScanContext::storeEndSentinel() {
-    queue.wlock()->emplace_back(nullptr);
+    queue.wlock()->emplace_back(
+            std::make_unique<RangeScanResultEnd>(cb::engine_errc::success));
 }
