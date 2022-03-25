@@ -71,3 +71,12 @@ cb::engine_errc VB::RangeScanOwner::cancelScan(RangeScanId id) {
 
     return cb::engine_errc::success;
 }
+
+std::shared_ptr<RangeScan> VB::RangeScanOwner::getScan(RangeScanId id) const {
+    auto locked = rangeScans.rlock();
+    auto itr = locked->find(id);
+    if (itr == locked->end()) {
+        return {};
+    }
+    return itr->second;
+}

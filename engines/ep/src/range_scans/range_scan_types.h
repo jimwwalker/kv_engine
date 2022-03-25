@@ -16,3 +16,7 @@
 using RangeScanId = boost::uuids::uuid;
 
 enum class RangeScanKeyOnly : char { No, Yes };
+
+struct RangeScanCreateData {
+    RangeScanId uuid;
+};

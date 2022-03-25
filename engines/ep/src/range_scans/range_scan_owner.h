@@ -67,6 +67,11 @@ public:
      */
     cb::engine_errc cancelScan(RangeScanId id);
 
+    /**
+     * Find the scan for the given id
+     */
+    std::shared_ptr<RangeScan> getScan(RangeScanId id) const;
+
 protected:
     /**
      * All scans that are available for continue/cancel

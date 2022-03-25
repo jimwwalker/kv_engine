@@ -27,6 +27,7 @@
 #include "flusher.h"
 #include "item.h"
 #include "kvshard.h"
+#include "range_scans/range_scan_create_task.h"
 #include "stored_value_factories.h"
 #include "tasks.h"
 #include "vbucket_bgfetch_item.h"
@@ -1223,7 +1224,38 @@ cb::engine_errc EPVBucket::createRangeScan(const DocKey& start,
                                            RangeScanDataHandlerIFace& handler,
                                            const CookieIface* cookie,
                                            RangeScanKeyOnly keyOnly) {
-    return cb::engine_errc::not_supported;
+    auto rangeScanCreateData = std::make_unique<RangeScanCreateData>();
+
+    // Place pointer in the cookie so we can get this object back on success
+    bucket->getEPEngine().storeEngineSpecific(cookie,
+                                              rangeScanCreateData.get());
+
+    // Create a task and give it the RangeScanCreateData, on failure the task
+    // will destruct the data
+    ExecutorPool::get()->schedule(std::make_shared<RangeScanCreateTask>(
+            dynamic_cast<EPBucket&>(*bucket),
+            getId(),
+            start,
+            end,
+            handler,
+            cookie,
+            keyOnly,
+            std::move(rangeScanCreateData)));
+    return cb::engine_errc::would_block;
+}
+
+std::pair<cb::engine_errc, RangeScanId> EPVBucket::createRangeScanComplete(
+        const CookieIface* cookie) {
+    // Obtain the data (so it now frees)
+    std::unique_ptr<RangeScanCreateData> rangeScanCreateData(
+            reinterpret_cast<RangeScanCreateData*>(
+                    bucket->getEPEngine().getEngineSpecific(cookie)));
+    Expects(rangeScanCreateData);
+    return {cb::engine_errc::success, rangeScanCreateData->uuid};
+}
+
+std::shared_ptr<RangeScan> EPVBucket::getRangeScan(RangeScanId id) const {
+    return rangeScans.getScan(id);
 }
 
 cb::engine_errc EPVBucket::addNewRangeScan(std::shared_ptr<RangeScan> scan) {
