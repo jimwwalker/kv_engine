@@ -271,8 +271,9 @@ public:
         return seqList->getNumStaleItems();
     }
 
-    cb::engine_errc createRangeScan(const DocKey&,
-                                    const DocKey&,
+    cb::engine_errc createRangeScan(CollectionID cid,
+                                    std::string_view,
+                                    std::string_view,
                                     RangeScanDataHandlerIFace&,
                                     const CookieIface*,
                                     cb::rangescan::KeyOnly) override;

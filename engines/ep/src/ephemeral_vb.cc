@@ -1105,8 +1105,9 @@ void EphemeralVBucket::doCollectionsStats(
     }
 }
 
-cb::engine_errc EphemeralVBucket::createRangeScan(const DocKey&,
-                                                  const DocKey&,
+cb::engine_errc EphemeralVBucket::createRangeScan(CollectionID cid,
+                                                  std::string_view,
+                                                  std::string_view,
                                                   RangeScanDataHandlerIFace&,
                                                   const CookieIface*,
                                                   cb::rangescan::KeyOnly) {

@@ -18,6 +18,7 @@
 #include "tests/module_tests/test_helpers.h"
 #include "vbucket.h"
 
+#include <programs/engine_testapp/mock_server.h>
 #include <utilities/test_manifest.h>
 
 #include <unordered_set>
@@ -87,7 +88,7 @@ public:
     }
 
     std::pair<cb::rangescan::Id, std::shared_ptr<RangeScan>> createScan(
-            const DocKey& start, const DocKey& end);
+            CollectionID cid, std::string_view start, std::string_view end);
 
     const std::unordered_set<StoredDocKey> getUserKeys() {
         // Create a number of user prefixed collections and place them in the
@@ -140,8 +141,9 @@ public:
 
     // Run a scan using the relatively low level pieces
     void testRangeScan(const std::unordered_set<StoredDocKey>& expectedKeys,
-                       const DocKey& start,
-                       const DocKey& end);
+                       CollectionID cid,
+                       std::string_view start,
+                       std::string_view end);
 
     void testLessThan(std::string key);
 
@@ -180,22 +182,29 @@ void TestRangeScanHandler::validateItemScan(
 }
 
 std::pair<cb::rangescan::Id, std::shared_ptr<RangeScan>>
-RangeScanTest::createScan(const DocKey& start, const DocKey& end) {
-    // Create a new RangeScan object, this would be done on an I/O task as it
-    // opens the file and generates a UUID
-    auto scan = std::make_shared<RangeScan>(dynamic_cast<EPBucket&>(*store),
-                                            *store->getVBucket(vbid),
-                                            start,
-                                            end,
-                                            *handler,
-                                            cookie,
-                                            getScanType());
+RangeScanTest::createScan(CollectionID cid,
+                          std::string_view start,
+                          std::string_view end) {
+    auto vb = store->getVBucket(vbid);
+    // Create a new RangeScan object and give it a handler we can inspect.
+    EXPECT_EQ(cb::engine_errc::would_block,
+              vb->createRangeScan(
+                      cid, start, end, *handler, cookie, getScanType()));
+
+    // Now run via auxio task
+    runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
+                "RangeScanCreateTask");
+
+    EXPECT_EQ(cb::engine_errc::success, mock_waitfor_cookie(cookie));
 
     // Next frontend will add the uuid/scan, client can be informed of the uuid
-    auto& epVb = dynamic_cast<EPVBucket&>(*store->getVBucket(vbid));
-    EXPECT_EQ(cb::engine_errc::success, epVb.addNewRangeScan(scan));
+    auto& epVb = dynamic_cast<EPVBucket&>(*vb);
+    auto status = epVb.createRangeScanComplete(cookie);
+    EXPECT_EQ(cb::engine_errc::success, status.first);
 
-    return {scan->getUuid(), scan};
+    auto scan = epVb.getRangeScan(status.second);
+    EXPECT_TRUE(scan);
+    return {status.second, scan};
 }
 
 // This method drives a range scan through create/continue/cancel for the given
@@ -203,10 +212,11 @@ RangeScanTest::createScan(const DocKey& start, const DocKey& end) {
 // a frontend thread would be executing and where a background I/O task would.
 void RangeScanTest::testRangeScan(
         const std::unordered_set<StoredDocKey>& expectedKeys,
-        const DocKey& start,
-        const DocKey& end) {
+        CollectionID cid,
+        std::string_view start,
+        std::string_view end) {
     // 1) create a RangeScan to scan the user prefixed keys.
-    auto [uuid, scan] = createScan(start, end);
+    auto [uuid, scan] = createScan(cid, start, end);
 
     auto vb = store->getVBucket(vbid);
 
@@ -248,9 +258,7 @@ void RangeScanTest::testRangeScan(
 
 // Scan for the user prefixed keys
 TEST_P(RangeScanTest, user_prefix) {
-    testRangeScan(getUserKeys(),
-                  makeStoredDocKey("user", scanCollection),
-                  makeStoredDocKey("user\xFF", scanCollection));
+    testRangeScan(getUserKeys(), scanCollection, "user", "user\xFF");
 }
 
 // Test ensures callbacks cover disk read case
@@ -258,9 +266,7 @@ TEST_P(RangeScanTest, user_prefix_evicted) {
     for (const auto& key : generateTestKeys()) {
         evict_key(vbid, key);
     }
-    testRangeScan(getUserKeys(),
-                  makeStoredDocKey("user", scanCollection),
-                  makeStoredDocKey("user\xFF", scanCollection));
+    testRangeScan(getUserKeys(), scanCollection, "user", "user\xFF");
 }
 
 // Run a >= user scan by setting the keys to user and the end (255)
@@ -276,8 +282,7 @@ TEST_P(RangeScanTest, greater_than_or_equal) {
         }
     }
 
-    testRangeScan(
-            expectedKeys, rangeStart, makeStoredDocKey("\xFF", scanCollection));
+    testRangeScan(expectedKeys, scanCollection, "user", "\xFF");
 }
 
 // Run a <= user scan y setting the keys to 0 and user\xFF
@@ -293,8 +298,7 @@ TEST_P(RangeScanTest, less_than_or_equal) {
         }
     }
 
-    testRangeScan(
-            expectedKeys, makeStoredDocKey("\0", scanCollection), rangeEnd);
+    testRangeScan(expectedKeys, scanCollection, {"\0", 1}, "user\xFF");
 }
 
 // Perform > uuu, this simulates a request for an exclusive start range-scan
@@ -329,8 +333,7 @@ TEST_P(RangeScanTest, greater_than) {
     }
     expectedKeys.emplace(rangeStart);
 
-    testRangeScan(
-            expectedKeys, rangeStart, makeStoredDocKey("\xFF", scanCollection));
+    testRangeScan(expectedKeys, scanCollection, key, "\xFF");
 }
 
 // scan for less than key
@@ -362,8 +365,7 @@ void RangeScanTest::testLessThan(std::string key) {
     }
     expectedKeys.emplace(rangeEnd);
 
-    testRangeScan(
-            expectedKeys, makeStoredDocKey("\0", scanCollection), rangeEnd);
+    testRangeScan(expectedKeys, scanCollection, {"\0", 1}, key);
 }
 
 TEST_P(RangeScanTest, less_than) {
@@ -378,8 +380,7 @@ TEST_P(RangeScanTest, less_than_with_zero_suffix) {
 
 // Test that we reject continue whilst a scan is already being continued
 TEST_P(RangeScanTest, continue_must_be_serialised) {
-    auto [uuid, scan] =
-            createScan(makeStoredDocKey("a"), makeStoredDocKey("b"));
+    auto [uuid, scan] = createScan(scanCollection, "a", "b");
     auto vb = store->getVBucket(vbid);
 
     EXPECT_EQ(cb::engine_errc::success, vb->continueRangeScan(uuid));

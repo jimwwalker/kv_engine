@@ -1639,6 +1639,7 @@ public:
     /**
      * Create a new range scan, creation uses an I/O task and would_block
      *
+     * @param cid Collection to scan
      * @param start key for the start of the range
      * @param end key for the end of the range
      * @param handler object that will receive callbacks when the scan continues
@@ -1647,8 +1648,9 @@ public:
      *
      * @return would_block if the scan was found and successfully scheduled
      */
-    virtual cb::engine_errc createRangeScan(const DocKey& start,
-                                            const DocKey& end,
+    virtual cb::engine_errc createRangeScan(CollectionID cid,
+                                            std::string_view start,
+                                            std::string_view end,
                                             RangeScanDataHandlerIFace& handler,
                                             const CookieIface* cookie,
                                             cb::rangescan::KeyOnly keyOnly) = 0;

@@ -76,13 +76,13 @@ public:
     StoredDocKeyT(const DocKey& key, CollectionID cid);
 
     /**
-     * Create a StoredDocKey from a std::string (test code uses this)
+     * Create a StoredDocKey from a string_view, the result is the key prefixed
+     * with a collection-ID
      *
-     * @param key std::string to be copied-in
-     * @param cid the CollectionID that the key applies to (and will be encoded
-     *        into the stored data)
+     * @param key data that is to be copied-in
+     * @param cid CollectionID to give to the new key
      */
-    StoredDocKeyT(const std::string& key, CollectionID cid);
+    StoredDocKeyT(std::string_view, CollectionID cid);
 
     const char* keyData() const {
         return keydata.data();
