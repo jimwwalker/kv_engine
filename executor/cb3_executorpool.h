@@ -177,21 +177,13 @@ public:
 
     size_t getNumNonIO() override;
 
-    void setNumReaders(ThreadPoolConfig::ThreadCount v) override {
-        adjustWorkers(READER_TASK_IDX, calcNumReaders(v));
-    }
+    bool setNumReaders(ThreadPoolConfig::ThreadCount v) override;
 
-    void setNumWriters(ThreadPoolConfig::ThreadCount v) override {
-        adjustWorkers(WRITER_TASK_IDX, calcNumWriters(v));
-    }
+    bool setNumWriters(ThreadPoolConfig::ThreadCount v) override;
 
-    void setNumAuxIO(uint16_t v) override {
-        adjustWorkers(AUXIO_TASK_IDX, v);
-    }
+    bool setNumAuxIO(uint16_t v) override;
 
-    void setNumNonIO(uint16_t v) override {
-        adjustWorkers(NONIO_TASK_IDX, v);
-    }
+    bool setNumNonIO(uint16_t v) override;
 
     size_t getNumReadyTasks() override {
         return totReadyTasks;

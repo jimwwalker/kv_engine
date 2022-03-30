@@ -39,7 +39,7 @@ public:
         Default = Folly
     };
 
-    static void create(Backend backend = Backend::Default,
+    static bool create(Backend backend = Backend::Default,
                        size_t maxThreads = 0,
                        ThreadPoolConfig::ThreadCount maxReaders =
                                ThreadPoolConfig::ThreadCount::Default,
@@ -83,17 +83,53 @@ public:
     /// @returns the number of Non-IO threads.
     virtual size_t getNumNonIO() = 0;
 
-    /// Set the number of Reader IO threads to the specified number.
-    virtual void setNumReaders(ThreadPoolConfig::ThreadCount v) = 0;
+    static size_t getNumWorkers() {
+        return calcNumWorkers();
+    }
+
+    size_t getNumStorage() {
+        return 0; //??
+    }
+
+    size_t getTotalThreadCount() {
+        return getNumReaders() + getNumWriters() + getNumAuxIO() +
+               getNumNonIO() + getNumWorkers(); /* + getNumStorega() */
+    }
+
+    bool isThreadConfigViable() {
+        return isThreadConfigViable(getNumReaders(),
+                                    getNumWriters(),
+                                    getNumAuxIO(),
+                                    getNumNonIO(),
+                                    getNumWorkers(),
+                                    getNumStorage());
+    }
+
+    static bool isThreadConfigViable(size_t readers,
+                                     size_t writers,
+                                     size_t auxIO,
+                                     size_t nonIO,
+                                     size_t workers,
+                                     size_t storage) {
+        return readers + writers + auxIO + nonIO + workers + storage <=
+               (4093 / 30);
+    }
+
+    /// Set the number of Reader IO threads to the specified number
+    /// @return true if the change was successful
+    virtual bool setNumReaders(ThreadPoolConfig::ThreadCount v) = 0;
 
     /// Set the number of Writer IO threads to the specified number.
-    virtual void setNumWriters(ThreadPoolConfig::ThreadCount v) = 0;
+    /// @return true if the change was successful
+    virtual bool setNumWriters(ThreadPoolConfig::ThreadCount v) = 0;
 
     /// Set the number of Auxillary IO threads to the specified number.
-    virtual void setNumAuxIO(uint16_t v) = 0;
+    /// @return true if the change was successful
+    virtual bool setNumAuxIO(uint16_t v) = 0;
 
     /// Set the number of Non-IO threads to the specified number.
-    virtual void setNumNonIO(uint16_t v) = 0;
+    /// @return true if the change was successful
+    virtual bool setNumNonIO(uint16_t v) = 0;
 
     /// @returns the number of threads currently sleeping.
     virtual size_t getNumSleepers() = 0;
@@ -248,6 +284,10 @@ protected:
      * Calculate the number of Non-IO threads to use for the given thread limit.
      */
     size_t calcNumNonIO(size_t threadCount) const;
+
+    static size_t calcNumWorkers();
+
+    size_t calcNumStorage() const;
 
     // Return a reference to the singleton ExecutorPool.
     static std::unique_ptr<ExecutorPool>& getInstance();

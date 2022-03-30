@@ -744,24 +744,62 @@ size_t FollyExecutorPool::getNumNonIO() {
     return nonIoPool->getPoolStats().threadCount;
 }
 
-void FollyExecutorPool::setNumReaders(ThreadPoolConfig::ThreadCount v) {
-    maxReaders = calcNumReaders(v);
+bool FollyExecutorPool::setNumReaders(ThreadPoolConfig::ThreadCount v) {
+    auto proposedMaxReaders = calcNumReaders(v);
+    if (!isThreadConfigViable(proposedMaxReaders,
+                              getNumWriters(),
+                              getNumAuxIO(),
+                              getNumNonIO(),
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
+    maxReaders = proposedMaxReaders;
     readerPool->setNumThreads(maxReaders);
+    return true;
 }
 
-void FollyExecutorPool::setNumWriters(ThreadPoolConfig::ThreadCount v) {
-    maxWriters = calcNumWriters(v);
+bool FollyExecutorPool::setNumWriters(ThreadPoolConfig::ThreadCount v) {
+    auto proposedMaxWriters = calcNumWriters(v);
+    if (!isThreadConfigViable(getNumReaders(),
+                              proposedMaxWriters,
+                              getNumAuxIO(),
+                              getNumNonIO(),
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
+    maxWriters = proposedMaxWriters;
     writerPool->setNumThreads(maxWriters);
+    return true;
 }
 
-void FollyExecutorPool::setNumAuxIO(uint16_t v) {
+bool FollyExecutorPool::setNumAuxIO(uint16_t v) {
+    if (!isThreadConfigViable(getNumReaders(),
+                              getNumWriters(),
+                              v,
+                              getNumNonIO(),
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
     maxAuxIO = v;
     auxPool->setNumThreads(maxAuxIO);
+    return true;
 }
 
-void FollyExecutorPool::setNumNonIO(uint16_t v) {
+bool FollyExecutorPool::setNumNonIO(uint16_t v) {
+    if (!isThreadConfigViable(getNumReaders(),
+                              getNumWriters(),
+                              getNumAuxIO(),
+                              v,
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
     maxNonIO = v;
     nonIoPool->setNumThreads(maxNonIO);
+    return true;
 }
 
 size_t FollyExecutorPool::getNumSleepers() {

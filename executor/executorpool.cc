@@ -23,7 +23,7 @@ static const size_t EP_MIN_NONIO_THREADS = 2;
 
 static const size_t EP_MAX_NONIO_THREADS = 8;
 
-void ExecutorPool::create(Backend backend,
+bool ExecutorPool::create(Backend backend,
                           size_t maxThreads,
                           ThreadPoolConfig::ThreadCount maxReaders,
                           ThreadPoolConfig::ThreadCount maxWriters,
@@ -37,20 +37,22 @@ void ExecutorPool::create(Backend backend,
     case Backend::Folly:
         getInstance() = std::make_unique<FollyExecutorPool>(
                 maxThreads, maxReaders, maxWriters, maxAuxIO, maxNonIO);
-        return;
+        break;
     case Backend::CB3:
         getInstance() = std::make_unique<CB3ExecutorPool>(
                 maxThreads, maxReaders, maxWriters, maxAuxIO, maxNonIO);
-        return;
+        break;
     case Backend::Fake:
         getInstance() = std::make_unique<SingleThreadedExecutorPool>();
-        return;
+        break;
     case Backend::Mock:
         getInstance() = std::make_unique<MockExecutorPool>();
-        return;
+        break;
+    default:
+        throw std::runtime_error("ExecutorPool::create(): Unknown backend");
     }
 
-    throw std::runtime_error("ExecutorPool::create(): Unknown backend");
+    return get()->isThreadConfigViable();
 }
 
 bool ExecutorPool::exists() {
@@ -168,6 +170,41 @@ size_t ExecutorPool::calcNumNonIO(size_t threadCount) const {
         count = threadCount;
     }
     return count;
+}
+
+size_t ExecutorPool::calcNumWorkers() {
+    size_t ret = 0;
+    char* override = getenv("MEMCACHED_NUM_CPUS");
+    if (override) {
+        try {
+            ret = std::stoull(override);
+        } catch (...) {
+        }
+    } else {
+        // No override specified; determine worker thread count based
+        // on the CPU count:
+        //     <5 cores: create 4 workers.
+        //    >5+ cores: create #CPUs * 7/8.
+        ret = Couchbase::get_available_cpu_count();
+
+        if (ret > 4) {
+            ret = (ret * 7) / 8;
+        }
+        if (ret < 4) {
+            ret = 4;
+        }
+    }
+
+    if (ret == 0) {
+        ret = 4;
+    }
+
+    // max-out at 56
+    return std::min(ret, size_t(56));
+}
+
+size_t ExecutorPool::calcNumStorage() const {
+    return 0;
 }
 
 int ExecutorPool::getThreadPriority(task_type_t taskType) {

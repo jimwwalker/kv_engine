@@ -281,33 +281,7 @@ void stats_reset(Cookie& cookie) {
 }
 
 static size_t get_number_of_worker_threads() {
-    size_t ret = 0;
-    char *override = getenv("MEMCACHED_NUM_CPUS");
-    if (override) {
-        try {
-            ret = std::stoull(override);
-        } catch (...) {
-        }
-    } else {
-        // No override specified; determine worker thread count based
-        // on the CPU count:
-        //     <5 cores: create 4 workers.
-        //    >5+ cores: create #CPUs * 7/8.
-        ret = Couchbase::get_available_cpu_count();
-
-        if (ret > 4) {
-            ret = (ret * 7) / 8;
-        }
-        if (ret < 4) {
-            ret = 4;
-        }
-    }
-
-    if (ret == 0) {
-        ret = 4;
-    }
-
-    return ret;
+    return ExecutorPool::getNumWorkers();
 }
 
 /// We might not support as many connections as requested if
@@ -709,19 +683,23 @@ static void startExecutorPool() {
 
     LOG_INFO(
             "Start executor pool with backend:Folly readers:{} writers:{} "
-            "auxIO:{} nonIO:{}",
+            "auxIO:{} nonIO:{} workers:{}",
             settings.getNumReaderThreads(),
             settings.getNumWriterThreads(),
             settings.getNumAuxIoThreads(),
-            settings.getNumNonIoThreads());
+            settings.getNumNonIoThreads(),
+            settings.getNumWorkerThreads());
 
-    ExecutorPool::create(
-            ExecutorPool::Backend::Folly,
-            0,
-            ThreadPoolConfig::ThreadCount(settings.getNumReaderThreads()),
-            ThreadPoolConfig::ThreadCount(settings.getNumWriterThreads()),
-            settings.getNumAuxIoThreads(),
-            settings.getNumNonIoThreads());
+    if (!ExecutorPool::create(
+                ExecutorPool::Backend::Folly,
+                0,
+                ThreadPoolConfig::ThreadCount(settings.getNumReaderThreads()),
+                ThreadPoolConfig::ThreadCount(settings.getNumWriterThreads()),
+                settings.getNumAuxIoThreads(),
+                settings.getNumNonIoThreads())) {
+        LOG_CRITICAL("Configuration exceeds thread max {}", 1 /* TODO*/);
+        exit(EXIT_FAILURE);
+    }
     ExecutorPool::get()->registerTaskable(NoBucketTaskable::instance());
 
     // MB-47484 Set up the settings callback for the executor pool now that

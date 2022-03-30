@@ -43,6 +43,58 @@ size_t CB3ExecutorPool::getNumReaders() {
             ThreadPoolConfig::ThreadCount(numWorkers[READER_TASK_IDX].load()));
 }
 
+bool CB3ExecutorPool::setNumReaders(ThreadPoolConfig::ThreadCount v) {
+    if (!isThreadConfigViable(calcNumReaders(v),
+                              getNumWriters(),
+                              getNumAuxIO(),
+                              getNumNonIO(),
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
+    adjustWorkers(READER_TASK_IDX, calcNumReaders(v));
+    return true;
+}
+
+bool CB3ExecutorPool::setNumWriters(ThreadPoolConfig::ThreadCount v) {
+    if (!isThreadConfigViable(getNumReaders(),
+                              calcNumWriters(v),
+                              getNumAuxIO(),
+                              getNumNonIO(),
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
+    adjustWorkers(WRITER_TASK_IDX, calcNumWriters(v));
+    return true;
+}
+
+bool CB3ExecutorPool::setNumAuxIO(uint16_t v) {
+    if (!isThreadConfigViable(getNumReaders(),
+                              getNumWriters(),
+                              v,
+                              getNumNonIO(),
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
+    adjustWorkers(AUXIO_TASK_IDX, v);
+    return true;
+}
+
+bool CB3ExecutorPool::setNumNonIO(uint16_t v) {
+    if (!isThreadConfigViable(getNumReaders(),
+                              getNumWriters(),
+                              getNumAuxIO(),
+                              v,
+                              getNumWorkers(),
+                              getNumStorage())) {
+        return false;
+    }
+    adjustWorkers(NONIO_TASK_IDX, v);
+    return true;
+}
+
 CB3ExecutorPool::CB3ExecutorPool(size_t maxThreads,
                                  ThreadPoolConfig::ThreadCount maxReaders,
                                  ThreadPoolConfig::ThreadCount maxWriters,
