@@ -77,12 +77,24 @@ cb::rangescan::Id RangeScan::createScan(EPBucket& bucket) {
 cb::engine_errc RangeScan::continueScan(KVStoreIface& kvstore) {
     auto status = kvstore.scan(*scanCtx);
 
-    if (status == ScanStatus::Success) {
-        return cb::engine_errc::success;
+    switch (status) {
+    case ScanStatus::Yield:
+        // Scan reached a limit and has yielded
+        return cb::engine_errc::too_busy;
+    case ScanStatus::Success:
+        // Scan has reached the end
+    case ScanStatus::Cancelled:
+        // Scan cannot continue and has cancelled (e.g. vbucket gone)
+    case ScanStatus::Failed:
+        // Scan cannot continue due to failure
+        break;
     }
-    // @todo: handle all statuses e.g. yield/cancelled
-    Expects(false);
-    return cb::engine_errc::failed;
+    // for Success/Cancelled/Failed for now state success. The plan is the
+    // client will have been told already as the I/O task writes to their
+    // connection. The caller to this method though can see a difference between
+    // Yield and other status - Yield means the scan must not be cleaned up but
+    // all other states mean the scan is cleaned up and never ran again
+    return cb::engine_errc::success;
 }
 
 void RangeScan::setStateContinuing() {
@@ -130,18 +142,21 @@ void RangeScan::addStats(const StatCollector& collector) const {
     addStat("key_value",
             keyOnly == cb::rangescan::KeyOnly::Yes ? "Key" : "Value");
     addStat("state", fmt::format("{}", state.load()));
+    addStat("queued", fmt::format("{}", queued));
 }
 
 void RangeScan::dump(std::ostream& os) const {
     fmt::print(os,
-               "RangeScan: uuid:{}, {}, vbuuid:{}, range:({},{}), kv:{}, {}\n",
+               "RangeScan: uuid:{}, {}, vbuuid:{}, range:({},{}), kv:{}, {}, "
+               "queued:{}\n",
                uuid,
                vbid,
                vbUuid,
                cb::UserDataView(start.to_string()),
                cb::UserDataView(end.to_string()),
                (keyOnly == cb::rangescan::KeyOnly::Yes ? "key" : "value"),
-               state.load());
+               state.load(),
+               queued);
 }
 
 std::ostream& operator<<(std::ostream& os, const RangeScan::State& state) {
