@@ -1265,8 +1265,9 @@ cb::engine_errc EPVBucket::addNewRangeScan(std::shared_ptr<RangeScan> scan) {
     return rangeScans.addNewScan(std::move(scan));
 }
 
-cb::engine_errc EPVBucket::continueRangeScan(cb::rangescan::Id id) {
-    auto status = rangeScans.continueScan(id);
+cb::engine_errc EPVBucket::continueRangeScan(cb::rangescan::Id id,
+                                             size_t itemLimit) {
+    auto status = rangeScans.continueScan(id, itemLimit);
 
     if (status != cb::engine_errc::success) {
         return status;

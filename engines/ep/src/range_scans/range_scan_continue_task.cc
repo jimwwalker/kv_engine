@@ -61,5 +61,11 @@ void RangeScanContinueTask::continueScan(RangeScan& scan) {
         return;
     }
 
+    // This scan has been 'yielded' by a limit, set back to idle so it can be
+    // continued again.
+    // @todo: set this state before we could of told the client the status of
+    // the continue - otherwise they could fire another continue that errors
+    scan.setStateIdle();
+
     Expects(status == cb::engine_errc::too_busy);
 }
