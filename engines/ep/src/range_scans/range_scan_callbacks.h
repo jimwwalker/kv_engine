@@ -47,7 +47,7 @@ public:
  */
 class RangeScanCacheCallback : public StatusCallback<CacheLookup> {
 public:
-    RangeScanCacheCallback(const RangeScan& scan,
+    RangeScanCacheCallback(RangeScan& scan,
                            EPBucket& bucket,
                            RangeScanDataHandlerIFace& handler);
 
@@ -55,7 +55,7 @@ public:
 
 protected:
     GetValue get(VBucket& vb, CacheLookup& lookup);
-    const RangeScan& scan;
+    RangeScan& scan;
     EPBucket& bucket;
     RangeScanDataHandlerIFace& handler;
 };
@@ -66,12 +66,11 @@ protected:
  */
 class RangeScanDiskCallback : public StatusCallback<GetValue> {
 public:
-    RangeScanDiskCallback(const RangeScan& scan,
-                          RangeScanDataHandlerIFace& handler);
+    RangeScanDiskCallback(RangeScan& scan, RangeScanDataHandlerIFace& handler);
 
     void callback(GetValue& val) override;
 
 protected:
-    const RangeScan& scan;
+    RangeScan& scan;
     RangeScanDataHandlerIFace& handler;
 };

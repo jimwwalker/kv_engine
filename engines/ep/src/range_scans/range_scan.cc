@@ -82,9 +82,14 @@ cb::engine_errc RangeScan::continueScan(KVStoreIface& kvstore) {
     auto status = kvstore.scan(*scanCtx);
 
     switch (status) {
-    case ScanStatus::Yield:
+    case ScanStatus::Yield: {
         // Scan reached a limit and has yielded
+        // For RangeScan we have already consumed the last key, which is
+        // different to DCP scans where the last key is read and 'rejected', so
+        // must be read again. We adjust the startKey so we continue from next
+        scanCtx->ranges[0].startKey.append(0);
         return cb::engine_errc::too_busy;
+    }
     case ScanStatus::Success:
         // Scan has reached the end
     case ScanStatus::Cancelled:
@@ -101,7 +106,19 @@ cb::engine_errc RangeScan::continueScan(KVStoreIface& kvstore) {
     return cb::engine_errc::success;
 }
 
-void RangeScan::setStateContinuing() {
+void RangeScan::setStateIdle() {
+    switch (state) {
+    case State::Idle:
+    case State::Cancelled:
+        throw std::runtime_error(fmt::format(
+                "RangeScan::setStateIdle invalid state:", int(state.load())));
+    case State::Continuing:
+        state = State::Idle;
+        break;
+    }
+}
+
+void RangeScan::setStateContinuing(size_t limit) {
     switch (state) {
     case State::Continuing:
     case State::Cancelled:
@@ -110,6 +127,8 @@ void RangeScan::setStateContinuing() {
                             int(state.load())));
     case State::Idle:
         state = State::Continuing;
+        itemLimit = limit;
+        itemCount = 0;
         break;
     }
 }
@@ -125,6 +144,18 @@ void RangeScan::setStateCancelled() {
         state = State::Cancelled;
         break;
     }
+}
+
+void RangeScan::incrementItemCount() {
+    ++itemCount;
+    ++totalItems;
+}
+
+bool RangeScan::areLimitsExceeded() {
+    if (itemLimit) {
+        return itemCount >= itemLimit;
+    }
+    return false;
 }
 
 void RangeScan::addStats(const StatCollector& collector) const {
@@ -147,12 +178,15 @@ void RangeScan::addStats(const StatCollector& collector) const {
             keyOnly == cb::rangescan::KeyOnly::Yes ? "key" : "value");
     addStat("state", fmt::format("{}", state.load()));
     addStat("queued", queued);
+    addStat("item_limit", itemLimit);
+    addStat("item_count", itemCount);
+    addStat("total_items", totalItems);
 }
 
 void RangeScan::dump(std::ostream& os) const {
     fmt::print(os,
                "RangeScan: uuid:{}, {}, vbuuid:{}, range:({},{}), kv:{}, {}, "
-               "queued:{}\n",
+               "queued:{}, itemCount:{}, itemLimit:{}\n",
                uuid,
                vbid,
                vbUuid,
@@ -160,7 +194,9 @@ void RangeScan::dump(std::ostream& os) const {
                cb::UserDataView(end.to_string()),
                (keyOnly == cb::rangescan::KeyOnly::Yes ? "key" : "value"),
                state.load(),
-               queued);
+               queued,
+               itemCount,
+               itemLimit);
 }
 
 std::ostream& operator<<(std::ostream& os, const RangeScan::State& state) {

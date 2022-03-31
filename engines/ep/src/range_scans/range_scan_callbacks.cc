@@ -17,9 +17,7 @@
 #include "vbucket.h"
 
 RangeScanCacheCallback::RangeScanCacheCallback(
-        const RangeScan& scan,
-        EPBucket& bucket,
-        RangeScanDataHandlerIFace& handler)
+        RangeScan& scan, EPBucket& bucket, RangeScanDataHandlerIFace& handler)
     : scan(scan), bucket(bucket), handler(handler) {
 }
 
@@ -40,6 +38,9 @@ GetValue RangeScanCacheCallback::get(VBucket& vb, CacheLookup& lookup) {
 }
 
 void RangeScanCacheCallback::callback(CacheLookup& lookup) {
+    // Count the item even if the scan now fails/yields
+    scan.incrementItemCount();
+
     if (scan.isCancelled()) {
         setStatus(cb::engine_errc::failed);
         return;
@@ -62,7 +63,11 @@ void RangeScanCacheCallback::callback(CacheLookup& lookup) {
     // Key only scan ends here
     if (scan.isKeyOnly()) {
         handler.handleKey(lookup.getKey().getDocKey());
-        setStatus(cb::engine_errc::key_already_exists);
+        if (scan.areLimitsExceeded()) {
+            setStatus(cb::engine_errc::no_memory);
+        } else {
+            setStatus(cb::engine_errc::key_already_exists);
+        }
         return;
     }
 
@@ -70,7 +75,11 @@ void RangeScanCacheCallback::callback(CacheLookup& lookup) {
     if (gv.getStatus() == cb::engine_errc::success &&
         gv.item->getBySeqno() == lookup.getBySeqno()) {
         handler.handleItem(std::move(gv.item));
-        setStatus(cb::engine_errc::key_already_exists);
+        if (scan.areLimitsExceeded()) {
+            setStatus(cb::engine_errc::no_memory);
+        } else {
+            setStatus(cb::engine_errc::key_already_exists);
+        }
     } else if (gv.getStatus() == cb::engine_errc::unknown_collection) {
         setStatus(cb::engine_errc::unknown_collection);
     } else {
@@ -79,7 +88,7 @@ void RangeScanCacheCallback::callback(CacheLookup& lookup) {
     }
 }
 
-RangeScanDiskCallback::RangeScanDiskCallback(const RangeScan& scan,
+RangeScanDiskCallback::RangeScanDiskCallback(RangeScan& scan,
                                              RangeScanDataHandlerIFace& handler)
     : scan(scan), handler(handler) {
 }
@@ -91,5 +100,9 @@ void RangeScanDiskCallback::callback(GetValue& val) {
     }
 
     handler.handleItem(std::move(val.item));
-    setStatus(cb::engine_errc::success);
+    if (scan.areLimitsExceeded()) {
+        setStatus(cb::engine_errc::no_memory);
+    } else {
+        setStatus(cb::engine_errc::success);
+    }
 }
