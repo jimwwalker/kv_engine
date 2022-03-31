@@ -277,7 +277,7 @@ public:
                                     const CookieIface*,
                                     cb::rangescan::KeyOnly) override;
     cb::engine_errc continueRangeScan(cb::rangescan::Id) override;
-    cb::engine_errc cancelRangeScan(cb::rangescan::Id) override;
+    cb::engine_errc cancelRangeScan(cb::rangescan::Id, bool) override;
 
 protected:
     /* Data structure for in-memory sequential storage */

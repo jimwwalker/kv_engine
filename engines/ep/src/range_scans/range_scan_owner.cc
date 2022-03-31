@@ -21,6 +21,33 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <fmt/ostream.h>
 
+void ReadyRangeScans::addScan(std::shared_ptr<RangeScan> scan) {
+    auto locked = rangeScans.wlock();
+
+    // RangeScan should only be queued once. It is ok for the state to change
+    // whilst queued. This isn't overly critical, but prevents a
+    // continue->cancel placing the same shared_ptr in the queue twice resulting
+    // in two runs of the continue task
+    if (scan->isQueued()) {
+        return;
+    }
+    locked->push(scan);
+    scan->setQueued(true);
+}
+
+std::shared_ptr<RangeScan> ReadyRangeScans::takeNextScan() {
+    std::shared_ptr<RangeScan> scan;
+    auto locked = rangeScans.wlock();
+    if (locked->size()) {
+        scan = locked->front();
+        locked->pop();
+    }
+    return scan;
+}
+
+VB::RangeScanOwner::RangeScanOwner(ReadyRangeScans& scans) : readyScans(scans) {
+}
+
 cb::engine_errc VB::RangeScanOwner::addNewScan(
         std::shared_ptr<RangeScan> scan) {
     if (rangeScans.withWLock([&scan](auto& map) {
@@ -50,11 +77,14 @@ cb::engine_errc VB::RangeScanOwner::continueScan(cb::rangescan::Id id) {
     // set scan to 'continuing'
     itr->second->setStateContinuing();
 
-    // @todo ensure an I/O task picks up the scan and continues
+    // Make the scan available to I/O task(s)
+    readyScans.addScan(itr->second);
+
     return cb::engine_errc::success;
 }
 
-cb::engine_errc VB::RangeScanOwner::cancelScan(cb::rangescan::Id id) {
+cb::engine_errc VB::RangeScanOwner::cancelScan(cb::rangescan::Id id,
+                                               bool addScan) {
     auto locked = rangeScans.wlock();
     auto itr = locked->find(id);
     if (itr == locked->end()) {
@@ -64,11 +94,16 @@ cb::engine_errc VB::RangeScanOwner::cancelScan(cb::rangescan::Id id) {
     // Set to cancel
     itr->second->setStateCancelled();
 
-    // @todo: task should cancel (destruct) on I/O task as it will need to
-    // work with the kvstore to close the file(s) backing the scan.
+    auto scan = itr->second;
 
-    // Erase from the map, no further continue/cancel allowed
+    // Erase from the map, no further continue/cancel allowed and destruct will
+    // now occur on task
     locked->erase(itr);
+
+    if (addScan) {
+        // Make the scan available to I/O task(s) for final closure of data file
+        readyScans.addScan(scan);
+    }
 
     return cb::engine_errc::success;
 }

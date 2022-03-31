@@ -1665,10 +1665,12 @@ public:
      * Cancel the range scan with the given identifier. The cancel itself will
      * be scheduled to run on an I/O task
      * @param id The identifier of the scan to continue
+     * @param schedule true if a task should be scheduled for the cancellation
      * @return would_block if the scan was found and successfully scheduled for
      *         cancellation
      */
-    virtual cb::engine_errc cancelRangeScan(cb::rangescan::Id id) = 0;
+    virtual cb::engine_errc cancelRangeScan(cb::rangescan::Id id,
+                                            bool schedule) = 0;
 
     std::unique_ptr<FailoverTable> failovers;
 
