@@ -279,7 +279,7 @@ public:
         return cb::engine_errc::not_supported;
     }
 
-    cb::engine_errc continueRangeScan(RangeScanId) override {
+    cb::engine_errc continueRangeScan(RangeScanId, size_t) override {
         return cb::engine_errc::not_supported;
     }
 

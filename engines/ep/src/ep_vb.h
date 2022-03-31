@@ -273,7 +273,8 @@ public:
                                     RangeScanDataHandlerIFace& handler,
                                     const CookieIface* cookie,
                                     RangeScanKeyOnly keyOnly) override;
-    cb::engine_errc continueRangeScan(RangeScanId id) override;
+    cb::engine_errc continueRangeScan(RangeScanId id,
+                                      size_t itemLimit) override;
     cb::engine_errc cancelRangeScan(RangeScanId id, bool schedule) override;
 
     /**
