@@ -27,6 +27,7 @@
 #include "flusher.h"
 #include "item.h"
 #include "kvshard.h"
+#include "range_scans/range_scan_continue_task.h"
 #include "range_scans/range_scan_create_task.h"
 #include "stored_value_factories.h"
 #include "tasks.h"
@@ -91,7 +92,8 @@ EPVBucket::EPVBucket(Vbid i,
               mightContainXattrs,
               replicationTopology,
               maxVisibleSeqno),
-      shard(kvshard) {
+      shard(kvshard),
+      rangeScans(static_cast<EPBucket*>(bucket)->getReadyRangeScans()) {
 }
 
 EPVBucket::~EPVBucket() {
@@ -1263,8 +1265,29 @@ cb::engine_errc EPVBucket::addNewRangeScan(std::shared_ptr<RangeScan> scan) {
 }
 
 cb::engine_errc EPVBucket::continueRangeScan(RangeScanId id) {
-    return rangeScans.continueScan(id);
+    auto status = rangeScans.continueScan(id);
+
+    if (status != cb::engine_errc::success) {
+        return status;
+    }
+
+    // @todo: limit/reuse range scan continue tasks, they are likely to have a
+    // slow run loop and scheduling new tasks per 'continue/cancel' will just
+    // create a long line of waiting reader tasks. Secondly task should limit
+    // concurrency to avoid using up all threads
+    ExecutorPool::get()->schedule(std::make_shared<RangeScanContinueTask>(
+            dynamic_cast<EPBucket&>(*bucket)));
+    return cb::engine_errc::would_block;
 }
-cb::engine_errc EPVBucket::cancelRangeScan(RangeScanId id) {
-    return rangeScans.cancelScan(id);
+
+cb::engine_errc EPVBucket::cancelRangeScan(RangeScanId id, bool schedule) {
+    auto status = rangeScans.cancelScan(id, schedule);
+
+    if (status != cb::engine_errc::success || !schedule) {
+        return status;
+    }
+
+    ExecutorPool::get()->schedule(std::make_shared<RangeScanContinueTask>(
+            dynamic_cast<EPBucket&>(*bucket)));
+    return cb::engine_errc::would_block;
 }

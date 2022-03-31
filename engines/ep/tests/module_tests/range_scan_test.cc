@@ -86,8 +86,7 @@ public:
                                                      : RangeScanKeyOnly::No;
     }
 
-    std::pair<RangeScanId, std::shared_ptr<RangeScan>> createScan(
-            const DocKey& start, const DocKey& end);
+    RangeScanId createScan(const DocKey& start, const DocKey& end);
 
     const std::unordered_set<StoredDocKey> getUserKeys() {
         // Create a number of user prefixed collections and place them in the
@@ -179,8 +178,7 @@ void TestRangeScanHandler::validateItemScan(
     }
 }
 
-std::pair<RangeScanId, std::shared_ptr<RangeScan>> RangeScanTest::createScan(
-        const DocKey& start, const DocKey& end) {
+RangeScanId RangeScanTest::createScan(const DocKey& start, const DocKey& end) {
     auto vb = store->getVBucket(vbid);
     // Create a new RangeScan object and give it a handler we can inspect.
     EXPECT_EQ(cb::engine_errc::would_block,
@@ -199,7 +197,7 @@ std::pair<RangeScanId, std::shared_ptr<RangeScan>> RangeScanTest::createScan(
 
     auto scan = epVb.getRangeScan(status.second);
     EXPECT_TRUE(scan);
-    return {status.second, scan};
+    return status.second;
 }
 
 // This method drives a range scan through create/continue/cancel for the given
@@ -210,18 +208,17 @@ void RangeScanTest::testRangeScan(
         const DocKey& start,
         const DocKey& end) {
     // 1) create a RangeScan to scan the user prefixed keys.
-    auto [uuid, scan] = createScan(start, end);
+    auto uuid = createScan(start, end);
 
     auto vb = store->getVBucket(vbid);
 
     // 2) Continue a RangeScan
     // 2.1) Frontend thread would call this method using clients uuid
-    EXPECT_EQ(cb::engine_errc::success, vb->continueRangeScan(uuid));
-    EXPECT_TRUE(scan->isContinuing());
+    EXPECT_EQ(cb::engine_errc::would_block, vb->continueRangeScan(uuid));
 
-    // 2.2) An I/O task now calls continueScan which will read data from disk
-    EXPECT_EQ(cb::engine_errc::success,
-              scan->continueScan(*store->getRWUnderlying(vbid)));
+    // 2.2) An I/O task now reads data from disk
+    runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
+                "RangeScanContinueTask");
 
     // 2.3) All expected keys must have been read from disk (no limits yet)
     if (isKeyOnly()) {
@@ -230,24 +227,13 @@ void RangeScanTest::testRangeScan(
         handler->validateItemScan(expectedKeys);
     }
 
-    // 3) Cancel a RangeScan
-    // In this case the scan did technically finish, but no code yet exists to
-    // tidy up, i.e. a completed scan will remove itself from the vbucket.
-    // For now run cancel explicitly
-    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid));
-
-    // If the task were running, an I/O task would check for this state and stop
-    // scanning
-    EXPECT_TRUE(scan->isCancelled());
+    // In this case the scan finished and cleaned up
 
     // Check scan is gone, cannot be cancelled again
-    EXPECT_EQ(cb::engine_errc::no_such_key, vb->cancelRangeScan(uuid));
+    EXPECT_EQ(cb::engine_errc::no_such_key, vb->cancelRangeScan(uuid, true));
 
     // Or continued, uuid is unknown
     EXPECT_EQ(cb::engine_errc::no_such_key, vb->continueRangeScan(uuid));
-
-    // clean up (force kvstore close here)
-    scan.reset();
 }
 
 // Scan for the user prefixed keys
@@ -382,18 +368,18 @@ TEST_P(RangeScanTest, less_than_with_zero_suffix) {
 
 // Test that we reject continue whilst a scan is already being continued
 TEST_P(RangeScanTest, continue_must_be_serialised) {
-    auto [uuid, scan] =
-            createScan(makeStoredDocKey("a"), makeStoredDocKey("b"));
+    auto uuid = createScan(makeStoredDocKey("a"), makeStoredDocKey("b"));
     auto vb = store->getVBucket(vbid);
 
-    EXPECT_EQ(cb::engine_errc::success, vb->continueRangeScan(uuid));
-    EXPECT_TRUE(scan->isContinuing());
+    EXPECT_EQ(cb::engine_errc::would_block, vb->continueRangeScan(uuid));
+    auto& epVb = dynamic_cast<EPVBucket&>(*vb);
+    EXPECT_TRUE(epVb.getRangeScan(uuid)->isContinuing());
 
     // Cannot continue again
     EXPECT_EQ(cb::engine_errc::too_busy, vb->continueRangeScan(uuid));
 
     // But can cancel
-    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid));
+    EXPECT_EQ(cb::engine_errc::would_block, vb->cancelRangeScan(uuid, true));
 }
 
 auto scanConfigValues = ::testing::Combine(

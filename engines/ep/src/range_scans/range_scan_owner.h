@@ -20,9 +20,31 @@
 #include <memcached/engine_error.h>
 #include <memcached/vbucket.h>
 
+#include <queue>
 #include <unordered_map>
 
 class KVStoreIface;
+
+/**
+ * ReadyRangeScans keeps a reference (shared_ptr) to all scans that are ready
+ * for execution on a I/O task. These are scans that the client has continued or
+ * cancelled.
+ */
+class ReadyRangeScans {
+public:
+    /**
+     * Take the next available scan out of the 'ready' scans container
+     */
+    std::shared_ptr<RangeScan> takeNextScan();
+
+    /**
+     * Add scan to the 'ready' scans container
+     */
+    void addScan(std::shared_ptr<RangeScan> scan);
+
+protected:
+    folly::Synchronized<std::queue<std::shared_ptr<RangeScan>>> rangeScans;
+};
 
 namespace VB {
 
@@ -37,6 +59,8 @@ namespace VB {
  */
 class RangeScanOwner {
 public:
+    RangeScanOwner(ReadyRangeScans& scans);
+
     /**
      * Add a new scan to the set of available scans.
      *
@@ -63,9 +87,10 @@ public:
      *
      * Failure to locate the scan -> cb::engine_errc::no_such_key
      * @param id of the scan to cancel
+     * @param addScan should the cancelled scan be added to ::RangeScans
      * @return success or other status (see above)
      */
-    cb::engine_errc cancelScan(RangeScanId id);
+    cb::engine_errc cancelScan(RangeScanId id, bool addScan);
 
     /**
      * Find the scan for the given id
@@ -73,6 +98,8 @@ public:
     std::shared_ptr<RangeScan> getScan(RangeScanId id) const;
 
 protected:
+    ReadyRangeScans& readyScans;
+
     /**
      * All scans that are available for continue/cancel
      */

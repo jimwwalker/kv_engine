@@ -283,7 +283,7 @@ public:
         return cb::engine_errc::not_supported;
     }
 
-    cb::engine_errc cancelRangeScan(RangeScanId) override {
+    cb::engine_errc cancelRangeScan(RangeScanId, bool) override {
         return cb::engine_errc::not_supported;
     }
 

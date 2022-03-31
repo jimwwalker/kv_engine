@@ -274,7 +274,7 @@ public:
                                     const CookieIface* cookie,
                                     RangeScanKeyOnly keyOnly) override;
     cb::engine_errc continueRangeScan(RangeScanId id) override;
-    cb::engine_errc cancelRangeScan(RangeScanId id) override;
+    cb::engine_errc cancelRangeScan(RangeScanId id, bool schedule) override;
 
     /**
      * Function to be called after a RangeScanCreateTask notifies success.
