@@ -1659,9 +1659,12 @@ public:
      * Continue the range scan with the given identifier. The scan itself will
      * be scheduled to run on an I/O task
      * @param id The identifier of the scan to continue
+     * @param itemLimit The maximum number of items the continue can return
+     *                  0 means no limit enforced
      * @return would_block if the scan was found and successfully scheduled
      */
-    virtual cb::engine_errc continueRangeScan(cb::rangescan::Id id) = 0;
+    virtual cb::engine_errc continueRangeScan(cb::rangescan::Id id,
+                                              size_t itemLimit) = 0;
 
     /**
      * Cancel the range scan with the given identifier. The cancel itself will

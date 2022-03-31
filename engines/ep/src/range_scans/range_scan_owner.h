@@ -79,7 +79,7 @@ public:
      * @param id of the scan to continue
      * @return success or other status (see above)
      */
-    cb::engine_errc continueScan(cb::rangescan::Id id);
+    cb::engine_errc continueScan(cb::rangescan::Id id, size_t itemLimit);
 
     /**
      * Handler for a range-scan-cancel operation. Method will locate the

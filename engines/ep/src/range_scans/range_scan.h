@@ -93,8 +93,15 @@ public:
         return state.load() == State::Cancelled;
     }
 
-    /// change the state of the scan to Continuing
-    void setStateContinuing();
+    /// change the state of the scan to Idle
+    void setStateIdle();
+
+    /**
+     * Change the state of the scan to Continuing and set the limit for the
+     * scan. A value of 0 means no limit
+     * @param itemLimit how many items the scan can return
+     */
+    void setStateContinuing(size_t itemLimit);
 
     /// change the state of the scan to Cancelled
     void setStateCancelled();
@@ -122,6 +129,12 @@ public:
     void setQueued(bool q) {
         queued = q;
     }
+
+    /// Increment the scan's itemCount for an item read by the scan
+    void incrementItemCount();
+
+    /// @return true if limits have been reached
+    bool areLimitsExceeded();
 
     /// Generate stats for this scan
     void addStats(const StatCollector& collector) const;
@@ -153,6 +166,13 @@ protected:
     std::unique_ptr<ByIdScanContext> scanCtx;
     RangeScanDataHandlerIFace& handler;
     const CookieIface* cookie;
+
+    /// current limit for the continuation of this scan
+    size_t itemLimit{0};
+    /// current item count for the continuation of this scan
+    size_t itemCount{0};
+    /// item count for the life of this scan
+    size_t totalItems{0};
     Vbid vbid;
 
     /**

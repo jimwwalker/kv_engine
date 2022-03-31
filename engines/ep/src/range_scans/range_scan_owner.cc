@@ -41,6 +41,7 @@ std::shared_ptr<RangeScan> ReadyRangeScans::takeNextScan() {
     if (locked->size()) {
         scan = locked->front();
         locked->pop();
+        scan->setQueued(false);
     }
     return scan;
 }
@@ -62,7 +63,8 @@ cb::engine_errc VB::RangeScanOwner::addNewScan(
     return cb::engine_errc::key_already_exists;
 }
 
-cb::engine_errc VB::RangeScanOwner::continueScan(cb::rangescan::Id id) {
+cb::engine_errc VB::RangeScanOwner::continueScan(cb::rangescan::Id id,
+                                                 size_t itemLimit) {
     auto locked = rangeScans.wlock();
     auto itr = locked->find(id);
     if (itr == locked->end()) {
@@ -75,7 +77,7 @@ cb::engine_errc VB::RangeScanOwner::continueScan(cb::rangescan::Id id) {
     }
 
     // set scan to 'continuing'
-    itr->second->setStateContinuing();
+    itr->second->setStateContinuing(itemLimit);
 
     // Make the scan available to I/O task(s)
     readyScans.addScan(itr->second);
