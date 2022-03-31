@@ -69,7 +69,7 @@ public:
      * Continue the range scan by calling kvstore.scan()
      *
      * @param kvstore A KVStoreIface on which to call scan
-     * @return success or failed
+     * @return success or too_busy
      */
     cb::engine_errc continueScan(KVStoreIface& kvstore);
 
@@ -107,6 +107,15 @@ public:
     /// @return true if the scan is configured for keys only
     bool isKeyOnly() const {
         return keyOnly == cb::rangescan::KeyOnly::Yes;
+    }
+
+    /// method for use by RangeScans to ensure we only queue a scan once
+    bool isQueued() const {
+        return queued;
+    }
+    /// method for use by RangeScans to ensure we only queue a scan once
+    void setQueued(bool q) {
+        queued = q;
     }
 
     /// Generate stats for this scan
@@ -154,6 +163,9 @@ protected:
     enum class State : char { Idle, Continuing, Cancelled };
     std::atomic<State> state;
     cb::rangescan::KeyOnly keyOnly{cb::rangescan::KeyOnly::No};
+    /// is this scan in the run queue? This bool is read/written only by
+    /// RangeScans under the queue lock
+    bool queued{false};
 
     friend std::ostream& operator<<(std::ostream&, const RangeScan::State&);
     friend std::ostream& operator<<(std::ostream&, const RangeScan&);
