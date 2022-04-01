@@ -23,6 +23,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <random>
 
 class ByIdScanContext;
 class CookieIface;
@@ -33,6 +34,7 @@ class StatCollector;
 class VBucket;
 
 namespace cb::rangescan {
+struct SamplingConfiguration;
 struct SnapshotRequirements;
 }
 
@@ -56,15 +58,18 @@ public:
      * @param cookie connection cookie creating the RangeScan
      * @param keyOnly configure key or value scan
      * @param snapshotReqs optional requirements for the snapshot
+     * @param samplingConfig optional configuration for random sampling mode
      */
-    RangeScan(EPBucket& bucket,
-              const VBucket& vbucket,
-              const DocKey& start,
-              const DocKey& end,
-              RangeScanDataHandlerIFace& handler,
-              const CookieIface* cookie,
-              cb::rangescan::KeyOnly keyOnly,
-              std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs);
+    RangeScan(
+            EPBucket& bucket,
+            const VBucket& vbucket,
+            const DocKey& start,
+            const DocKey& end,
+            RangeScanDataHandlerIFace& handler,
+            const CookieIface* cookie,
+            cb::rangescan::KeyOnly keyOnly,
+            std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+            std::optional<cb::rangescan::SamplingConfiguration> samplingConfig);
 
     /**
      * Continue the range scan by calling kvstore.scan()
@@ -139,6 +144,9 @@ public:
     /// @return true if limits have been reached
     bool areLimitsExceeded();
 
+    /// @return true if the current item should be skipped
+    bool skipItem();
+
     /// Generate stats for this scan
     void addStats(const StatCollector& collector) const;
 
@@ -165,11 +173,16 @@ protected:
      * @param bucket The EPBucket to use to obtain the KVStore and pass to the
      *               RangeScanCacheCallback
      * @param snapshotReqs optional requirements for the snapshot
+     * @param samplingConfig optional configuration for random sampling mode
      * @return the Id to use for this scan
      */
     cb::rangescan::Id createScan(
             EPBucket& bucket,
-            std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs);
+            std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+            std::optional<cb::rangescan::SamplingConfiguration> samplingConfig);
+
+    /// @return true if this scan is a random sample scan
+    bool isSampling() const;
 
     // member variables ordered by size large -> small
     cb::rangescan::Id uuid;
@@ -188,6 +201,25 @@ protected:
     /// item count for the life of this scan
     size_t totalItems{0};
     /// current time limit for the continuation of this scan
+
+    /**
+     * Following 4 member variables are used only when a
+     * cb::rangescan::SamplingConfiguration is provided to the constructor.
+     * The distribution is initialised only if the requested sample can be
+     * returned. A random sample divides up the collection itemCount into
+     * n chunks, n = itemCount/sampleSize.
+     * The RangeScan then tracks how far into a chunk the scan is (chunkIndex)
+     * and only includes a key/item when it matches the sampleIndex
+     * The prng is allocated on demand as it's quite large (~2500bytes) and only
+     * needed by sampling scans.
+     */
+    std::unique_ptr<std::mt19937> prng;
+    std::uniform_int_distribution<size_t> distribution{0, 0};
+    /// current count within the current chunk (when sampling)
+    size_t chunkCount{0};
+    /// the position for the item that will be included from the current chunk
+    /// this is not zero indexed (when sampling)
+    size_t sampleIndex{0};
     std::chrono::milliseconds timeLimit{0};
     std::chrono::steady_clock::time_point scanContinueDeadline;
     Vbid vbid;

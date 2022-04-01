@@ -30,6 +30,7 @@ RangeScanCreateTask::RangeScanCreateTask(
         const CookieIface* cookie,
         cb::rangescan::KeyOnly keyOnly,
         std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig,
         std::unique_ptr<RangeScanCreateData> scanData)
     : GlobalTask(&bucket.getEPEngine(), TaskId::RangeScanCreateTask, 0, false),
       bucket(bucket),
@@ -40,6 +41,7 @@ RangeScanCreateTask::RangeScanCreateTask(
       cookie(cookie),
       keyOnly(keyOnly),
       snapshotReqs(snapshotReqs),
+      samplingConfig(samplingConfig),
       scanData(std::move(scanData)) {
 }
 
@@ -74,8 +76,15 @@ std::pair<cb::engine_errc, cb::rangescan::Id> RangeScanCreateTask::create()
     }
     // RangeScan constructor will throw if the snapshot cannot be opened or is
     // not usable for the scan
-    auto scan = std::make_shared<RangeScan>(
-            bucket, *vb, start, end, handler, cookie, keyOnly, snapshotReqs);
+    auto scan = std::make_shared<RangeScan>(bucket,
+                                            *vb,
+                                            start,
+                                            end,
+                                            handler,
+                                            cookie,
+                                            keyOnly,
+                                            snapshotReqs,
+                                            samplingConfig);
     auto& epVb = dynamic_cast<EPVBucket&>(*vb);
     return {epVb.addNewRangeScan(scan), scan->getUuid()};
 }

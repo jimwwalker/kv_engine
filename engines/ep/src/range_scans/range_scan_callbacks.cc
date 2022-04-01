@@ -60,6 +60,11 @@ void RangeScanCacheCallback::callback(CacheLookup& lookup) {
         return;
     }
 
+    if (scan.skipItem()) {
+        setStatus(cb::engine_errc::key_already_exists);
+        return;
+    }
+
     // Key only scan ends here
     if (scan.isKeyOnly()) {
         handler.handleKey(lookup.getKey().getDocKey());

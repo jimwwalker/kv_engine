@@ -12,6 +12,7 @@
 #include "range_scans/range_scan.h"
 
 #include "bucket_logger.h"
+#include "collections/collection_persisted_stats.h"
 #include "ep_bucket.h"
 #include "failover-table.h"
 #include "kvstore/kvstore.h"
@@ -34,25 +35,29 @@ RangeScan::RangeScan(
         RangeScanDataHandlerIFace& handler,
         const CookieIface* cookie,
         cb::rangescan::KeyOnly keyOnly,
-        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs)
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig)
     : start(start),
       end(end),
       vbUuid(vbucket.failovers->getLatestUUID()),
       handler(handler),
       cookie(cookie),
+      prng(samplingConfig ? std::make_unique<std::mt19937>(samplingConfig->seed)
+                          : nullptr),
       vbid(vbucket.getId()),
       state(State::Idle),
       keyOnly(keyOnly) {
     // Don't init the uuid in the initialisation list as we may read various
     // members which must be initialised first
-    uuid = createScan(bucket, snapshotReqs);
+    uuid = createScan(bucket, snapshotReqs, samplingConfig);
 
     EP_LOG_INFO("RangeScan {} created for {}", uuid, getVBucketId());
 }
 
 cb::rangescan::Id RangeScan::createScan(
         EPBucket& bucket,
-        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs) {
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig) {
     auto valFilter =
             cookie->isDatatypeSupported(PROTOCOL_BINARY_DATATYPE_SNAPPY)
                     ? ValueFilter::VALUES_COMPRESSED
@@ -99,6 +104,38 @@ cb::rangescan::Id RangeScan::createScan(
                                     getVBucketId(),
                                     snapshotReqs->seqno));
             }
+        }
+    }
+
+    if (samplingConfig) {
+        const auto& handle = *scanCtx->handle.get();
+        auto stats =
+                bucket.getRWUnderlying(getVBucketId())
+                        ->getCollectionStats(handle, start.getCollectionID());
+        if (stats.first == KVStore::GetCollectionStatsStatus::Success) {
+            if (stats.second.itemCount < samplingConfig->samples) {
+                throw std::runtime_error(
+                        fmt::format("RangeScan::createScan {} sampling cannot "
+                                    "be met items:{} samples:{}",
+                                    getVBucketId(),
+                                    stats.second.itemCount,
+                                    samplingConfig->samples));
+            }
+
+            // Now we can compute the distribution and assign the first sample
+            // index
+            const size_t distB =
+                    stats.second.itemCount / samplingConfig->samples;
+            // distribute between 1 and b
+            distribution.param(
+                    std::uniform_int_distribution<size_t>::param_type{1,
+                                                                      distB});
+            sampleIndex = distribution(*prng);
+        } else {
+            throw std::runtime_error(fmt::format(
+                    "RangeScan::createScan {} no stats for sampling",
+                    getVBucketId(),
+                    snapshotReqs->seqno));
         }
     }
 
@@ -180,6 +217,12 @@ void RangeScan::setStateCancelled() {
 void RangeScan::incrementItemCount() {
     ++itemCount;
     ++totalItems;
+    ++chunkCount;
+    if (isSampling() && chunkCount > distribution.b()) {
+        // count this item (so 1) and generate the random sampleIndex
+        chunkCount = 1;
+        sampleIndex = distribution(*prng);
+    }
 }
 
 bool RangeScan::areLimitsExceeded() {
@@ -189,6 +232,14 @@ bool RangeScan::areLimitsExceeded() {
         return now() > scanContinueDeadline;
     }
     return false;
+}
+
+bool RangeScan::skipItem() {
+    return isSampling() && chunkCount != sampleIndex;
+}
+
+bool RangeScan::isSampling() const {
+    return prng != nullptr;
 }
 
 std::function<std::chrono::steady_clock::time_point()> RangeScan::now = []() {
@@ -219,13 +270,19 @@ void RangeScan::addStats(const StatCollector& collector) const {
     addStat("item_count", itemCount);
     addStat("total_items", totalItems);
     addStat("time_limit", timeLimit.count());
+    if (isSampling()) {
+        addStat("dist_a", distribution.a());
+        addStat("dist_b", distribution.b());
+        addStat("chunk_count", chunkCount);
+        addStat("sample_index", sampleIndex);
+    }
 }
 
 void RangeScan::dump(std::ostream& os) const {
     fmt::print(os,
                "RangeScan: uuid:{}, {}, vbuuid:{}, range:({},{}), kv:{}, {}, "
                "queued:{}, itemCount:{}, itemLimit:{}, timeLimit:{}, "
-               "deadline:{}\n",
+               "deadline:{}",
                uuid,
                vbid,
                vbUuid,
@@ -238,6 +295,16 @@ void RangeScan::dump(std::ostream& os) const {
                itemLimit,
                timeLimit.count(),
                scanContinueDeadline.time_since_epoch());
+
+    if (isSampling()) {
+        fmt::print(os,
+                   " distribution({},{}), chunkCount:{}, sampleIndex:{}",
+                   distribution.a(),
+                   distribution.b(),
+                   chunkCount,
+                   sampleIndex);
+    }
+    fmt::print(os, "\n");
 }
 
 std::ostream& operator<<(std::ostream& os, const RangeScan::State& state) {
