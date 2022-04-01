@@ -1114,7 +1114,9 @@ cb::engine_errc EphemeralVBucket::createRangeScan(CollectionID,
     return cb::engine_errc::not_supported;
 }
 
-cb::engine_errc EphemeralVBucket::continueRangeScan(cb::rangescan::Id, size_t) {
+cb::engine_errc EphemeralVBucket::continueRangeScan(cb::rangescan::Id,
+                                                    size_t,
+                                                    std::chrono::milliseconds) {
     return cb::engine_errc::not_supported;
 }
 

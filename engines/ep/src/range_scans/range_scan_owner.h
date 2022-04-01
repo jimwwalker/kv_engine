@@ -77,9 +77,13 @@ public:
      * Scan already continued -> cb::engine_errc::too_busy
      *
      * @param id of the scan to continue
+     * @param timeLimit an optional limit for how long the scan can run for, 0
+     *        for no limit.
      * @return success or other status (see above)
      */
-    cb::engine_errc continueScan(cb::rangescan::Id id, size_t itemLimit);
+    cb::engine_errc continueScan(cb::rangescan::Id id,
+                                 size_t itemLimit,
+                                 std::chrono::milliseconds timeLimit);
 
     /**
      * Handler for a range-scan-cancel operation. Method will locate the
