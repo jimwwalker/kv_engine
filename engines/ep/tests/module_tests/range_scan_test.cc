@@ -9,6 +9,7 @@
  *   the file licenses/APL2.txt.
  */
 
+#include "collections/collection_persisted_stats.h"
 #include "ep_bucket.h"
 #include "ep_vb.h"
 #include "failover-table.h"
@@ -97,6 +98,8 @@ public:
             cb::rangescan::KeyView start,
             cb::rangescan::KeyView end,
             std::optional<cb::rangescan::SnapshotRequirements> seqno =
+                    std::nullopt,
+            std::optional<cb::rangescan::SamplingConfiguration> samplingConfig =
                     std::nullopt,
             cb::engine_errc expectedStatus = cb::engine_errc::success);
 
@@ -200,6 +203,7 @@ cb::rangescan::Id RangeScanTest::createScan(
         cb::rangescan::KeyView start,
         cb::rangescan::KeyView end,
         std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig,
         cb::engine_errc expectedStatus) {
     auto vb = store->getVBucket(vbid);
     // Create a new RangeScan object and give it a handler we can inspect.
@@ -210,7 +214,8 @@ cb::rangescan::Id RangeScanTest::createScan(
                                   *handler,
                                   *cookie,
                                   getScanType(),
-                                  snapshotReqs));
+                                  snapshotReqs,
+                                  samplingConfig));
 
     // Now run via auxio task
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
@@ -548,6 +553,7 @@ TEST_P(RangeScanTest, snapshot_does_not_contain_seqno_0) {
                {"user"},
                {"user\xFF"},
                reqs,
+               {/* no sampling config*/},
                cb::engine_errc::no_such_key);
 }
 
@@ -563,6 +569,7 @@ TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
                {"user"},
                {"user\xFF"},
                reqs,
+               {/* no sampling config*/},
                cb::engine_errc::no_such_key);
 }
 
@@ -575,6 +582,7 @@ TEST_P(RangeScanTest, snapshot_contains_seqno) {
                            {"user"},
                            {"user\xFF"},
                            reqs,
+                           {/* no sampling config*/},
                            cb::engine_errc::success);
     EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, false));
 }
@@ -593,7 +601,7 @@ TEST_P(RangeScanTest, future_seqno_fails) {
                                   *handler,
                                   *cookie,
                                   getScanType(),
-                                  reqs));
+                                  reqs{/* no sampling config*/}));
 }
 
 TEST_P(RangeScanTest, vb_uuid_check) {
@@ -608,7 +616,48 @@ TEST_P(RangeScanTest, vb_uuid_check) {
                                   *handler,
                                   *cookie,
                                   getScanType(),
-                                  reqs));
+                                  reqs,
+                                  {/* no sampling config*/}));
+}
+
+TEST_P(RangeScanTest, random_sample_not_enough_items) {
+    auto stats = getCollectionStats(vbid, {scanCollection});
+    // Request more samples than keys, which is not allowed
+    auto sampleSize = stats[scanCollection].itemCount + 1;
+    createScan(scanCollection,
+               {"\0", 1},
+               {"\xFF"},
+               {/* no snapshot requirements */},
+               cb::rangescan::SamplingConfiguration{sampleSize, 0},
+               cb::engine_errc::out_of_range);
+}
+
+TEST_P(RangeScanTest, random_sample) {
+    auto stats = getCollectionStats(vbid, {scanCollection});
+    // We'll sample 1/2 of the keys from the collection
+    auto sampleSize = stats[scanCollection].itemCount / 2;
+
+    // key ranges covers all keys in scanCollection, kv_engine will do this
+    // not the client
+    auto uuid = createScan(scanCollection,
+                           {"\0", 1},
+                           {"\xFF"},
+                           {/* no snapshot requirements */},
+                           cb::rangescan::SamplingConfiguration{sampleSize, 0});
+
+    auto vb = store->getVBucket(vbid);
+
+    EXPECT_EQ(cb::engine_errc::would_block,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
+
+    runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
+                "RangeScanContinueTask");
+
+    if (isKeyOnly()) {
+        EXPECT_EQ(sampleSize, handler->scannedKeys.size());
+    } else {
+        EXPECT_EQ(sampleSize, handler->scannedItems.size());
+    }
 }
 
 auto scanConfigValues = ::testing::Combine(
