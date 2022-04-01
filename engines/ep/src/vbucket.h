@@ -1644,6 +1644,7 @@ public:
      * @param cookie connection cookie to notify when done
      * @param keyOnly key/value configuration of the scan
      * @param snapshotReqs optional requirements that the snapshot must satisfy
+     * @param samplingConfig the parameters for the optional random sampling
      *
      * @return would_block if the scan was found and successfully scheduled
      */
@@ -1653,7 +1654,8 @@ public:
             RangeScanDataHandlerIFace& handler,
             const CookieIface* cookie,
             RangeScanKeyOnly keyOnly,
-            std::optional<RangeScanSnapshotRequirements> snapshotReqs) = 0;
+            std::optional<RangeScanSnapshotRequirements> snapshotReqs,
+            std::optional<RangeScanSamplingConfiguration> samplingConfig) = 0;
 
     /**
      * Continue the range scan with the given identifier. The scan itself will

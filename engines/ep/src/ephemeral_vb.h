@@ -277,7 +277,8 @@ public:
             RangeScanDataHandlerIFace&,
             const CookieIface*,
             RangeScanKeyOnly,
-            std::optional<RangeScanSnapshotRequirements>) override {
+            std::optional<RangeScanSnapshotRequirements>,
+            std::optional<RangeScanSamplingConfiguration>) override {
         return cb::engine_errc::not_supported;
     }
 

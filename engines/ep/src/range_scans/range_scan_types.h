@@ -30,3 +30,8 @@ struct RangeScanSnapshotRequirements {
     // true: The seqno must still exist in snapshot
     bool seqnoMustBeInSnapshot{false};
 };
+
+struct RangeScanSamplingConfiguration {
+    size_t seed{0};
+    size_t samples{0};
+};
