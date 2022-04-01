@@ -9,6 +9,7 @@
  *   the file licenses/APL2.txt.
  */
 
+#include "collections/collection_persisted_stats.h"
 #include "ep_bucket.h"
 #include "ep_vb.h"
 #include "failover-table.h"
@@ -97,6 +98,8 @@ public:
             std::string_view start,
             std::string_view end,
             std::optional<cb::rangescan::SnapshotRequirements> seqno =
+                    std::nullopt,
+            std::optional<cb::rangescan::SamplingConfiguration> samplingConfig =
                     std::nullopt,
             cb::engine_errc expectedStatus = cb::engine_errc::success);
 
@@ -201,6 +204,7 @@ cb::rangescan::Id RangeScanTest::createScan(
         std::string_view start,
         std::string_view end,
         std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig,
         cb::engine_errc expectedStatus) {
     auto vb = store->getVBucket(vbid);
     // Create a new RangeScan object and give it a handler we can inspect.
@@ -211,7 +215,8 @@ cb::rangescan::Id RangeScanTest::createScan(
                                   *handler,
                                   cookie,
                                   getScanType(),
-                                  snapshotReqs));
+                                  snapshotReqs,
+                                  samplingConfig));
 
     // Now run via auxio task
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
@@ -546,6 +551,7 @@ TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
     createScan(makeStoredDocKey("user", scanCollection),
                makeStoredDocKey("user\xFF", scanCollection),
                reqs,
+               {/* no sampling config*/},
                cb::engine_errc::failed);
 
     // Nothing @ high seqno + 1
@@ -553,6 +559,7 @@ TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
     createScan(makeStoredDocKey("user", scanCollection),
                makeStoredDocKey("user\xFF", scanCollection),
                reqs,
+               {/* no sampling config*/},
                cb::engine_errc::failed);
 }
 
@@ -564,8 +571,35 @@ TEST_P(RangeScanTest, snapshot_contains_seqno) {
     auto uuid = createScan(makeStoredDocKey("user", scanCollection),
                            makeStoredDocKey("user\xFF", scanCollection),
                            reqs,
+                           {/* no sampling config*/},
                            cb::engine_errc::success);
     EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, false));
+}
+
+TEST_P(RangeScanTest, random_sample) {
+    auto stats = getCollectionStats(vbid, {scanCollection});
+    // We'll sample 1/2 of the keys from the collection
+    auto sampleSize = stats[scanCollection].itemCount / 2;
+
+    // key ranges covers all keys in scanCollection
+    auto uuid = createScan(makeStoredDocKey("\0", scanCollection),
+                           makeStoredDocKey("\xff", scanCollection),
+                           {/* no snapshot requirements */},
+                           cb::rangescan::SamplingConfiguration{sampleSize, 0});
+
+    auto vb = store->getVBucket(vbid);
+
+    EXPECT_EQ(cb::engine_errc::would_block,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
+
+    runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
+                "RangeScanContinueTask");
+
+    if (isKeyOnly()) {
+        EXPECT_EQ(sampleSize, handler->scannedKeys.size());
+    } else {
+        EXPECT_EQ(sampleSize, handler->scannedItems.size());
+    }
 }
 
 auto scanConfigValues = ::testing::Combine(

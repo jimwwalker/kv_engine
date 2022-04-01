@@ -24,4 +24,10 @@ struct SnapshotRequirements {
     bool seqnoMustBeInSnapshot{false};
 };
 
+// Optional configuration for a sampling scan
+struct SamplingConfiguration {
+    size_t samples{0};
+    uint32_t seed{0};
+};
+
 } // namespace cb::rangescan

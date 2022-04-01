@@ -1229,7 +1229,8 @@ cb::engine_errc EPVBucket::createRangeScan(
         RangeScanDataHandlerIFace& handler,
         const CookieIface* cookie,
         cb::rangescan::KeyOnly keyOnly,
-        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs) {
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig) {
     if (snapshotReqs && failovers->getLatestUUID() != snapshotReqs->vbUuid) {
         return cb::engine_errc::not_my_vbucket;
     }
@@ -1252,6 +1253,7 @@ cb::engine_errc EPVBucket::createRangeScan(
             cookie,
             keyOnly,
             snapshotReqs,
+            samplingConfig,
             std::move(rangeScanCreateData)));
     return cb::engine_errc::would_block;
 }

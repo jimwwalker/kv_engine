@@ -41,6 +41,7 @@ public:
             const CookieIface* cookie,
             cb::rangescan::KeyOnly keyOnly,
             std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+            std::optional<cb::rangescan::SamplingConfiguration> samplingConfig,
             std::unique_ptr<RangeScanCreateData> scanData);
 
     bool run() override;
@@ -65,5 +66,6 @@ protected:
     const CookieIface* cookie;
     cb::rangescan::KeyOnly keyOnly;
     std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs;
+    std::optional<cb::rangescan::SamplingConfiguration> samplingConfig;
     std::unique_ptr<RangeScanCreateData> scanData;
 };
