@@ -20,6 +20,7 @@
 
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <fmt/chrono.h>
 #include <memcached/cookie_iface.h>
 #include <statistics/cbstat_collector.h>
 #include <utilities/logtags.h>
@@ -75,6 +76,7 @@ RangeScanId RangeScan::createScan(EPBucket& bucket) {
 }
 
 cb::engine_errc RangeScan::continueScan(KVStoreIface& kvstore) {
+    scanContinueDeadline = now() + timeLimit;
     auto status = kvstore.scan(*scanCtx);
 
     switch (status) {
@@ -114,7 +116,8 @@ void RangeScan::setStateIdle() {
     }
 }
 
-void RangeScan::setStateContinuing(size_t limit) {
+void RangeScan::setStateContinuing(size_t limit,
+                                   std::chrono::milliseconds timeLimit) {
     switch (state) {
     case State::Continuing:
     case State::Cancelled:
@@ -125,6 +128,7 @@ void RangeScan::setStateContinuing(size_t limit) {
         state = State::Continuing;
         itemLimit = limit;
         itemCount = 0;
+        this->timeLimit = timeLimit;
         break;
     }
 }
@@ -150,9 +154,15 @@ void RangeScan::incrementItemCount() {
 bool RangeScan::areLimitsExceeded() {
     if (itemLimit) {
         return itemCount >= itemLimit;
+    } else if (timeLimit.count()) {
+        return now() > scanContinueDeadline;
     }
     return false;
 }
+
+std::function<std::chrono::steady_clock::time_point()> RangeScan::now = []() {
+    return std::chrono::steady_clock::now();
+};
 
 void RangeScan::addStats(const StatCollector& collector) const {
     fmt::memory_buffer prefix;
@@ -175,13 +185,15 @@ void RangeScan::addStats(const StatCollector& collector) const {
     addStat("item_limit", itemLimit);
     addStat("item_count", itemCount);
     addStat("total_items", totalItems);
+    addStat("time_limit", timeLimit.count());
     addStat("queued", queued);
 }
 
 void RangeScan::dump(std::ostream& os) const {
     fmt::print(os,
                "RangeScan: uuid:{}, {}, vbuuid:{}, range:({},{}), kv:{}, {}, "
-               "itemCount:{}, itemLimit:{}, queued:{}\n",
+               "itemCount:{}, itemLimit:{}, timeLimit:{}, deadline:{}, "
+               "queued:{}\n",
                uuid,
                vbid,
                vbUuid,
@@ -191,6 +203,8 @@ void RangeScan::dump(std::ostream& os) const {
                state.load(),
                itemCount,
                itemLimit,
+               timeLimit.count(),
+               scanContinueDeadline.time_since_epoch(),
                queued);
 }
 

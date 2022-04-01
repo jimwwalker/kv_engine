@@ -141,11 +141,13 @@ public:
     }
 
     // Run a scan using the relatively low level pieces
-    void testRangeScan(const std::unordered_set<StoredDocKey>& expectedKeys,
-                       const DocKey& start,
-                       const DocKey& end,
-                       size_t itemLimit = 0,
-                       size_t extraContinues = 0);
+    void testRangeScan(
+            const std::unordered_set<StoredDocKey>& expectedKeys,
+            const DocKey& start,
+            const DocKey& end,
+            size_t itemLimit = 0,
+            std::chrono::milliseconds timeLimit = std::chrono::milliseconds(0),
+            size_t extraContinues = 0);
 
     void testLessThan(std::string key);
 
@@ -213,7 +215,11 @@ void RangeScanTest::testRangeScan(
         const DocKey& start,
         const DocKey& end,
         size_t itemLimit,
+        std::chrono::milliseconds timeLimit,
         size_t extraContinues) {
+    // Not smart enough to test both limits yet
+    EXPECT_TRUE(!(itemLimit && timeLimit.count()));
+
     // 1) create a RangeScan to scan the user prefixed keys.
     auto uuid = createScan(start, end);
 
@@ -222,7 +228,7 @@ void RangeScanTest::testRangeScan(
     // 2) Continue a RangeScan
     // 2.1) Frontend thread would call this method using clients uuid
     EXPECT_EQ(cb::engine_errc::would_block,
-              vb->continueRangeScan(uuid, itemLimit));
+              vb->continueRangeScan(uuid, itemLimit, timeLimit));
 
     // 2.2) An I/O task now reads data from disk
     runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
@@ -231,7 +237,7 @@ void RangeScanTest::testRangeScan(
     // Tests will need more continues if a limit is in-play
     for (size_t count = 0; count < extraContinues; count++) {
         EXPECT_EQ(cb::engine_errc::would_block,
-                  vb->continueRangeScan(uuid, itemLimit));
+                  vb->continueRangeScan(uuid, itemLimit, timeLimit));
         runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
                     "RangeScanContinueTask");
     }
@@ -249,7 +255,8 @@ void RangeScanTest::testRangeScan(
     EXPECT_EQ(cb::engine_errc::no_such_key, vb->cancelRangeScan(uuid, true));
 
     // Or continued, uuid is unknown
-    EXPECT_EQ(cb::engine_errc::no_such_key, vb->continueRangeScan(uuid, 0));
+    EXPECT_EQ(cb::engine_errc::no_such_key,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
 }
 
 // Scan for the user prefixed keys
@@ -259,12 +266,13 @@ TEST_P(RangeScanTest, user_prefix) {
                   makeStoredDocKey("user\xFF", scanCollection));
 }
 
-TEST_P(RangeScanTest, user_prefix_with_limit) {
+TEST_P(RangeScanTest, user_prefix_with_item_limit) {
     auto expectedKeys = getUserKeys();
     testRangeScan(expectedKeys,
                   makeStoredDocKey("user", scanCollection),
                   makeStoredDocKey("user\xFF", scanCollection),
                   1,
+                  std::chrono::milliseconds(0),
                   expectedKeys.size());
 
     handler->scannedKeys.clear();
@@ -274,7 +282,25 @@ TEST_P(RangeScanTest, user_prefix_with_limit) {
                   makeStoredDocKey("user", scanCollection),
                   makeStoredDocKey("user\xFF", scanCollection),
                   2,
+                  std::chrono::milliseconds(0),
                   expectedKeys.size() / 2);
+}
+
+TEST_P(RangeScanTest, user_prefix_with_time_limit) {
+    // Replace time with a function that ticks per call, forcing the scan to
+    // yield for every item
+    RangeScan::setClockFunction([]() {
+        static auto now = std::chrono::steady_clock::now();
+        now += std::chrono::milliseconds(100);
+        return now;
+    });
+    auto expectedKeys = getUserKeys();
+    testRangeScan(expectedKeys,
+                  makeStoredDocKey("user", scanCollection),
+                  makeStoredDocKey("user\xFF", scanCollection),
+                  0,
+                  std::chrono::milliseconds(10),
+                  expectedKeys.size());
 }
 
 // Test ensures callbacks cover disk read case
@@ -405,12 +431,14 @@ TEST_P(RangeScanTest, continue_must_be_serialised) {
     auto uuid = createScan(makeStoredDocKey("a"), makeStoredDocKey("b"));
     auto vb = store->getVBucket(vbid);
 
-    EXPECT_EQ(cb::engine_errc::would_block, vb->continueRangeScan(uuid, 0));
+    EXPECT_EQ(cb::engine_errc::would_block,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
     auto& epVb = dynamic_cast<EPVBucket&>(*vb);
     EXPECT_TRUE(epVb.getRangeScan(uuid)->isContinuing());
 
     // Cannot continue again
-    EXPECT_EQ(cb::engine_errc::too_busy, vb->continueRangeScan(uuid, 0));
+    EXPECT_EQ(cb::engine_errc::too_busy,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
 
     // But can cancel
     EXPECT_EQ(cb::engine_errc::would_block, vb->cancelRangeScan(uuid, true));
@@ -437,7 +465,8 @@ TEST_P(RangeScanTest, create_continue_is_cancelled) {
                            makeStoredDocKey("user\xFF", scanCollection));
     auto vb = store->getVBucket(vbid);
 
-    EXPECT_EQ(cb::engine_errc::would_block, vb->continueRangeScan(uuid, 0));
+    EXPECT_EQ(cb::engine_errc::would_block,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
 
     // Cancel
     EXPECT_EQ(cb::engine_errc::would_block, vb->cancelRangeScan(uuid, true));
@@ -460,7 +489,8 @@ TEST_P(RangeScanTest, create_continue_is_cancelled_2) {
                            makeStoredDocKey("user\xFF", scanCollection));
     auto vb = store->getVBucket(vbid);
 
-    EXPECT_EQ(cb::engine_errc::would_block, vb->continueRangeScan(uuid, 0));
+    EXPECT_EQ(cb::engine_errc::would_block,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
 
     // Set a hook which will cancel when the 2nd key is read
     handler->testHook = [&vb, uuid](size_t count) {
@@ -478,7 +508,8 @@ TEST_P(RangeScanTest, create_continue_is_cancelled_2) {
     EXPECT_EQ(cb::engine_errc::no_such_key, vb->cancelRangeScan(uuid, true));
 
     // Or continued, uuid is unknown
-    EXPECT_EQ(cb::engine_errc::no_such_key, vb->continueRangeScan(uuid, 0));
+    EXPECT_EQ(cb::engine_errc::no_such_key,
+              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
 
     // Scan only read 2 of the possible keys
     if (isKeyOnly()) {

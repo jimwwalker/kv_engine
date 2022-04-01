@@ -16,6 +16,7 @@
 #include "storeddockey.h"
 
 #include <atomic>
+#include <chrono>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -92,8 +93,10 @@ public:
      * Change the state of the scan to Continuing and set the limit for the
      * scan. A value of 0 means no limit
      * @param itemLimit how many items the scan can return
+     * @param timeLimit how long the scan can run for (0 no limit)
      */
-    void setStateContinuing(size_t itemLimit);
+    void setStateContinuing(size_t itemLimit,
+                            std::chrono::milliseconds timeLimit);
 
     /// change the state of the scan to Cancelled
     void setStateCancelled();
@@ -133,6 +136,14 @@ public:
 
     /// dump the object to the ostream (default of cerr)
     void dump(std::ostream& os = std::cerr) const;
+    /**
+     * To facilitate testing, the now function, which returns a time point can
+     * be replaced
+     */
+    static void setClockFunction(
+            std::function<std::chrono::steady_clock::time_point()> func) {
+        now = func;
+    }
 
 protected:
     /**
@@ -165,6 +176,9 @@ protected:
     size_t itemCount{0};
     /// item count for the life of this scan
     size_t totalItems{0};
+    /// current time limit for the continuation of this scan
+    std::chrono::milliseconds timeLimit{0};
+    std::chrono::steady_clock::time_point scanContinueDeadline;
     Vbid vbid;
 
     /**
@@ -182,6 +196,10 @@ protected:
     /// is this scan in the run queue? This bool is read/written only by
     /// RangeScans under the queue lock
     bool queued{false};
+
+    // To facilitate testing, the clock can be replaced with something else
+    // this is static as there's no need for replacement on a scan by scan basis
+    static std::function<std::chrono::steady_clock::time_point()> now;
 
     friend std::ostream& operator<<(std::ostream&, const RangeScan::State&);
     friend std::ostream& operator<<(std::ostream&, const RangeScan&);

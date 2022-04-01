@@ -62,8 +62,8 @@ cb::engine_errc VB::RangeScanOwner::addNewScan(std::shared_ptr<RangeScan> scan) 
     return cb::engine_errc::key_already_exists;
 }
 
-cb::engine_errc VB::RangeScanOwner::continueScan(RangeScanId id,
-                                                 size_t itemLimit) {
+cb::engine_errc VB::RangeScanOwner::continueScan(
+        RangeScanId id, size_t itemLimit, std::chrono::milliseconds timeLimit) {
     auto locked = rangeScans.wlock();
     auto itr = locked->find(id);
     if (itr == locked->end()) {
@@ -76,7 +76,7 @@ cb::engine_errc VB::RangeScanOwner::continueScan(RangeScanId id,
     }
 
     // set scan to 'continuing'
-    itr->second->setStateContinuing(itemLimit);
+    itr->second->setStateContinuing(itemLimit, timeLimit);
 
     // Make the scan available to I/O task(s)
     readyScans.addScan(itr->second);

@@ -279,7 +279,9 @@ public:
         return cb::engine_errc::not_supported;
     }
 
-    cb::engine_errc continueRangeScan(RangeScanId, size_t) override {
+    cb::engine_errc continueRangeScan(RangeScanId,
+                                      size_t,
+                                      std::chrono::milliseconds) override {
         return cb::engine_errc::not_supported;
     }
 
