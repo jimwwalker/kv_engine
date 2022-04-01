@@ -1113,10 +1113,12 @@ cb::engine_errc EphemeralVBucket::createRangeScan(const DocKey&,
     return cb::engine_errc::not_supported;
 }
 
-cb::engine_errc EphemeralVBucket::continueRangeScan(cb::rangescan::Id) {
+cb::engine_errc EphemeralVBucket::continueRangeScan(cb::rangescan::Id,
+                                                    size_t,
+                                                    std::chrono::milliseconds) {
     return cb::engine_errc::not_supported;
 }
 
-cb::engine_errc EphemeralVBucket::cancelRangeScan(cb::rangescan::Id) {
+cb::engine_errc EphemeralVBucket::cancelRangeScan(cb::rangescan::Id, bool) {
     return cb::engine_errc::not_supported;
 }

@@ -276,7 +276,9 @@ public:
                                     RangeScanDataHandlerIFace&,
                                     const CookieIface*,
                                     cb::rangescan::KeyOnly) override;
-    cb::engine_errc continueRangeScan(cb::rangescan::Id, size_t) override;
+    cb::engine_errc continueRangeScan(cb::rangescan::Id,
+                                      size_t,
+                                      std::chrono::milliseconds) override;
     cb::engine_errc cancelRangeScan(cb::rangescan::Id, bool) override;
 
 protected:
