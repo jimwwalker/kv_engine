@@ -27,14 +27,16 @@ class EPBucket;
  */
 class RangeScanCreateTask : public GlobalTask {
 public:
-    RangeScanCreateTask(EPBucket& bucket,
-                        Vbid vbid,
-                        const DocKey& start,
-                        const DocKey& end,
-                        RangeScanDataHandlerIFace& handler,
-                        const CookieIface* cookie,
-                        RangeScanKeyOnly keyOnly,
-                        std::unique_ptr<RangeScanCreateData> scanData);
+    RangeScanCreateTask(
+            EPBucket& bucket,
+            Vbid vbid,
+            const DocKey& start,
+            const DocKey& end,
+            RangeScanDataHandlerIFace& handler,
+            const CookieIface* cookie,
+            RangeScanKeyOnly keyOnly,
+            std::optional<RangeScanSnapshotRequirements> snapshotReqs,
+            std::unique_ptr<RangeScanCreateData> scanData);
 
     bool run() override;
 
@@ -57,5 +59,6 @@ protected:
     RangeScanDataHandlerIFace& handler;
     const CookieIface* cookie;
     RangeScanKeyOnly keyOnly;
+    std::optional<RangeScanSnapshotRequirements> snapshotReqs;
     std::unique_ptr<RangeScanCreateData> scanData;
 };

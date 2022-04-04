@@ -268,11 +268,13 @@ public:
 
     void notifyFlusher() override;
 
-    cb::engine_errc createRangeScan(const DocKey& start,
-                                    const DocKey& end,
-                                    RangeScanDataHandlerIFace& handler,
-                                    const CookieIface* cookie,
-                                    RangeScanKeyOnly keyOnly) override;
+    cb::engine_errc createRangeScan(
+            const DocKey& start,
+            const DocKey& end,
+            RangeScanDataHandlerIFace& handler,
+            const CookieIface* cookie,
+            RangeScanKeyOnly keyOnly,
+            std::optional<RangeScanSnapshotRequirements> snapshotReqs) override;
     cb::engine_errc continueRangeScan(
             RangeScanId id,
             size_t itemLimit,

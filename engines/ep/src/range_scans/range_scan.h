@@ -49,6 +49,7 @@ public:
      * @param handler key/item handler to process key/items of the scan
      * @param cookie connection cookie creating the RangeScan
      * @param keyOnly configure key or value scan
+     * @param snapshotReqs optional requirements for the snapshot
      */
     RangeScan(EPBucket& bucket,
               const VBucket& vbucket,
@@ -56,7 +57,8 @@ public:
               const DocKey& end,
               RangeScanDataHandlerIFace& handler,
               const CookieIface* cookie,
-              RangeScanKeyOnly keyOnly);
+              RangeScanKeyOnly keyOnly,
+              std::optional<RangeScanSnapshotRequirements> snapshotReqs);
 
     /**
      * Continue the range scan by calling kvstore.scan()
@@ -156,9 +158,12 @@ protected:
      *
      * @param bucket The EPBucket to use to obtain the KVStore and pass to the
      *               RangeScanCacheCallback
+     * @param snapshotReqs optional requirements for the snapshot
      * @return the RangeScanId to use for this scan
      */
-    RangeScanId createScan(EPBucket& bucket);
+    RangeScanId createScan(
+            EPBucket& bucket,
+            std::optional<RangeScanSnapshotRequirements> snapshotReqs);
 
     // member variables ordered by size large -> small
     RangeScanId uuid;

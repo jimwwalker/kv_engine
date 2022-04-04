@@ -271,11 +271,13 @@ public:
         return seqList->getNumStaleItems();
     }
 
-    cb::engine_errc createRangeScan(const DocKey&,
-                                    const DocKey&,
-                                    RangeScanDataHandlerIFace&,
-                                    const CookieIface*,
-                                    RangeScanKeyOnly) override {
+    cb::engine_errc createRangeScan(
+            const DocKey&,
+            const DocKey&,
+            RangeScanDataHandlerIFace&,
+            const CookieIface*,
+            RangeScanKeyOnly,
+            std::optional<RangeScanSnapshotRequirements>) override {
         return cb::engine_errc::not_supported;
     }
 

@@ -31,7 +31,8 @@ RangeScan::RangeScan(EPBucket& bucket,
                      const DocKey& end,
                      RangeScanDataHandlerIFace& handler,
                      const CookieIface* cookie,
-                     RangeScanKeyOnly keyOnly)
+                     RangeScanKeyOnly keyOnly,
+                     std::optional<RangeScanSnapshotRequirements> snapshotReqs)
     : start(start),
       end(end),
       vbUuid(vbucket.failovers->getLatestUUID()),
@@ -42,12 +43,14 @@ RangeScan::RangeScan(EPBucket& bucket,
       keyOnly(keyOnly) {
     // Don't init the uuid in the initialisation list as we may read various
     // members which must be initialised first
-    uuid = createScan(bucket);
+    uuid = createScan(bucket, snapshotReqs);
 
     EP_LOG_INFO("RangeScan {} created for {}", uuid, getVBucketId());
 }
 
-RangeScanId RangeScan::createScan(EPBucket& bucket) {
+RangeScanId RangeScan::createScan(
+        EPBucket& bucket,
+        std::optional<RangeScanSnapshotRequirements> snapshotReqs) {
     auto valFilter =
             cookie->isDatatypeSupported(PROTOCOL_BINARY_DATATYPE_SNAPPY)
                     ? ValueFilter::VALUES_COMPRESSED
@@ -69,6 +72,32 @@ RangeScanId RangeScan::createScan(EPBucket& bucket) {
         throw std::runtime_error(fmt::format(
                 "RangeScan::createScan {} initByIdScanContext returned nullptr",
                 getVBucketId()));
+    }
+
+    if (snapshotReqs) {
+        // @todo: check the uuid of the opened snapshot. The snapshot could now
+        // be from a different vbucket. Do do this it requires a few hoops as
+        // the uuid is only available via raw json (failovers).
+        // Alternative idea rejected was to lock the vb and check the in memory
+        // uuid, but don't want the vb locked whilst doing I/O
+
+        // This could fail, but when we have uuid checking it should not
+        Expects(uint64_t(scanCtx->maxSeqno) >= snapshotReqs->seqno);
+        if (snapshotReqs->seqnoMustBeInSnapshot) {
+            auto& handle = *scanCtx->handle.get();
+            auto gv = bucket.getRWUnderlying(getVBucketId())
+                              ->getBySeqno(handle,
+                                           getVBucketId(),
+                                           snapshotReqs->seqno,
+                                           ValueFilter::KEYS_ONLY);
+            if (gv.getStatus() != cb::engine_errc::success) {
+                throw std::runtime_error(
+                        fmt::format("RangeScan::createScan {} snapshotReqs not "
+                                    "met seqno:{} not stored",
+                                    getVBucketId(),
+                                    snapshotReqs->seqno));
+            }
+        }
     }
 
     // Generate the scan ID (which may also incur i/o)

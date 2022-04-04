@@ -20,3 +20,13 @@ enum class RangeScanKeyOnly : char { No, Yes };
 struct RangeScanCreateData {
     RangeScanId uuid;
 };
+
+struct RangeScanSnapshotRequirements {
+    // The vbucket on the frontend request must match this uuid
+    // The snapshot we must also match this uuid
+    uint64_t vbUuid{0};
+    // This seqno must of been persisted to snapshot
+    uint64_t seqno{0};
+    // true: The seqno must still exist in snapshot
+    bool seqnoMustBeInSnapshot{false};
+};

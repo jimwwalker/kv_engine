@@ -1643,14 +1643,17 @@ public:
      * @param handler object that will receive callbacks when the scan continues
      * @param cookie connection cookie to notify when done
      * @param keyOnly key/value configuration of the scan
+     * @param snapshotReqs optional requirements that the snapshot must satisfy
      *
      * @return would_block if the scan was found and successfully scheduled
      */
-    virtual cb::engine_errc createRangeScan(const DocKey& start,
-                                            const DocKey& end,
-                                            RangeScanDataHandlerIFace& handler,
-                                            const CookieIface* cookie,
-                                            RangeScanKeyOnly keyOnly) = 0;
+    virtual cb::engine_errc createRangeScan(
+            const DocKey& start,
+            const DocKey& end,
+            RangeScanDataHandlerIFace& handler,
+            const CookieIface* cookie,
+            RangeScanKeyOnly keyOnly,
+            std::optional<RangeScanSnapshotRequirements> snapshotReqs) = 0;
 
     /**
      * Continue the range scan with the given identifier. The scan itself will
