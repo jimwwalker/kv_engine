@@ -304,7 +304,26 @@ public:
     /// during an implicit compaction
     TestingHook<> postPurgeSeqnoImplicitCompactionHook;
 
-    ReadyRangeScans& getReadyRangeScans() {
+    std::pair<cb::engine_errc, RangeScanId> createRangeScan(
+            Vbid vbid,
+            const DocKey& start,
+            const DocKey& end,
+            RangeScanDataHandlerIFace& handler,
+            const CookieIface* cookie,
+            RangeScanKeyOnly keyOnly,
+            std::optional<RangeScanSnapshotRequirements> snapshotReqs,
+            std::optional<RangeScanSamplingConfiguration> samplingConfig)
+            override;
+
+    cb::engine_errc continueRangeScan(
+            Vbid vbid,
+            RangeScanId uuid,
+            size_t itemLimit,
+            std::chrono::milliseconds timeLimit) override;
+
+    cb::engine_errc cancelRangeScan(Vbid vbid, RangeScanId uuid) override;
+
+     ReadyRangeScans& getReadyRangeScans() {
         return rangeScans;
     }
 

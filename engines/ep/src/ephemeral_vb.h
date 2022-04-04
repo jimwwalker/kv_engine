@@ -270,7 +270,7 @@ public:
         return seqList->getNumStaleItems();
     }
 
-    cb::engine_errc createRangeScan(
+    std::pair<cb::engine_errc, RangeScanId> createRangeScan(
             const DocKey&,
             const DocKey&,
             RangeScanDataHandlerIFace&,
@@ -278,7 +278,7 @@ public:
             RangeScanKeyOnly,
             std::optional<RangeScanSnapshotRequirements>,
             std::optional<RangeScanSamplingConfiguration>) override {
-        return cb::engine_errc::not_supported;
+        return {cb::engine_errc::not_supported, {}};
     }
 
     cb::engine_errc continueRangeScan(RangeScanId,
