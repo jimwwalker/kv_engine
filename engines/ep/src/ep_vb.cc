@@ -1222,11 +1222,17 @@ std::unique_ptr<KVStoreRevision> EPVBucket::takeDeferredDeletionFileRevision() {
     return std::move(deferredDeletionFileRevision);
 }
 
-cb::engine_errc EPVBucket::createRangeScan(const DocKey& start,
-                                           const DocKey& end,
-                                           RangeScanDataHandlerIFace& handler,
-                                           const CookieIface* cookie,
-                                           cb::rangescan::KeyOnly keyOnly) {
+cb::engine_errc EPVBucket::createRangeScan(
+        const DocKey& start,
+        const DocKey& end,
+        RangeScanDataHandlerIFace& handler,
+        const CookieIface* cookie,
+        cb::rangescan::KeyOnly keyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs) {
+    if (snapshotReqs && failovers->getLatestUUID() != snapshotReqs->vbUuid) {
+        return cb::engine_errc::not_my_vbucket;
+    }
+
     auto rangeScanCreateData = std::make_unique<RangeScanCreateData>();
 
     // Place pointer in the cookie so we can get this object back on success
@@ -1243,6 +1249,7 @@ cb::engine_errc EPVBucket::createRangeScan(const DocKey& start,
             handler,
             cookie,
             keyOnly,
+            snapshotReqs,
             std::move(rangeScanCreateData)));
     return cb::engine_errc::would_block;
 }

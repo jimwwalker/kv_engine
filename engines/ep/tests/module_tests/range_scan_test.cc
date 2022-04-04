@@ -11,6 +11,7 @@
 
 #include "ep_bucket.h"
 #include "ep_vb.h"
+#include "failover-table.h"
 #include "kvstore/kvstore.h"
 #include "range_scans/range_scan.h"
 #include "range_scans/range_scan_callbacks.h"
@@ -18,6 +19,7 @@
 #include "tests/module_tests/test_helpers.h"
 #include "vbucket.h"
 
+#include <memcached/range_scan_optional_configuration.h>
 #include <programs/engine_testapp/mock_server.h>
 #include <utilities/test_manifest.h>
 
@@ -90,7 +92,12 @@ public:
                        : cb::rangescan::KeyOnly::No;
     }
 
-    cb::rangescan::Id createScan(const DocKey& start, const DocKey& end);
+    cb::rangescan::Id createScan(
+            const DocKey& start,
+            const DocKey& end,
+            std::optional<cb::rangescan::SnapshotRequirements> seqno =
+                    std::nullopt,
+            cb::engine_errc expectedStatus = cb::engine_errc::success);
 
     const std::unordered_set<StoredDocKey> getUserKeys() {
         // Create a number of user prefixed collections and place them in the
@@ -186,18 +193,27 @@ void TestRangeScanHandler::validateItemScan(
     }
 }
 
-cb::rangescan::Id RangeScanTest::createScan(const DocKey& start,
-                                            const DocKey& end) {
+cb::rangescan::Id RangeScanTest::createScan(
+        const DocKey& start,
+        const DocKey& end,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        cb::engine_errc expectedStatus) {
     auto vb = store->getVBucket(vbid);
     // Create a new RangeScan object and give it a handler we can inspect.
-    EXPECT_EQ(cb::engine_errc::would_block,
-              vb->createRangeScan(start, end, *handler, cookie, getScanType()));
+    EXPECT_EQ(
+            cb::engine_errc::would_block,
+            vb->createRangeScan(
+                    start, end, *handler, cookie, getScanType(), snapshotReqs));
 
     // Now run via auxio task
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
                 "RangeScanCreateTask");
 
-    EXPECT_EQ(cb::engine_errc::success, mock_waitfor_cookie(cookie));
+    EXPECT_EQ(expectedStatus, mock_waitfor_cookie(cookie));
+
+    if (expectedStatus != cb::engine_errc::success) {
+        return {};
+    }
 
     // Next frontend will add the uuid/scan, client can be informed of the uuid
     auto& epVb = dynamic_cast<EPVBucket&>(*vb);
@@ -519,6 +535,36 @@ TEST_P(RangeScanTest, create_continue_is_cancelled_2) {
     } else {
         EXPECT_EQ(2, handler->scannedItems.size());
     }
+}
+
+TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
+    auto vb = store->getVBucket(vbid);
+    // Nothing @ seqno 0 (use of optional makes this a valid input)
+    cb::rangescan::SnapshotRequirements reqs{
+            vb->failovers->getLatestUUID(), 0, true};
+    createScan(makeStoredDocKey("user", scanCollection),
+               makeStoredDocKey("user\xFF", scanCollection),
+               reqs,
+               cb::engine_errc::failed);
+
+    // Nothing @ high seqno + 1
+    reqs.seqno = uint64_t(vb->getHighSeqno() + 1);
+    createScan(makeStoredDocKey("user", scanCollection),
+               makeStoredDocKey("user\xFF", scanCollection),
+               reqs,
+               cb::engine_errc::failed);
+}
+
+TEST_P(RangeScanTest, snapshot_contains_seqno) {
+    // Something @ high seqno
+    auto vb = store->getVBucket(vbid);
+    cb::rangescan::SnapshotRequirements reqs{
+            vb->failovers->getLatestUUID(), uint64_t(vb->getHighSeqno()), true};
+    auto uuid = createScan(makeStoredDocKey("user", scanCollection),
+                           makeStoredDocKey("user\xFF", scanCollection),
+                           reqs,
+                           cb::engine_errc::success);
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, false));
 }
 
 auto scanConfigValues = ::testing::Combine(
