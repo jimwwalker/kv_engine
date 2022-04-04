@@ -28,6 +28,7 @@
 #include "vbucketdeletiontask.h"
 #include <executor/executorpool.h>
 #include <folly/lang/Assume.h>
+#include <memcached/range_scan_optional_configuration.h>
 
 EphemeralVBucket::EphemeralVBucket(
         Vbid i,
@@ -1105,12 +1106,14 @@ void EphemeralVBucket::doCollectionsStats(
     }
 }
 
-cb::engine_errc EphemeralVBucket::createRangeScan(CollectionID,
-                                                  cb::rangescan::KeyView,
-                                                  cb::rangescan::KeyView,
-                                                  RangeScanDataHandlerIFace&,
-                                                  const CookieIface&,
-                                                  cb::rangescan::KeyOnly) {
+cb::engine_errc EphemeralVBucket::createRangeScan(
+        CollectionID,
+        cb::rangescan::KeyView,
+        cb::rangescan::KeyView,
+        RangeScanDataHandlerIFace&,
+        const CookieIface&,
+        cb::rangescan::KeyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements>) {
     return cb::engine_errc::not_supported;
 }
 

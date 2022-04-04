@@ -271,12 +271,14 @@ public:
         return seqList->getNumStaleItems();
     }
 
-    cb::engine_errc createRangeScan(CollectionID,
-                                    cb::rangescan::KeyView,
-                                    cb::rangescan::KeyView,
-                                    RangeScanDataHandlerIFace&,
-                                    const CookieIface&,
-                                    cb::rangescan::KeyOnly) override;
+    cb::engine_errc createRangeScan(
+            CollectionID,
+            cb::rangescan::KeyView,
+            cb::rangescan::KeyView,
+            RangeScanDataHandlerIFace&,
+            const CookieIface&,
+            cb::rangescan::KeyOnly,
+            std::optional<cb::rangescan::SnapshotRequirements>) override;
     cb::engine_errc continueRangeScan(cb::rangescan::Id,
                                       size_t,
                                       std::chrono::milliseconds) override;

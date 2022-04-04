@@ -30,6 +30,7 @@ RangeScanCreateTask::RangeScanCreateTask(
         RangeScanDataHandlerIFace& handler,
         const CookieIface& cookie,
         cb::rangescan::KeyOnly keyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
         std::unique_ptr<RangeScanCreateData> scanData)
     : GlobalTask(&bucket.getEPEngine(), TaskId::RangeScanCreateTask, 0, false),
       bucket(bucket),
@@ -39,6 +40,7 @@ RangeScanCreateTask::RangeScanCreateTask(
       handler(handler),
       cookie(cookie),
       keyOnly(keyOnly),
+      snapshotReqs(snapshotReqs),
       scanData(std::move(scanData)) {
 }
 
@@ -80,7 +82,8 @@ std::pair<cb::engine_errc, cb::rangescan::Id> RangeScanCreateTask::create()
                                             DiskDocKey{end},
                                             handler,
                                             &cookie,
-                                            keyOnly);
+                                            keyOnly,
+                                            snapshotReqs);
     auto& epVb = dynamic_cast<EPVBucket&>(*vb);
     return {epVb.addNewRangeScan(scan), scan->getUuid()};
 }
