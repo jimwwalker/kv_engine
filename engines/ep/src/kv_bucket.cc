@@ -48,6 +48,7 @@
 #include <executor/notifiable_task.h>
 
 #include <memcached/collections.h>
+#include <memcached/range_scan_optional_configuration.h>
 #include <memcached/server_document_iface.h>
 #include <nlohmann/json.hpp>
 #include <phosphor/phosphor.h>
@@ -3058,4 +3059,27 @@ KVBucket::getSeqnoPersistenceRequestTaskWakeTime() const {
     // Added for unit-testing, so expect the task to exist
     Expects(seqnoPersistenceNotifyTask);
     return seqnoPersistenceNotifyTask->getWaketime();
+}
+
+std::pair<cb::engine_errc, cb::rangescan::Id> KVBucket::createRangeScan(
+        Vbid vbid,
+        const DocKey& start,
+        const DocKey& end,
+        RangeScanDataHandlerIFace& handler,
+        const CookieIface* cookie,
+        cb::rangescan::KeyOnly keyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig) {
+    return {cb::engine_errc::not_supported, {}};
+}
+cb::engine_errc KVBucket::continueRangeScan(
+        Vbid vbid,
+        cb::rangescan::Id uuid,
+        size_t itemLimit,
+        std::chrono::milliseconds timeLimit) {
+    return cb::engine_errc::not_supported;
+}
+
+cb::engine_errc KVBucket::cancelRangeScan(Vbid vbid, cb::rangescan::Id uuid) {
+    return cb::engine_errc::not_supported;
 }
