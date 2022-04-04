@@ -593,6 +593,11 @@ public:
     /// @return the reads from the collection
     size_t getOpsGet() const;
 
+    // @return the manifest UID that last updated this vb::manifest
+    ManifestUid getManifestUid() const {
+        return manifest->getManifestUid();
+    }
+
     void dump();
 
 protected:

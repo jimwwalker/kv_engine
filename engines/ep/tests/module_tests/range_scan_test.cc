@@ -64,7 +64,6 @@ public:
         setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
 
         // Setup collections and store keys
-        CollectionsManifest cm;
         cm.add(CollectionEntry::vegetable);
         cm.add(CollectionEntry::fruit);
         cm.add(CollectionEntry::dairy);
@@ -173,6 +172,7 @@ public:
 
     std::unique_ptr<TestRangeScanHandler> handler{
             std::make_unique<TestRangeScanHandler>()};
+    CollectionsManifest cm;
 };
 
 void TestRangeScanHandler::validateKeyScan(
@@ -205,18 +205,18 @@ cb::rangescan::Id RangeScanTest::createScan(
         std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
         std::optional<cb::rangescan::SamplingConfiguration> samplingConfig,
         cb::engine_errc expectedStatus) {
-    auto vb = store->getVBucket(vbid);
     // Create a new RangeScan object and give it a handler we can inspect.
     EXPECT_EQ(cb::engine_errc::would_block,
-              vb->createRangeScan(cid,
-                                  start,
-                                  end,
-                                  *handler,
-                                  *cookie,
-                                  getScanType(),
-                                  snapshotReqs,
-                                  samplingConfig));
-
+              store->createRangeScan(vbid,
+                                     cid,
+                                     start,
+                                     end,
+                                     *handler,
+                                     *cookie,
+                                     getScanType(),
+                                     snapshotReqs,
+                                     samplingConfig)
+                      .first);
     // Now run via auxio task
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
                 "RangeScanCreateTask");
@@ -228,10 +228,20 @@ cb::rangescan::Id RangeScanTest::createScan(
     }
 
     // Next frontend will add the uuid/scan, client can be informed of the uuid
-    auto& epVb = dynamic_cast<EPVBucket&>(*vb);
-    auto status = epVb.createRangeScanComplete(*cookie);
+    auto status = store->createRangeScan(vbid,
+                                         cid,
+                                         start,
+                                         end,
+                                         *handler,
+                                         *cookie,
+                                         getScanType(),
+                                         snapshotReqs,
+                                         samplingConfig);
     EXPECT_EQ(cb::engine_errc::success, status.first);
 
+    auto vb = store->getVBucket(vbid);
+    EXPECT_TRUE(vb);
+    auto& epVb = dynamic_cast<EPVBucket&>(*vb);
     auto scan = epVb.getRangeScan(status.second);
     EXPECT_TRUE(scan);
     return scan->getUuid();
@@ -254,12 +264,10 @@ void RangeScanTest::testRangeScan(
     // 1) create a RangeScan to scan the user prefixed keys.
     auto uuid = createScan(cid, start, end);
 
-    auto vb = store->getVBucket(vbid);
-
     // 2) Continue a RangeScan
     // 2.1) Frontend thread would call this method using clients uuid
     EXPECT_EQ(cb::engine_errc::would_block,
-              vb->continueRangeScan(uuid, itemLimit, timeLimit));
+              store->continueRangeScan(vbid, uuid, itemLimit, timeLimit));
 
     // 2.2) An I/O task now reads data from disk
     runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
@@ -268,7 +276,7 @@ void RangeScanTest::testRangeScan(
     // Tests will need more continues if a limit is in-play
     for (size_t count = 0; count < extraContinues; count++) {
         EXPECT_EQ(cb::engine_errc::would_block,
-                  vb->continueRangeScan(uuid, itemLimit, timeLimit));
+                  store->continueRangeScan(vbid, uuid, itemLimit, timeLimit));
         runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
                     "RangeScanContinueTask");
     }
@@ -283,11 +291,12 @@ void RangeScanTest::testRangeScan(
     // In this case the scan finished and cleaned up
 
     // Check scan is gone, cannot be cancelled again
-    EXPECT_EQ(cb::engine_errc::no_such_key, vb->cancelRangeScan(uuid, true));
+    EXPECT_EQ(cb::engine_errc::no_such_key, store->cancelRangeScan(vbid, uuid));
 
     // Or continued, uuid is unknown
     EXPECT_EQ(cb::engine_errc::no_such_key,
-              vb->continueRangeScan(uuid, 0, std::chrono::milliseconds(0)));
+              store->continueRangeScan(
+                      vbid, uuid, 0, std::chrono::milliseconds(0)));
 }
 
 // Scan for the user prefixed keys
@@ -601,7 +610,9 @@ TEST_P(RangeScanTest, future_seqno_fails) {
                                   *handler,
                                   *cookie,
                                   getScanType(),
-                                  reqs{/* no sampling config*/}));
+                                  reqs,
+                                  {/* no sampling config*/})
+                      .first);
 }
 
 TEST_P(RangeScanTest, vb_uuid_check) {
@@ -617,7 +628,8 @@ TEST_P(RangeScanTest, vb_uuid_check) {
                                   *cookie,
                                   getScanType(),
                                   reqs,
-                                  {/* no sampling config*/}));
+                                  {/* no sampling config*/})
+                      .first);
 }
 
 TEST_P(RangeScanTest, random_sample_not_enough_items) {
@@ -658,6 +670,77 @@ TEST_P(RangeScanTest, random_sample) {
     } else {
         EXPECT_EQ(sampleSize, handler->scannedItems.size());
     }
+}
+
+TEST_P(RangeScanTest, not_my_vbucket) {
+    EXPECT_EQ(cb::engine_errc::not_my_vbucket,
+              store->createRangeScan(Vbid(4),
+                                     scanCollection,
+                                     {"\0", 1},
+                                     {"\xFF"},
+                                     *handler,
+                                     *cookie,
+                                     getScanType(),
+                                     {},
+                                     {})
+                      .first);
+}
+
+TEST_P(RangeScanTest, unknown_collection) {
+    EXPECT_EQ(cb::engine_errc::unknown_collection,
+              store->createRangeScan(vbid,
+                                     CollectionEntry::meat.getId(),
+                                     {"\0", 1},
+                                     {"\xFF"},
+                                     *handler,
+                                     *cookie,
+                                     getScanType(),
+                                     {},
+                                     {})
+                      .first);
+}
+
+// Test that the collection going away after part 1 of create, cleans up
+TEST_P(RangeScanTest, scan_cancels_after_create) {
+    EXPECT_EQ(cb::engine_errc::would_block,
+              store->createRangeScan(vbid,
+                                     scanCollection,
+                                     {"user"},
+                                     {"user\xFF"},
+                                     *handler,
+                                     *cookie,
+                                     getScanType(),
+                                     {},
+                                     {})
+                      .first);
+    // Now run via auxio task
+    runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
+                "RangeScanCreateTask");
+
+    EXPECT_EQ(cb::engine_errc::success, mock_waitfor_cookie(cookie));
+
+    // Drop scanCollection
+    EXPECT_EQ(scanCollection, CollectionEntry::vegetable.getId());
+    setCollections(cookie, cm.remove(CollectionEntry::vegetable));
+
+    // Second part of create runs and fails
+    EXPECT_EQ(cb::engine_errc::unknown_collection,
+              store->createRangeScan(vbid,
+                                     scanCollection,
+                                     {"user"},
+                                     {"user\xFF"},
+                                     *handler,
+                                     *cookie,
+                                     getScanType(),
+                                     {},
+                                     {})
+                      .first);
+
+    // Task was scheduled to cancel (close the snapshot)
+    runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
+                "RangeScanCreateTask");
+
+    // Can't get hold of the scan object as we never got the uuid
 }
 
 auto scanConfigValues = ::testing::Combine(

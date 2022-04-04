@@ -1693,9 +1693,9 @@ public:
      * @param snapshotReqs optional requirements that the snapshot must satisfy
      * @param samplingConfig the parameters for the optional random sampling
      *
-     * @return would_block if the scan was found and successfully scheduled
+     * @return pair of status/cb::rangescan::Id - ID is valid on success
      */
-    virtual cb::engine_errc createRangeScan(
+    virtual std::pair<cb::engine_errc, cb::rangescan::Id> createRangeScan(
             CollectionID cid,
             cb::rangescan::KeyView start,
             cb::rangescan::KeyView end,
