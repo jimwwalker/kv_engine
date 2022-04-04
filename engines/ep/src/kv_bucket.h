@@ -931,6 +931,24 @@ public:
     std::chrono::steady_clock::time_point
     getSeqnoPersistenceRequestTaskWakeTime() const;
 
+    std::pair<cb::engine_errc, cb::rangescan::Id> createRangeScan(
+            Vbid vbid,
+            CollectionID cid,
+            std::string_view start,
+            std::string_view end,
+            RangeScanDataHandlerIFace& handler,
+            const CookieIface* cookie,
+            cb::rangescan::KeyOnly keyOnly,
+            std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+            std::optional<cb::rangescan::SamplingConfiguration> samplingConfig)
+            override;
+    cb::engine_errc continueRangeScan(
+            Vbid vbid,
+            cb::rangescan::Id uuid,
+            size_t itemLimit,
+            std::chrono::milliseconds timeLimit) override;
+    cb::engine_errc cancelRangeScan(Vbid vbid, cb::rangescan::Id uuid) override;
+
 protected:
     /**
      * Get the checkpoint destroyer task responsible for checkpoints from the

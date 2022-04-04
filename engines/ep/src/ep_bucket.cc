@@ -37,6 +37,7 @@
 #include <executor/executorpool.h>
 
 #include <hdrhistogram/hdrhistogram.h>
+#include <memcached/range_scan_optional_configuration.h>
 #include <platform/timeutils.h>
 #include <statistics/cbstat_collector.h>
 #include <statistics/collector.h>
@@ -2390,4 +2391,89 @@ std::shared_ptr<RangeScan> EPBucket::takeNextRangeScan() {
 
 void EPBucket::addRangeScan(std::shared_ptr<RangeScan> scan) {
     rangeScans.addScan(std::move(scan));
+}
+
+std::pair<cb::engine_errc, cb::rangescan::Id> EPBucket::createRangeScan(
+        Vbid vbid,
+        CollectionID cid,
+        std::string_view start,
+        std::string_view end,
+        RangeScanDataHandlerIFace& handler,
+        const CookieIface* cookie,
+        cb::rangescan::KeyOnly keyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig) {
+    // KV is creating the DocKey, so expect the collections to match
+    Expects(start.getCollectionID() == end.getCollectionID());
+
+    auto vb = getVBucket(vbid);
+    if (!vb) {
+        ++stats.numNotMyVBuckets;
+        return {cb::engine_errc::not_my_vbucket, {}};
+    }
+
+    auto cHandle = vb->lockCollections(start);
+    cb::engine_errc status = cb::engine_errc::success;
+    if (!cHandle.valid()) {
+        engine.setUnknownCollectionErrorContext(cookie,
+                                                cHandle.getManifestUid());
+
+        status = cb::engine_errc::unknown_collection;
+    } else if (snapshotReqs &&
+               snapshotReqs->vbUuid != vb->failovers->getLatestUUID()) {
+        status = cb::engine_errc::not_my_vbucket;
+    }
+
+    if (status != cb::engine_errc::success) {
+        // This maybe the continuation of a create - the create task may of
+        // succeeded, yet the vb/collection has now gone - require a clean-up
+        auto& epVb = dynamic_cast<EPVBucket&>(*vb);
+        auto checkStatus = epVb.checkAndCancelRangeScanCreate(cookie);
+
+        // A task (to cancel) must of been scheduled (would_block)
+        // This is the first part of the request (success)
+        if (checkStatus != cb::engine_errc::would_block &&
+            checkStatus != cb::engine_errc::success) {
+            EP_LOG_WARN(
+                    "{} createRangeScan failed to cancel for {} status:{} "
+                    "checkStatus:{}",
+                    vb,
+                    start.getCollectionID(),
+                    status,
+                    checkStatus);
+        }
+        return {status, {}};
+    }
+
+    return vb->createRangeScan(cid,
+                               start,
+                               end,
+                               handler,
+                               cookie,
+                               keyOnly,
+                               snapshotReqs,
+                               samplingConfig);
+}
+
+cb::engine_errc EPBucket::continueRangeScan(
+        Vbid vbid,
+        cb::rangescan::Id uuid,
+        size_t itemLimit,
+        std::chrono::milliseconds timeLimit) {
+    auto vb = getVBucket(vbid);
+    if (!vb) {
+        ++stats.numNotMyVBuckets;
+        return cb::engine_errc::not_my_vbucket;
+    }
+
+    return vb->continueRangeScan(uuid, itemLimit, timeLimit);
+}
+
+cb::engine_errc EPBucket::cancelRangeScan(Vbid vbid, cb::rangescan::Id uuid) {
+    auto vb = getVBucket(vbid);
+    if (!vb) {
+        ++stats.numNotMyVBuckets;
+        return cb::engine_errc::not_my_vbucket;
+    }
+    return vb->cancelRangeScan(uuid, true /* schedule for background cancel */);
 }
