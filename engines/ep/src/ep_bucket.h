@@ -31,6 +31,7 @@ class BucketStatCollector;
 class CompactTask;
 struct CompactionContext;
 struct CompactionStats;
+class SeqnoPersistenceNotifyTask;
 
 /**
  * Eventually Persistent Bucket
