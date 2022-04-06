@@ -19,7 +19,7 @@ class BgFetcher;
 class EPBucket;
 class KVStoreIface;
 class KVStoreRevision;
-
+struct RangeScanCreateData;
 struct vbucket_state;
 
 /**
@@ -78,7 +78,9 @@ public:
     HighPriorityVBReqStatus checkAddHighPriorityVBEntry(
             uint64_t seqno,
             const CookieIface* cookie,
-            std::chrono::milliseconds timeout) override;
+            std::chrono::milliseconds timeout,
+            std::function<void(const SeqnoPersistenceRequest&)> timedout)
+            override;
 
     void notifyAllPendingConnsFailed(EventuallyPersistentEngine& e) override;
 
@@ -289,6 +291,14 @@ public:
      * This will perform the final steps of creation (completing the command)
      */
     std::pair<cb::engine_errc, cb::rangescan::Id> createRangeScanComplete(
+            std::unique_ptr<RangeScanCreateData> rangeScanCreateData,
+            const CookieIface& cookie);
+
+    /**
+     * Setup a SeqnoPersistenceRequest using the RangeScanSnapshotRequirements
+     */
+    void createRangeScanWait(
+            const cb::rangescan::SnapshotRequirements& requirements,
             const CookieIface& cookie);
 
     /**

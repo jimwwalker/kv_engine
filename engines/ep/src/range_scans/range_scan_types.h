@@ -13,7 +13,13 @@
 
 #include <memcached/range_scan_id.h>
 
+// Create always begin in Pending and then:
+// 1) Pending->Create
+// 2) Pending->WaitForPersistence->Create
+enum class RangeScanCreateState : char { Pending, WaitForPersistence, Create };
+
 // Data stored in engine-specific during a RangeScan create request
 struct RangeScanCreateData {
     cb::rangescan::Id uuid;
+    RangeScanCreateState state{RangeScanCreateState::Pending};
 };
