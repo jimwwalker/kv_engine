@@ -62,7 +62,9 @@ public:
     HighPriorityVBReqStatus checkAddHighPriorityVBEntry(
             uint64_t seqno,
             const CookieIface* cookie,
-            std::chrono::milliseconds timeout) override;
+            std::chrono::milliseconds timeout,
+            std::function<void(const SeqnoPersistenceRequest&)> timedout)
+            override;
 
     void notifyAllPendingConnsFailed(EventuallyPersistentEngine& e) override;
 

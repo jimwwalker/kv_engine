@@ -35,6 +35,7 @@
 #include "vbucket_queue_item_ctx.h"
 #include "vbucket_state.h"
 #include "vbucketdeletiontask.h"
+#include <boost/uuid/uuid_io.hpp>
 #include <executor/executorpool.h>
 #include <folly/lang/Assume.h>
 #include <gsl/gsl-lite.hpp>
@@ -361,13 +362,14 @@ bool EPVBucket::hasPendingBGFetchItems() {
 HighPriorityVBReqStatus EPVBucket::checkAddHighPriorityVBEntry(
         uint64_t seqno,
         const CookieIface* cookie,
-        std::chrono::milliseconds timeout) {
+        std::chrono::milliseconds timeout,
+        std::function<void(const SeqnoPersistenceRequest&)> timedout) {
     if (seqno <= getPersistenceSeqno()) {
         return HighPriorityVBReqStatus::RequestNotScheduled;
     }
 
     bucket->addVbucketWithSeqnoPersistenceRequest(
-            getId(), addHighPriorityVBEntry(seqno, cookie, timeout));
+            getId(), addHighPriorityVBEntry(seqno, cookie, timeout, timedout));
 
     return HighPriorityVBReqStatus::RequestScheduled;
 }
@@ -1228,15 +1230,51 @@ std::pair<cb::engine_errc, RangeScanId> EPVBucket::createRangeScan(
         RangeScanKeyOnly keyOnly,
         std::optional<RangeScanSnapshotRequirements> snapshotReqs,
         std::optional<RangeScanSamplingConfiguration> samplingConfig) {
-    if (bucket->getEPEngine().getEngineSpecific(cookie)) {
-        return createRangeScanComplete(cookie);
+    // Obtain the engine specific, which will be null (new create) or a pointer
+    // to RangeScanCreateData (I/O complete path of create)
+    std::unique_ptr<RangeScanCreateData> rangeScanCreateData(
+            reinterpret_cast<RangeScanCreateData*>(
+                    bucket->getEPEngine().getEngineSpecific(cookie)));
+
+    if (rangeScanCreateData) {
+        // When the data exists, two paths are possible.
+        // 1) I/O complete from RangeScanCreateTask
+        // 2) I/O complete from SeqnoPersistenceRequest
+        // The state variable determines what todo next.
+        if (rangeScanCreateData->state == RangeScanCreateState::Create) {
+            // create state - command is now completed
+            return createRangeScanComplete(std::move(rangeScanCreateData),
+                                           cookie);
+        }
+    } else {
+        // Create our RangeScanCreateData, the state will now be Pending
+        rangeScanCreateData = std::make_unique<RangeScanCreateData>();
+        // Place pointer in the cookie so we can get this object back on success
+        bucket->getEPEngine().storeEngineSpecific(cookie,
+                                                  rangeScanCreateData.get());
     }
 
-    auto rangeScanCreateData = std::make_unique<RangeScanCreateData>();
+    // Check for seqno persistence and the state. If the create is pending
+    // and the seqno is not persisted, wait if there's a timeout, else fail
+    if (snapshotReqs && getPersistenceSeqno() < snapshotReqs->seqno &&
+        rangeScanCreateData->state == RangeScanCreateState::Pending) {
+        if (snapshotReqs->timeout) {
+            rangeScanCreateData->state =
+                    RangeScanCreateState::WaitForPersistence;
+            createRangeScanWait(*snapshotReqs, cookie);
+            // release the data, it's now 'owned' by the cookie
+            rangeScanCreateData.release();
+            return {cb::engine_errc::would_block, {}};
+        } else {
+            bucket->getEPEngine().storeEngineSpecific(cookie, nullptr);
+            // No timeout, fail command here. This is the same return code as
+            // an expired SeqnoPersistenceRequest
+            return {cb::engine_errc::temporary_failure, {}};
+        }
+    }
 
-    // Place pointer in the cookie so we can get this object back on success
-    bucket->getEPEngine().storeEngineSpecific(cookie,
-                                              rangeScanCreateData.get());
+    // Set status to creation
+    rangeScanCreateData->state = RangeScanCreateState::Create;
 
     // Create a task and give it the RangeScanCreateData, on failure the task
     // will destruct the data
@@ -1255,17 +1293,30 @@ std::pair<cb::engine_errc, RangeScanId> EPVBucket::createRangeScan(
 }
 
 std::pair<cb::engine_errc, RangeScanId> EPVBucket::createRangeScanComplete(
+        std::unique_ptr<RangeScanCreateData> rangeScanCreateData,
         const CookieIface* cookie) {
-    // Obtain the data (so it now frees)
-    std::unique_ptr<RangeScanCreateData> rangeScanCreateData(
-            reinterpret_cast<RangeScanCreateData*>(
-                    bucket->getEPEngine().getEngineSpecific(cookie)));
     Expects(rangeScanCreateData);
 
     // Clear engine specific
     bucket->getEPEngine().storeEngineSpecific(cookie, nullptr);
 
     return {cb::engine_errc::success, rangeScanCreateData->uuid};
+}
+
+void EPVBucket::createRangeScanWait(
+        const RangeScanSnapshotRequirements& requirements,
+        const CookieIface* cookie) {
+    // Define a function that will clean-up if the request timesout
+    auto cleanup = [this](const SeqnoPersistenceRequest& request) {
+        // Capture the unique_ptr and allow it to go out of scope
+        std::unique_ptr<RangeScanCreateData> rangeScanCreateData(
+                reinterpret_cast<RangeScanCreateData*>(
+                        bucket->getEPEngine().getEngineSpecific(
+                                request.cookie)));
+    };
+
+    checkAddHighPriorityVBEntry(
+            requirements.seqno, cookie, requirements.timeout.value(), cleanup);
 }
 
 cb::engine_errc EPVBucket::checkAndCancelRangeScanCreate(
@@ -1284,7 +1335,10 @@ cb::engine_errc EPVBucket::checkAndCancelRangeScanCreate(
     // Clear engine specific
     bucket->getEPEngine().storeEngineSpecific(cookie, nullptr);
 
-    return cancelRangeScan(rangeScanCreateData->uuid, true);
+    if (rangeScanCreateData->state == RangeScanCreateState::Create) {
+        return cancelRangeScan(rangeScanCreateData->uuid, true);
+    }
+    return cb::engine_errc::success;
 }
 
 std::shared_ptr<RangeScan> EPVBucket::getRangeScan(RangeScanId id) const {
