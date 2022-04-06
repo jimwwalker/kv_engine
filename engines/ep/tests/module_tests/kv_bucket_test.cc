@@ -2208,12 +2208,13 @@ TEST_P(KVBucketParamTest, SeqnoPersistenceRequestNotify) {
     // Already persisted, no need for a wait request
     EXPECT_EQ(HighPriorityVBReqStatus::RequestNotScheduled,
               vb->checkAddHighPriorityVBEntry(
-                      item.getBySeqno(), cookie, std::chrono::seconds(0)));
+                      item.getBySeqno(), cookie, std::chrono::seconds(0), {}));
 
     // Now a request that will schedule
-    EXPECT_EQ(HighPriorityVBReqStatus::RequestScheduled,
-              vb->checkAddHighPriorityVBEntry(
-                      item.getBySeqno() + 1, cookie, std::chrono::hours(24)));
+    EXPECT_EQ(
+            HighPriorityVBReqStatus::RequestScheduled,
+            vb->checkAddHighPriorityVBEntry(
+                    item.getBySeqno() + 1, cookie, std::chrono::hours(24), {}));
 
     // Task now changed and has a smaller wakeup
     EXPECT_LT(task->getWaketime(), wake1);
@@ -2226,8 +2227,10 @@ TEST_P(KVBucketParamTest, SeqnoPersistenceRequestNotify) {
     // Now a request that will schedule with a smaller deadline
     auto cookie2 = create_mock_cookie(engine.get());
     EXPECT_EQ(HighPriorityVBReqStatus::RequestScheduled,
-              vb->checkAddHighPriorityVBEntry(
-                      item.getBySeqno() + 1, cookie2, std::chrono::hours(22)));
+              vb->checkAddHighPriorityVBEntry(item.getBySeqno() + 1,
+                                              cookie2,
+                                              std::chrono::hours(22),
+                                              {}));
     // Task wake time reduces
     auto wake3 = task->getWaketime();
     EXPECT_LT(wake3, wake2);
@@ -2235,9 +2238,10 @@ TEST_P(KVBucketParamTest, SeqnoPersistenceRequestNotify) {
     // Next task with 0 deadline (which will expire on run)
     auto cookie3 = create_mock_cookie(engine.get());
 
-    EXPECT_EQ(HighPriorityVBReqStatus::RequestScheduled,
-              vb->checkAddHighPriorityVBEntry(
-                      item.getBySeqno() + 1, cookie3, std::chrono::hours(0)));
+    EXPECT_EQ(
+            HighPriorityVBReqStatus::RequestScheduled,
+            vb->checkAddHighPriorityVBEntry(
+                    item.getBySeqno() + 1, cookie3, std::chrono::hours(0), {}));
     auto wake4 = task->getWaketime();
     EXPECT_LT(wake4, wake2);
 

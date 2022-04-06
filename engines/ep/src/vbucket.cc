@@ -3939,9 +3939,10 @@ void VBucket::updateRevSeqNoOfNewStoredValue(StoredValue& v) {
 std::chrono::steady_clock::time_point VBucket::addHighPriorityVBEntry(
         uint64_t seqno,
         const CookieIface* cookie,
-        std::chrono::milliseconds timeout) {
+        std::chrono::milliseconds timeout,
+        std::function<void(const SeqnoPersistenceRequest&)> timedout) {
     std::unique_lock<std::mutex> lh(hpVBReqsMutex);
-    hpVBReqs.emplace_back(cookie, seqno, timeout);
+    hpVBReqs.emplace_back(cookie, seqno, timeout, timedout);
     numHpVBReqs.store(hpVBReqs.size());
 
     EP_LOG_INFO(
@@ -3983,7 +3984,6 @@ VBucket::getSeqnoPersistenceRequestsToNotify(EventuallyPersistentEngine& engine,
                     static_cast<const void*>(req->cookie));
             req = hpVBReqs.erase(req);
         } else if (now >= req->getDeadline()) { // >= permits a 0 wait for tests
-            engine.storeEngineSpecific(req->cookie, nullptr);
             toNotify[req->cookie] = cb::engine_errc::temporary_failure;
             EP_LOG_WARN(
                     "Notified SeqnoPersistence timeout for {} Check for: {}, "
@@ -3992,6 +3992,13 @@ VBucket::getSeqnoPersistenceRequestsToNotify(EventuallyPersistentEngine& engine,
                     req->seqno,
                     seqno,
                     static_cast<const void*>(req->cookie));
+
+            if (req->timedout) {
+                req->timedout(*req);
+            }
+
+            // clear cookie after the timedout callback
+            engine.storeEngineSpecific(req->cookie, nullptr);
             req = hpVBReqs.erase(req);
         } else {
             if (!nextDeadline) {

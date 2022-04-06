@@ -90,13 +90,16 @@ struct SnapshotRequirements;
  * that it has not been stored by the given timeout.
  */
 struct SeqnoPersistenceRequest {
-    SeqnoPersistenceRequest(const CookieIface* cookie,
-                            uint64_t seqno,
-                            std::chrono::milliseconds timeout)
+    SeqnoPersistenceRequest(
+            const CookieIface* cookie,
+            uint64_t seqno,
+            std::chrono::milliseconds timeout,
+            std::function<void(const SeqnoPersistenceRequest&)> timedout)
         : cookie(cookie),
           seqno(seqno),
           start(std::chrono::steady_clock::now()),
-          timeout(timeout) {
+          timeout(timeout),
+          timedout(timedout) {
     }
 
     /**
@@ -124,6 +127,8 @@ struct SeqnoPersistenceRequest {
     const std::chrono::steady_clock::time_point start;
     // How long until this request notified with temporary_failure
     const std::chrono::milliseconds timeout{0};
+    // function to invoke if this request timesout
+    std::function<void(const SeqnoPersistenceRequest&)> timedout;
 };
 
 struct SeqnoPersistenceRequestNotifications {
@@ -627,6 +632,7 @@ public:
      * @param timeout how long the client is can wait for the request to be met.
      *        Exceeding this timeout and the request is cancelled and the client
      *        notified with temporary_failure.
+     * @param timedout a function to call if the request times out
      *
      * @return RequestScheduled if a high priority request is added and
      *                          notification will be done asynchronously
@@ -638,7 +644,8 @@ public:
     virtual HighPriorityVBReqStatus checkAddHighPriorityVBEntry(
             uint64_t seqno,
             const CookieIface* cookie,
-            std::chrono::milliseconds timeout) = 0;
+            std::chrono::milliseconds timeout,
+            std::function<void(const SeqnoPersistenceRequest&)> timedout) = 0;
 
     /**
      * Notify the high priority requests on the vbucket.
@@ -2067,12 +2074,14 @@ protected:
      * @param seqno to be seen to be persisted
      * @param cookie to be notified
      * @param timeout how long before timing out the request
+     * @param timedout callback method when the request timesout
      * @return the deadline (time at which the request should expire)
      */
     std::chrono::steady_clock::time_point addHighPriorityVBEntry(
             uint64_t seqno,
             const CookieIface* cookie,
-            std::chrono::milliseconds timeout);
+            std::chrono::milliseconds timeout,
+            std::function<void(const SeqnoPersistenceRequest&)> timedout);
 
     /**
      * Get all high priority notifications as temporary failures because they
