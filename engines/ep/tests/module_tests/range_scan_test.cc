@@ -21,9 +21,11 @@
 #include "vbucket.h"
 
 #include <memcached/range_scan_optional_configuration.h>
+#include <programs/engine_testapp/mock_cookie.h>
 #include <programs/engine_testapp/mock_server.h>
 #include <utilities/test_manifest.h>
 
+#include <chrono>
 #include <unordered_set>
 #include <vector>
 
@@ -553,19 +555,30 @@ TEST_P(RangeScanTest, create_continue_is_cancelled_2) {
     }
 }
 
-TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
+TEST_P(RangeScanTest, snapshot_does_not_contain_seqno_0) {
     auto vb = store->getVBucket(vbid);
     // Nothing @ seqno 0 (use of optional makes this a valid input)
     cb::rangescan::SnapshotRequirements reqs{
-            vb->failovers->getLatestUUID(), 0, true};
+            vb->failovers->getLatestUUID(), 0, std::nullopt, true};
     createScan(makeStoredDocKey("user", scanCollection),
                makeStoredDocKey("user\xFF", scanCollection),
                reqs,
                {/* no sampling config*/},
                cb::engine_errc::failed);
+}
 
-    // Nothing @ high seqno + 1
-    reqs.seqno = uint64_t(vb->getHighSeqno() + 1);
+TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
+    auto vb = store->getVBucket(vbid);
+    // Nothing @ high seqno for this test we must store and update to ensure the
+    // requested seqno is no longer in the snapshot
+    store_item(vbid, StoredDocKey("update_me", scanCollection), "1");
+    cb::rangescan::SnapshotRequirements reqs{vb->failovers->getLatestUUID(),
+                                             uint64_t(vb->getHighSeqno()),
+                                             std::nullopt,
+                                             true};
+    store_item(vbid, StoredDocKey("update_me", scanCollection), "2");
+    flushVBucket(vbid);
+
     createScan(makeStoredDocKey("user", scanCollection),
                makeStoredDocKey("user\xFF", scanCollection),
                reqs,
@@ -576,8 +589,10 @@ TEST_P(RangeScanTest, snapshot_does_not_contain_seqno) {
 TEST_P(RangeScanTest, snapshot_contains_seqno) {
     // Something @ high seqno
     auto vb = store->getVBucket(vbid);
-    cb::rangescan::SnapshotRequirements reqs{
-            vb->failovers->getLatestUUID(), uint64_t(vb->getHighSeqno()), true};
+    cb::rangescan::SnapshotRequirements reqs{vb->failovers->getLatestUUID(),
+                                             uint64_t(vb->getHighSeqno()),
+                                             std::nullopt,
+                                             true};
     auto uuid = createScan(makeStoredDocKey("user", scanCollection),
                            makeStoredDocKey("user\xFF", scanCollection),
                            reqs,
@@ -658,9 +673,11 @@ TEST_P(RangeScanTest, scan_cancels_after_create) {
 
     EXPECT_EQ(cb::engine_errc::success, mock_waitfor_cookie(cookie));
 
-    // Drop scanCollection
+    // Drop scanCollection on a different cookie
+    auto cookie2 = create_mock_cookie();
     EXPECT_EQ(scanCollection, CollectionEntry::vegetable.getId());
-    setCollections(cookie, cm.remove(CollectionEntry::vegetable));
+    setCollections(cookie2, cm.remove(CollectionEntry::vegetable));
+    destroy_mock_cookie(cookie2);
 
     // Second part of create runs and fails
     EXPECT_EQ(
@@ -675,11 +692,104 @@ TEST_P(RangeScanTest, scan_cancels_after_create) {
                                    {})
                     .first);
 
-    // Task was scheduled to cancel (close the snapshot)
-    runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
-                "RangeScanCreateTask");
+    // Task was scheduled to cancel (close the snapshot). The continue task
+    // does cancels and runs on the reader queue
+    runNextTask(*task_executor->getLpTaskQ()[READER_TASK_IDX],
+                "RangeScanContinueTask");
 
     // Can't get hold of the scan object as we never got the uuid
+}
+
+TEST_P(RangeScanTest, wait_for_persistence_success) {
+    auto vb = store->getVBucket(vbid);
+
+    // Create a scan that requires +1 from high-seqno. We are willing to wait
+    cb::rangescan::SnapshotRequirements reqs{vb->failovers->getLatestUUID(),
+                                             uint64_t(vb->getHighSeqno() + 1),
+                                             std::chrono::milliseconds(100),
+                                             false};
+
+    EXPECT_EQ(
+            cb::engine_errc::would_block,
+            store->createRangeScan(vbid,
+                                   makeStoredDocKey("user", scanCollection),
+                                   makeStoredDocKey("user\xFF", scanCollection),
+                                   *handler,
+                                   cookie,
+                                   getScanType(),
+                                   reqs,
+                                   {})
+                    .first);
+
+    // store our item and flush (so the waitForPersistence is notified)
+    store_item(vbid, StoredDocKey("waiting", scanCollection), "");
+    EXPECT_EQ(1, vb->getHighPriorityChkSize());
+    flushVBucket(vbid);
+    EXPECT_EQ(cb::engine_errc::success, mock_waitfor_cookie(cookie));
+    EXPECT_EQ(0, vb->getHighPriorityChkSize());
+
+    // Now the task will move to create, we can drive the scan using our wrapper
+    // it will do the next ewouldblock phase finally creating the scan
+    auto uuid = createScan(makeStoredDocKey("user", scanCollection),
+                           makeStoredDocKey("user\xFF", scanCollection),
+                           reqs,
+                           {/* no sampling config*/},
+                           cb::engine_errc::success);
+
+    // Close the scan
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, false));
+}
+
+TEST_P(RangeScanTest, wait_for_persistence_fails) {
+    auto vb = store->getVBucket(vbid);
+
+    // Create a scan that requires +1 from high-seqno. No timeout so fails on
+    // the first crack of the whip
+    cb::rangescan::SnapshotRequirements reqs{vb->failovers->getLatestUUID(),
+                                             uint64_t(vb->getHighSeqno() + 1),
+                                             std::nullopt,
+                                             false};
+
+    EXPECT_EQ(
+            cb::engine_errc::temporary_failure,
+            store->createRangeScan(vbid,
+                                   makeStoredDocKey("user", scanCollection),
+                                   makeStoredDocKey("user\xff", scanCollection),
+                                   *handler,
+                                   cookie,
+                                   getScanType(),
+                                   reqs,
+                                   {})
+                    .first);
+}
+
+TEST_P(RangeScanTest, wait_for_persistence_timeout) {
+    auto vb = store->getVBucket(vbid);
+
+    // Create a scan that requires +1 from high-seqno. We are willing to wait
+    // set the timeout to 0, so first flush will expire
+    cb::rangescan::SnapshotRequirements reqs{vb->failovers->getLatestUUID(),
+                                             uint64_t(vb->getHighSeqno() + 2),
+                                             std::chrono::milliseconds(0),
+                                             false};
+
+    EXPECT_EQ(
+            cb::engine_errc::would_block,
+            store->createRangeScan(vbid,
+                                   makeStoredDocKey("user", scanCollection),
+                                   makeStoredDocKey("user\xff", scanCollection),
+                                   *handler,
+                                   cookie,
+                                   getScanType(),
+                                   reqs,
+                                   {})
+                    .first);
+
+    // store an item and flush (so the waitForPersistence is notified and
+    // expired)
+    store_item(vbid, StoredDocKey("waiting", scanCollection), "");
+    flushVBucket(vbid);
+    EXPECT_EQ(cb::engine_errc::temporary_failure, mock_waitfor_cookie(cookie));
 }
 
 auto scanConfigValues = ::testing::Combine(

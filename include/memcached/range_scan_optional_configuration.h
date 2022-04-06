@@ -20,6 +20,13 @@ struct SnapshotRequirements {
     uint64_t vbUuid{0};
     // This seqno must of been persisted to snapshot
     uint64_t seqno{0};
+    /**
+     * This is the timeout to use when the seqno is not yet persisted.
+     * This is optional to allow for a timeout of 0 in unit tests (so no real
+     * waiting), but other APIs can use 0 as "no-timeout" and leave this
+     * variable as std::nullopt
+     */
+    std::optional<std::chrono::milliseconds> timeout;
     // true: The seqno must still exist in snapshot
     bool seqnoMustBeInSnapshot{false};
 };
