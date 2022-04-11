@@ -170,6 +170,7 @@ bool is_valid_opcode(ClientOpcode opcode) {
     case ClientOpcode::SubdocMultiMutation:
     case ClientOpcode::SubdocGetCount:
     case ClientOpcode::SubdocReplaceBodyWithXattr:
+
     case ClientOpcode::Scrub:
     case ClientOpcode::IsaslRefresh:
     case ClientOpcode::SslCertsRefresh:
@@ -183,6 +184,9 @@ bool is_valid_opcode(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanCreate:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
         return true;
     case ClientOpcode::Invalid:
         break;
@@ -337,6 +341,9 @@ bool is_supported_opcode(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanCreate:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
         return true;
     case ClientOpcode::Rget_Unsupported:
     case ClientOpcode::Rset_Unsupported:
@@ -544,6 +551,9 @@ bool is_durability_supported(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanCreate:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
         return false;
 
     case ClientOpcode::Invalid:
@@ -723,6 +733,9 @@ bool is_reorder_supported(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanCreate:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
         return false;
 
     case ClientOpcode::Invalid:
@@ -787,6 +800,7 @@ bool is_collection_command(ClientOpcode opcode) {
     case ClientOpcode::SubdocMultiMutation:
     case ClientOpcode::SubdocGetCount:
     case ClientOpcode::SubdocReplaceBodyWithXattr:
+    case ClientOpcode::RangeScanCreate:
         return true;
 
     case ClientOpcode::Observe:
@@ -907,6 +921,8 @@ bool is_collection_command(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
         return false;
     case ClientOpcode::Invalid:
         break;
@@ -1088,6 +1104,9 @@ bool is_deprecated(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanCreate:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
     case ClientOpcode::Invalid:
         break;
     }
@@ -1262,6 +1281,9 @@ bool is_preserve_ttl_supported(ClientOpcode opcode) {
     case ClientOpcode::AdjustTimeofday:
     case ClientOpcode::EwouldblockCtl:
     case ClientOpcode::GetErrorMap:
+    case ClientOpcode::RangeScanCreate:
+    case ClientOpcode::RangeScanContinue:
+    case ClientOpcode::RangeScanCancel:
         return false;
 
     case ClientOpcode::Invalid:
@@ -1620,6 +1642,14 @@ std::string to_string(cb::mcbp::ClientOpcode opcode) {
     case ClientOpcode::GetErrorMap:
         return "GET_ERROR_MAP";
     case ClientOpcode::Invalid:
+    case ClientOpcode::RangeScanCreate:
+        return "RANGE_SCAN_CREATE";
+    case ClientOpcode::RangeScanContinue:
+        return "RANGE_SCAN_CONTINUE";
+
+    case ClientOpcode::RangeScanCancel:
+        return "RANGE_SCAN_CANCEL";
+
         break;
     }
 

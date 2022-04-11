@@ -491,6 +491,19 @@ cb::engine_errc dcpAbort(Cookie& cookie,
                          uint64_t prepared_seqno,
                          uint64_t abort_seqno);
 
+cb::engine_errc rangeScanCreate(
+        Cookie& cookie,
+        Vbid vbucket,
+        CollectionID cid,
+        std::string_view start,
+        std::string_view end,
+        uint32_t flags,
+        std::optional<RangeScanSnapshotRequirements> snapshotReqs,
+        std::optional<RangeScanSamplingConfiguration> samplingConfig);
+
+// @todo: add rangeScanContinue
+cb::engine_errc rangeScanCancel(Cookie& cookie, Vbid vbucket, RangeScanId uuid);
+
 cb::engine_errc bucket_set_parameter(Cookie& cookie,
                                      EngineParamCategory category,
                                      std::string_view key,
