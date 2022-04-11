@@ -3071,6 +3071,7 @@ std::pair<cb::engine_errc, cb::rangescan::Id> KVBucket::createRangeScan(
         cb::rangescan::KeyOnly,
         std::optional<cb::rangescan::SnapshotRequirements>,
         std::optional<cb::rangescan::SamplingConfiguration>) {
+    EP_LOG_WARN_RAW("KVBucket::createRangeScan");
     return {cb::engine_errc::not_supported, {}};
 }
 cb::engine_errc KVBucket::continueRangeScan(Vbid,

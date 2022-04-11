@@ -6967,3 +6967,57 @@ cb::engine_errc EventuallyPersistentEngine::deleteVBucket(
         const CookieIface& cookie, Vbid vbid, bool sync) {
     return acquireEngine(this)->deleteVBucketInner(cookie, vbid, sync);
 }
+
+// Temporary - unsure yet of what this needs to look like, do we actually
+// need to create and move down the stack so the RangeScan has an instance of
+// this? Can just one exist they share?
+#include "range_scans/range_scan_callbacks.h"
+class RangeScanDataHandler : public RangeScanDataHandlerIFace {
+public:
+    /// @param key A key read from a Key only scan
+    void handleKey(DocKey key) override {
+    }
+
+    /// @param item An Item read from a Key/Value scan
+    void handleItem(std::unique_ptr<Item> item) override {
+    }
+};
+
+static std::unique_ptr<RangeScanDataHandler> rangeScanHandler =
+        std::make_unique<RangeScanDataHandler>();
+
+std::pair<cb::engine_errc, cb::rangescan::Id>
+EventuallyPersistentEngine::createRangeScan(
+        const CookieIface& cookie,
+        Vbid vbid,
+        CollectionID cid,
+        cb::rangescan::KeyView start,
+        cb::rangescan::KeyView end,
+        cb::rangescan::KeyOnly keyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig) {
+    return acquireEngine(this)->getKVBucket()->createRangeScan(
+            vbid,
+            cid,
+            start,
+            end,
+            *rangeScanHandler,
+            cookie,
+            keyOnly,
+            snapshotReqs,
+            samplingConfig);
+}
+
+cb::engine_errc EventuallyPersistentEngine::continueRangeScan(
+        const CookieIface& cookie,
+        Vbid vbid,
+        cb::rangescan::Id uuid,
+        size_t itemLimit,
+        std::chrono::milliseconds timeLimit) {
+    return cb::engine_errc::not_supported;
+}
+
+cb::engine_errc EventuallyPersistentEngine::cancelRangeScan(
+        const CookieIface& cookie, Vbid vbid, cb::rangescan::Id uuid) {
+    return acquireEngine(this)->getKVBucket()->cancelRangeScan(vbid, uuid);
+}

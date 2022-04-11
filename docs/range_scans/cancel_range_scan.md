@@ -27,3 +27,11 @@ The extras for a continue range scan encodes:
        Total 16bytes
 ```
 
+### Errors
+
+Additional to common errors such as validation failure, auth-failure and
+not-my-vbucket the following errors can occur.
+
+**PROTOCOL_BINARY_RESPONSE_KEY_NO_EXISTS (0x01)**
+
+The scan identifier has no match.

@@ -2225,6 +2225,63 @@ static Status not_supported_validator(Cookie& cookie) {
     return Status::NotSupported;
 }
 
+static Status create_range_scan_validator(Cookie& cookie) {
+    // @todo: protocol still a wip
+    auto& header = cookie.getHeader();
+
+    // @todo: validate extlen, maybe validate extra contents? We need to cast
+    // so we can read the collection
+    auto status = McbpValidator::verify_header(cookie,
+                                               header.getExtlen(),
+                                               ExpectedKeyLen::Zero,
+                                               ExpectedValueLen::Any,
+                                               ExpectedCas::NotSet,
+                                               PROTOCOL_BINARY_RAW_BYTES);
+
+    if (status != Status::Success) {
+        return status;
+    }
+
+    // @todo: read the collection from the extras
+    // The following code is required to setup the cookie's collection info so
+    // that auth checks can be applied. This command is against a collection
+    // and the client must have appropriate access for the collection/scope
+    CollectionID cid = CollectionID::Default;
+    ScopeID sid;
+    uint64_t manifestUid = 0;
+
+    if (cid.isDefaultCollection()) {
+        sid = ScopeID{ScopeID::Default};
+    } else {
+        auto vbid = cookie.getRequest().getVBucket();
+        auto res = cookie.getConnection().getBucket().getEngine().get_scope_id(
+                cookie, cid, vbid);
+        if (res.result == cb::engine_errc::success) {
+            manifestUid = res.getManifestId();
+            sid = res.getScopeId();
+        } else if (res.result == cb::engine_errc::unknown_collection) {
+            // Could not get the collection's scope - an unknown collection
+            // against the manifest with id stored in res.first.
+            cookie.setUnknownCollectionErrorContext(res.getManifestId());
+            return Status::UnknownCollection;
+        } else {
+            return cb::mcbp::to_status(res.result);
+        }
+    }
+    cookie.setCurrentCollectionInfo(sid, cid, manifestUid);
+    return Status::Success;
+}
+
+static Status cancel_range_scan_validator(Cookie& cookie) {
+    auto status = McbpValidator::verify_header(cookie,
+                                               sizeof(cb::rangescan::Id),
+                                               ExpectedKeyLen::Zero,
+                                               ExpectedValueLen::Zero,
+                                               ExpectedCas::NotSet,
+                                               PROTOCOL_BINARY_RAW_BYTES);
+    return status;
+}
+
 Status McbpValidator::validate(ClientOpcode command, Cookie& cookie) {
     const auto idx = std::underlying_type<ClientOpcode>::type(command);
     if (validators[idx]) {
@@ -2464,4 +2521,7 @@ McbpValidator::McbpValidator() {
           not_supported_validator);
     setup(cb::mcbp::ClientOpcode::CheckpointPersistence_Unsupported,
           not_supported_validator);
+
+    setup(cb::mcbp::ClientOpcode::RangeScanCreate, create_range_scan_validator);
+    setup(cb::mcbp::ClientOpcode::RangeScanCancel, cancel_range_scan_validator);
 }

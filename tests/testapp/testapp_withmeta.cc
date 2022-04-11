@@ -140,6 +140,25 @@ TEST_P(WithMetaTest, basicSetXattr) {
         checkCas();
     }
 }
+#include <boost/uuid/uuid_io.hpp>
+#include <memcached/range_scan_id.h>
+
+// Verify that Revive on a document which _isn't_ deleted fails
+TEST_P(WithMetaTest, JWW2) {
+    BinprotGenericCommand cmd(cb::mcbp::ClientOpcode::RangeScanCreate);
+    userConnection->sendCommand(cmd);
+    BinprotResponse resp;
+    userConnection->recvResponse(resp);
+    cb::rangescan::Id id;
+    std::memcpy(id.data, resp.getData().data(), resp.getData().size());
+    std::cerr << id << std::endl;
+
+    BinprotGenericCommand cmd2(cb::mcbp::ClientOpcode::RangeScanCancel);
+    cmd2.setExtrasValue(id);
+    userConnection->sendCommand(cmd2);
+    userConnection->recvResponse(resp);
+    ASSERT_EQ(cb::mcbp::Status::Success, resp.getStatus());
+}
 
 TEST_P(WithMetaTest, MB36304_DocumetTooBig) {
     TESTAPP_SKIP_IF_UNSUPPORTED(cb::mcbp::ClientOpcode::SetWithMeta);

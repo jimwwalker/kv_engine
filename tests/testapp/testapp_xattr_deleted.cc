@@ -522,3 +522,12 @@ TEST_P(XattrNoDocTest, ReviveRequireDeletedDocument) {
     ASSERT_EQ(cb::mcbp::Status::SubdocCanOnlyReviveDeletedDocuments,
               resp.getStatus());
 }
+
+// Verify that Revive on a document which _isn't_ deleted fails
+TEST_P(XattrNoDocTest, JWW) {
+    BinprotGenericCommand cmd(cb::mcbp::ClientOpcode::RangeScanCreate);
+    userConnection->sendCommand(cmd);
+    BinprotResponse resp;
+    userConnection->recvResponse(resp);
+    sleep(100);
+}
