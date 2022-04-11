@@ -864,6 +864,52 @@ cb::engine_errc dcpAbort(Cookie& cookie,
     return ret;
 }
 
+cb::engine_errc rangeScanCreate(
+        Cookie& cookie,
+        Vbid vbucket,
+        CollectionID cid,
+        std::string_view start,
+        std::string_view end,
+        uint32_t flags,
+        std::optional<RangeScanSnapshotRequirements> snapshotReqs,
+        std::optional<RangeScanSamplingConfiguration> sampling) {
+    auto& c = cookie.getConnection();
+    auto ret = c.getBucketEngine().range_scan_create(cookie,
+                                                     vbucket,
+                                                     cid,
+                                                     start,
+                                                     end,
+                                                     flags,
+                                                     snapshotReqs,
+                                                     samplingConfig);
+
+    if (ret.first == cb::engine_errc::disconnect) {
+        LOG_WARNING(
+                "{}: {} range_scan_create return cb::engine_errc::disconnect",
+                c.getId(),
+                c.getDescription());
+        c.setTerminationReason("Engine forced disconnect");
+    }
+    return ret;
+}
+
+// @todo: add rangeScanContinue
+cb::engine_errc rangeScanCancel(Cookie& cookie,
+                                Vbid vbucket,
+                                RangeScanId uuid) {
+    auto& c = cookie.getConnection();
+    auto ret = c.getBucketEngine().range_scan_cancel(cookie, vbucket, uuid);
+
+    if (ret.first == cb::engine_errc::disconnect) {
+        LOG_WARNING(
+                "{}: {} range_scan_create return cb::engine_errc::disconnect",
+                c.getId(),
+                c.getDescription());
+        c.setTerminationReason("Engine forced disconnect");
+    }
+    return ret;
+}
+
 cb::engine_errc bucket_set_parameter(Cookie& cookie,
                                      EngineParamCategory category,
                                      std::string_view key,
