@@ -598,6 +598,11 @@ public:
         return manifest->getManifestUid();
     }
 
+    /// @return the scope of the collection that locked this (must be valid())
+    ScopeID getScopeID() const {
+        return itr->second.getScopeID();
+    }
+
     void dump();
 
 protected:
