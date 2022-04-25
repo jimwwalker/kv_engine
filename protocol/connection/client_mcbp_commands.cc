@@ -60,7 +60,7 @@ void BinprotCommand::fillHeader(cb::mcbp::Request& header,
     // that at a later time
     header.setKeylen(gsl::narrow<uint8_t>(key.size()));
     header.setExtlen(gsl::narrow<uint8_t>(extlen));
-    header.setDatatype(cb::mcbp::Datatype::Raw);
+    header.setDatatype(cb::mcbp::Datatype(datatype));
     header.setVBucket(vbucket);
     header.setBodylen(gsl::narrow<uint32_t>(key.size() + extlen + payload_len +
                                             frame_info.size()));
@@ -129,6 +129,15 @@ BinprotCommand& BinprotCommand::setVBucket(Vbid vbid) {
 BinprotCommand& BinprotCommand::setOpaque(uint32_t opaq) {
     opaque = opaq;
     return *this;
+}
+
+BinprotCommand& BinprotCommand::setDatatype(uint8_t datatype_) {
+    datatype = datatype_;
+    return *this;
+}
+
+BinprotCommand& BinprotCommand::setDatatype(cb::mcbp::Datatype datatype_) {
+    return setDatatype(uint8_t(datatype_));
 }
 
 BinprotCommand& BinprotCommand::addFrameInfo(const FrameInfo& fi) {
@@ -705,7 +714,6 @@ void BinprotMutationCommand::encodeHeader(std::vector<uint8_t>& buf) const {
 
     writeHeader(buf, value_size, extlen);
     auto* header = reinterpret_cast<cb::mcbp::Request*>(buf.data());
-    header->setDatatype(cb::mcbp::Datatype(datatype));
 
     if (extlen != 0) {
         // Write the extras:
@@ -750,14 +758,6 @@ BinprotMutationCommand& BinprotMutationCommand::addValueBuffer(
         cb::const_byte_buffer buf) {
     value_refs.emplace_back(buf);
     return *this;
-}
-BinprotMutationCommand& BinprotMutationCommand::setDatatype(uint8_t datatype_) {
-    datatype = datatype_;
-    return *this;
-}
-BinprotMutationCommand& BinprotMutationCommand::setDatatype(
-        cb::mcbp::Datatype datatype_) {
-    return setDatatype(uint8_t(datatype_));
 }
 BinprotMutationCommand& BinprotMutationCommand::setDocumentFlags(
         uint32_t flags_) {

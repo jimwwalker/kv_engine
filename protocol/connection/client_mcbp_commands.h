@@ -48,6 +48,9 @@ public:
 
     BinprotCommand& setOpaque(uint32_t opaq);
 
+    BinprotCommand& setDatatype(uint8_t datatype_);
+    BinprotCommand& setDatatype(cb::mcbp::Datatype datatype_);
+
     /// Add a frame info object to the stream
     BinprotCommand& addFrameInfo(const FrameInfo& fi);
 
@@ -128,6 +131,7 @@ protected:
     uint64_t cas = 0;
     Vbid vbucket = Vbid(0);
     uint32_t opaque{0xdeadbeef};
+    uint8_t datatype{PROTOCOL_BINARY_RAW_BYTES};
 
     /// The frame info sections to inject into the packet
     std::vector<uint8_t> frame_info;
@@ -706,8 +710,6 @@ public:
 
     BinprotMutationCommand& addValueBuffer(cb::const_byte_buffer buf);
 
-    BinprotMutationCommand& setDatatype(uint8_t datatype_);
-    BinprotMutationCommand& setDatatype(cb::mcbp::Datatype datatype_);
     BinprotMutationCommand& setDocumentFlags(uint32_t flags_);
     BinprotMutationCommand& setExpiry(uint32_t expiry_);
 
@@ -724,7 +726,6 @@ protected:
 
     BinprotCommand::ExpiryValue expiry;
     uint32_t flags = 0;
-    uint8_t datatype = 0;
 };
 
 class BinprotMutationResponse : public BinprotResponse {

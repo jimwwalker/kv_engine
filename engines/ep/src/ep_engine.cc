@@ -38,6 +38,7 @@
 #include "hash_table_stat_visitor.h"
 #include "htresizer.h"
 #include "kvstore/kvstore.h"
+#include "range_scans/range_scan_callbacks.h"
 #include "replicationthrottle.h"
 #include "server_document_iface_border_guard.h"
 #include "stats-info.h"
@@ -58,6 +59,7 @@
 #include <memcached/engine.h>
 #include <memcached/limits.h>
 #include <memcached/protocol_binary.h>
+#include <memcached/range_scan_optional_configuration.h>
 #include <memcached/server_cookie_iface.h>
 #include <memcached/server_core_iface.h>
 #include <memcached/util.h>
@@ -6968,4 +6970,40 @@ cb::engine_errc EventuallyPersistentEngine::setVBucket(
 cb::engine_errc EventuallyPersistentEngine::deleteVBucket(
         const CookieIface& cookie, Vbid vbid, bool sync) {
     return acquireEngine(this)->deleteVBucketInner(cookie, vbid, sync);
+}
+
+std::pair<cb::engine_errc, cb::rangescan::Id>
+EventuallyPersistentEngine::createRangeScan(
+        const CookieIface& cookie,
+        Vbid vbid,
+        CollectionID cid,
+        cb::rangescan::KeyView start,
+        cb::rangescan::KeyView end,
+        cb::rangescan::KeyOnly keyOnly,
+        std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
+        std::optional<cb::rangescan::SamplingConfiguration> samplingConfig) {
+    return acquireEngine(this)->getKVBucket()->createRangeScan(
+            vbid,
+            cid,
+            start,
+            end,
+            nullptr, // No RangeScanDataHandler to 'inject'
+            cookie,
+            keyOnly,
+            snapshotReqs,
+            samplingConfig);
+}
+
+cb::engine_errc EventuallyPersistentEngine::continueRangeScan(
+        const CookieIface& cookie,
+        Vbid vbid,
+        cb::rangescan::Id uuid,
+        size_t itemLimit,
+        std::chrono::milliseconds timeLimit) {
+    return cb::engine_errc::not_supported;
+}
+
+cb::engine_errc EventuallyPersistentEngine::cancelRangeScan(
+        const CookieIface& cookie, Vbid vbid, cb::rangescan::Id uuid) {
+    return acquireEngine(this)->getKVBucket()->cancelRangeScan(vbid, uuid);
 }
