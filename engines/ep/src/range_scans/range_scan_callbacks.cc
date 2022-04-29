@@ -12,19 +12,63 @@
 
 #include "collections/vbucket_manifest_handles.h"
 #include "ep_bucket.h"
+#include "ep_engine.h"
+#include "objectregistry.h"
 #include "range_scans/range_scan.h"
 #include "vbucket.h"
 
-void RangeScanDataHandler::handleKey(DocKey key) {
-    // @todo:
+#include <mcbp/codec/range_scan_continue_codec.h>
+#include <mcbp/protocol/unsigned_leb128.h>
+#include <memcached/server_cookie_iface.h>
+
+void RangeScanDataHandler::checkAndSend(const CookieIface& cookie) {
+    if (buffer.size() >= 1024) {
+        send(cookie);
+    }
 }
 
-void RangeScanDataHandler::handleItem(std::unique_ptr<Item> item) {
-    // @todo:
+void RangeScanDataHandler::send(const CookieIface& cookie) {
+    if (buffer.empty()) {
+        return;
+    }
+
+    {
+        NonBucketAllocationGuard guard;
+        engine.getServerApi()->cookie->send_response(
+                cookie,
+                cb::engine_errc::success,
+                {reinterpret_cast<const char*>(buffer.data()), buffer.size()});
+    }
+    buffer.clear();
 }
 
-void RangeScanDataHandler::handleStatus(cb::engine_errc status) {
-    // @todo:
+void RangeScanDataHandler::handleKey(const CookieIface& cookie, DocKey key) {
+    cb::mcbp::response::RangeScanContinueKeyPayload::encode(buffer, key);
+    checkAndSend(cookie);
+}
+
+void RangeScanDataHandler::handleItem(const CookieIface& cookie,
+                                      std::unique_ptr<Item> item) {
+    // possibly don't do this if value is > some size? just do some sort of
+    // iovec style and point at the various bits?
+    cb::mcbp::response::RangeScanContinueValuePayload::encode(
+            buffer, item->toItemInfo(0, false));
+    checkAndSend(cookie);
+}
+
+void RangeScanDataHandler::handleStatus(const CookieIface& cookie,
+                                        cb::engine_errc status) {
+    // ensure any buffered data is now gone
+    send(cookie);
+
+    // Now attach the status, closing out this range-scan-continue
+    {
+        NonBucketAllocationGuard guard;
+        engine.getServerApi()->cookie->send_response(cookie, status, {});
+
+        // And execution is complete
+        engine.getServerApi()->cookie->execution_complete(cookie);
+    }
 }
 
 RangeScanCacheCallback::RangeScanCacheCallback(RangeScan& scan,

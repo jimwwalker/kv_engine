@@ -818,9 +818,11 @@ public:
      * @param status The status the background thread set for the cookie
      */
     void processNotifiedCookie(Cookie& cookie, cb::engine_errc status);
+    void processCompletedCookie(Cookie& cookie);
 
     /// Notify that a command was executed (needed for command rate limiting)
     void commandExecuted(Cookie& cookie);
+    void commandExecuted(); //??
 
 protected:
     /**

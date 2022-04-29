@@ -44,17 +44,18 @@ public:
           testHook(hook) {
     }
 
-    void handleKey(DocKey key) override {
+    void handleKey(const CookieIface&, DocKey key) override {
         scannedKeys.emplace_back(key);
         testHook(scannedKeys.size());
     }
 
-    void handleItem(std::unique_ptr<Item> item) override {
+    void handleItem(const CookieIface&, std::unique_ptr<Item> item) override {
         scannedItems.emplace_back(std::move(item));
         testHook(scannedItems.size());
     }
 
-    void handleStatus(cb::engine_errc status) override {
+    void handleStatus(const CookieIface& cookie,
+                      cb::engine_errc status) override {
         EXPECT_TRUE(validateStatus(status));
         this->status = status;
     }

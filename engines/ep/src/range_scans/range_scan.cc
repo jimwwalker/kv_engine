@@ -271,7 +271,7 @@ void RangeScan::setStateCancelled() {
 
 void RangeScan::handleKey(DocKey key) {
     incrementItemCount();
-    handler->handleKey(key);
+    handler->handleKey(*continueRunState.cState.cookie, key);
 }
 
 void RangeScan::handleItem(std::unique_ptr<Item> item, Source source) {
@@ -281,11 +281,11 @@ void RangeScan::handleItem(std::unique_ptr<Item> item, Source source) {
         incrementValueFromDisk();
     }
     incrementItemCount();
-    handler->handleItem(std::move(item));
+    handler->handleItem(*continueRunState.cState.cookie, std::move(item));
 }
 
 void RangeScan::handleStatus(cb::engine_errc status) {
-    handler->handleStatus(status);
+    handler->handleStatus(*continueRunState.cState.cookie, status);
 }
 
 void RangeScan::incrementItemCount() {

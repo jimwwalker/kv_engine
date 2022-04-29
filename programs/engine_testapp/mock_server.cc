@@ -342,6 +342,14 @@ struct MockServerCookieApi : public ServerCookieIface {
         auto validator = cb::json::SyntaxValidator::New();
         return validator->validate(view);
     }
+
+    void send_response(const CookieIface&,
+                       cb::engine_errc,
+                       std::string_view) override {
+    }
+
+    void execution_complete(const CookieIface&) override {
+    }
 };
 
 ServerApi* get_mock_server_api() {

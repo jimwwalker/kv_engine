@@ -27,6 +27,7 @@
 #include "flusher.h"
 #include "item.h"
 #include "kvshard.h"
+#include "range_scans/range_scan_callbacks.h"
 #include "range_scans/range_scan_continue_task.h"
 #include "range_scans/range_scan_create_task.h"
 #include "range_scans/range_scan_types.h"
@@ -1282,7 +1283,7 @@ std::pair<cb::engine_errc, cb::rangescan::Id> EPVBucket::createRangeScan(
 
     // If no handler has been given, create one.
     if (!handler) {
-        handler = std::make_unique<RangeScanDataHandler>();
+        handler = std::make_unique<RangeScanDataHandler>(bucket->getEPEngine());
     }
 
     // Create a task and give it the RangeScanCreateData, on failure the task

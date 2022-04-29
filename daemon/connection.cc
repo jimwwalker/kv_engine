@@ -772,8 +772,36 @@ void Connection::commandExecuted(Cookie& cookie) {
     if (!internal) {
         getBucket().commandExecuted(cookie);
     }
+}
+
+void Connection::commandExecuted() {
     if (tenant) {
         tenant->executed();
+    }
+}
+
+// @todo: this bypasses commandExecuted/execute? so no timings or is it ok?
+void Connection::processCompletedCookie(Cookie& cookie) {
+    try {
+        cookie.setAiostat(cb::engine_errc::success);
+        cookie.setEwouldblock(false);
+
+        // completed!!! time to clean up after it and process the
+        // command pipeline? / schedule more?
+        if (cookies.front().get() == &cookie) {
+            cookies.front()->reset();
+        } else {
+            cookies.erase(std::remove_if(cookies.begin(),
+                                         cookies.end(),
+                                         [ptr = &cookie](const auto& cookie) {
+                                             return ptr == cookie.get();
+                                         }),
+                          cookies.end());
+        }
+        triggerCallback();
+    } catch (const std::exception& e) {
+        LOG_CRITICAL("Connection::processCompletedCookie got exception: {}",
+                     e.what());
     }
 }
 
