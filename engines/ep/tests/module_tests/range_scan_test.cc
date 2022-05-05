@@ -963,6 +963,44 @@ TEST_P(RangeScanTest, wait_for_persistence_timeout) {
     EXPECT_EQ(cb::engine_errc::temporary_failure, mock_waitfor_cookie(cookie));
 }
 
+// Test that if the vbucket changes after create, but before we run the create
+// task, it is detected when snapshot_requirements are in use
+TEST_P(RangeScanTest, scan_detects_vbucket_change) {
+    auto vb = store->getVBucket(vbid);
+    cb::rangescan::SnapshotRequirements reqs{vb->failovers->getLatestUUID(),
+                                             uint64_t(vb->getHighSeqno()),
+                                             std::chrono::milliseconds(0),
+                                             false};
+    vb.reset();
+
+    EXPECT_EQ(cb::engine_errc::would_block,
+              store->createRangeScan(vbid,
+                                     scanCollection,
+                                     {"user"},
+                                     {"user\xFF"},
+                                     std::move(handler),
+                                     *cookie,
+                                     getScanType(),
+                                     reqs,
+                                     {})
+                      .first);
+
+    // destroy and create the vbucket - a new uuid will be created
+    EXPECT_TRUE(store->resetVBucket(vbid));
+
+    // Need to poke a few functions to get the create ready to run.
+    runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
+                "Removing (dead) vb:0 from memory and disk");
+    // calling this ensures a vbucket snapshot exists for our vbid (but is the
+    // wrong uuid)
+    setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
+    runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
+                "RangeScanCreateTask");
+
+    // task detected the vbucket has changed and aborted
+    EXPECT_EQ(cb::engine_errc::success, mock_waitfor_cookie(cookie));
+}
+
 bool TestRangeScanHandler::validateStatus(cb::engine_errc code) {
     switch (code) {
     case cb::engine_errc::success:
