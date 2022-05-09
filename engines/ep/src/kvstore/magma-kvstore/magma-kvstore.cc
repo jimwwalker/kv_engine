@@ -1712,7 +1712,8 @@ std::unique_ptr<ByIdScanContext> MagmaKVStore::initByIdScanContext(
         Vbid vbid,
         const std::vector<ByIdRange>& ranges,
         DocumentFilter options,
-        ValueFilter valOptions) const {
+        ValueFilter valOptions,
+        std::unique_ptr<KVFileHandle> fileHandle) const {
     throw std::runtime_error(
             "MagmaKVStore::initByIdScanContext (id scan) unimplemented");
     return {};

@@ -531,7 +531,8 @@ public:
             Vbid vbid,
             const std::vector<ByIdRange>& ranges,
             DocumentFilter options,
-            ValueFilter valOptions) const = 0;
+            ValueFilter valOptions,
+            std::unique_ptr<KVFileHandle> fileHandle = nullptr) const = 0;
 
     /**
      * Run a BySeqno scan

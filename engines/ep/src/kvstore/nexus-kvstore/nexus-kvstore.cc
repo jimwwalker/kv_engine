@@ -2576,9 +2576,15 @@ std::unique_ptr<ByIdScanContext> NexusKVStore::initByIdScanContext(
         Vbid vbid,
         const std::vector<ByIdRange>& ranges,
         DocumentFilter options,
-        ValueFilter valOptions) const {
-    return primary->initByIdScanContext(
-            std::move(cb), std::move(cl), vbid, ranges, options, valOptions);
+        ValueFilter valOptions,
+        std::unique_ptr<KVFileHandle> fileHandle) const {
+    return primary->initByIdScanContext(std::move(cb),
+                                        std::move(cl),
+                                        vbid,
+                                        ranges,
+                                        options,
+                                        valOptions,
+                                        std::move(fileHandle));
 }
 
 ScanStatus NexusKVStore::scan(BySeqnoScanContext& ctx) const {

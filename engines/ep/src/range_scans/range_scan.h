@@ -220,6 +220,9 @@ protected:
             std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs,
             std::optional<cb::rangescan::SamplingConfiguration> samplingConfig);
 
+    // final part of construction - 1 key must be found
+    void tryAndScanOneKey(KVStoreIface& kvstore);
+
     /// @return true if this scan is a random sample scan
     bool isSampling() const;
 
