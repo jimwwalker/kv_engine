@@ -88,6 +88,28 @@ static cb::rangescan::SnapshotRequirements getSnapshotRequirements(
     return rv;
 }
 
+static std::pair<std::string, cb::rangescan::KeyType> getRange(
+        const nlohmann::json& range,
+        const std::string& k1,
+        const std::string& k2) {
+    auto value1 = cb::getOptionalJsonObject(
+            range, k1, nlohmann::json::value_t::string);
+    auto value2 = cb::getOptionalJsonObject(
+            range, k2, nlohmann::json::value_t::string);
+
+    // both defined = bad, none defined = bad
+    if ((value1 && value2) || (!value1 && !value2)) {
+        throw std::invalid_argument("getRange: invalid configuration");
+    }
+
+    if (value1) {
+        return {value1.value().get<std::string>(),
+                cb::rangescan::KeyType::Inclusive};
+    }
+    return {value2.value().get<std::string>(),
+            cb::rangescan::KeyType::Exclusive};
+}
+
 static std::pair<cb::engine_errc, cb::rangescan::Id> createRangeScan(
         Cookie& cookie) {
     const auto& req = cookie.getRequest();
@@ -111,24 +133,18 @@ static std::pair<cb::engine_errc, cb::rangescan::Id> createRangeScan(
     std::string end{"\xFF"};
     cb::rangescan::KeyType startType = cb::rangescan::KeyType::Inclusive;
     cb::rangescan::KeyType endType = cb::rangescan::KeyType::Inclusive;
-
     if (range) {
-        start = cb::getJsonObject(range.value(),
-                                  "start",
-                                  nlohmann::json::value_t::string,
-                                  "range_scan_create_executor start")
-                        .get<std::string>();
-        end = cb::getJsonObject(range.value(),
-                                "end",
-                                nlohmann::json::value_t::string,
-                                "range_scan_create_executor end")
-                      .get<std::string>();
+        try {
+            std::tie(start, startType) =
+                    getRange(range.value(), "start", "e_start");
+            std::tie(end, endType) = getRange(range.value(), "end", "e_end");
+        } catch (const std::exception&) {
+            return {cb::engine_errc::invalid_arguments, {}};
+        }
 
         // And now get the 'raw' key encoding from the base64 encoding
         start = Couchbase::Base64::decode(start);
         end = Couchbase::Base64::decode(end);
-
-        // @todo: KeyType
     }
 
     std::optional<cb::rangescan::SnapshotRequirements> snapshotReqs;
