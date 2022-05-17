@@ -1405,3 +1405,7 @@ cb::engine_errc EPVBucket::cancelRangeScan(cb::rangescan::Id id,
     // The client doesn't wait for the task to run/complete
     return cb::engine_errc::success;
 }
+
+cb::engine_errc EPVBucket::doRangeScanStats(const StatCollector& collector) {
+    return rangeScans.doStats(collector);
+}

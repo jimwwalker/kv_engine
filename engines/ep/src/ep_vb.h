@@ -283,6 +283,7 @@ public:
     cb::engine_errc cancelRangeScan(cb::rangescan::Id id,
                                     const CookieIface* cookie,
                                     bool schedule) override;
+    cb::engine_errc doRangeScanStats(const StatCollector& collector) override;
 
     /**
      * Function to be called after a RangeScanCreateTask notifies success.
