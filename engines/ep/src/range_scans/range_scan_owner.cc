@@ -14,6 +14,8 @@
 #include "configuration.h"
 #include "ep_bucket.h"
 #include "ep_engine.h"
+#include "ep_vb.h"
+#include "event_driven_timeout_task.h"
 #include "kvstore/kvstore.h"
 #include "range_scans/range_scan.h"
 #include "range_scans/range_scan_callbacks.h"
@@ -103,7 +105,62 @@ void ReadyRangeScans::addStats(const StatCollector& collector) const {
     collector.addStat("ready_queue_size", getReadyQueueSize());
 }
 
-VB::RangeScanOwner::RangeScanOwner(ReadyRangeScans* scans) : readyScans(scans) {
+// Task used by RangeScans for checking that any scans of a vbucket have not
+// exceeded the "deadline", a configurable number of seconds each scan cannot
+// exceed.
+class RangeScanTimeoutTask : public GlobalTask {
+public:
+    RangeScanTimeoutTask(Taskable& taskable,
+                         EPVBucket& vBucket,
+                         std::chrono::seconds initialSleep)
+        : GlobalTask(taskable,
+                     TaskId::DurabilityTimeoutTask,
+                     initialSleep.count(),
+                     false),
+          vBucket(vBucket),
+          vbid(vBucket.getId()) {
+    }
+
+    std::string getDescription() const override {
+        return fmt::format("RangeScanTimeoutTask for {}", vbid);
+    }
+
+    std::chrono::microseconds maxExpectedDuration() const override {
+        // @todo: calibrate. This is copied over from the durability equivalent
+        return std::chrono::milliseconds{10};
+    }
+
+protected:
+    bool run() override {
+        // Call into the vbucket with the current max duration. All scans that
+        // have exceeded this duration will be cancelled
+        vBucket.cancelRangeScansExceedingDuration(std::chrono::seconds(
+                vBucket.getRangeScans().getMaxScanDuration()));
+
+        // Task must re-run (if not shutting down). The sleep time of the task
+        // is adjusted inside cancelRangeScansExceedingDuration
+        return !engine->getEpStats().isShutdown;
+    }
+
+private:
+    EPVBucket& vBucket;
+    // Need a separate vbid member variable as getDescription() can be
+    // called during Bucket shutdown (after VBucket has been deleted)
+    // as part of cleaning up tasks (see
+    // EventuallyPersistentEngine::waitForTasks) - and hence calling
+    // into vBucket->getId() would be accessing a deleted object.
+    const Vbid vbid;
+};
+
+VB::RangeScanOwner::RangeScanOwner(EPBucket* bucket, EPVBucket& vb) {
+    if (bucket) {
+        // @todo: make reconfigurable (upstream and in-progress)
+        maxScanDuration =
+                std::chrono::seconds(bucket->getEPEngine()
+                                             .getConfiguration()
+                                             .getRangeScanMaxLifetime());
+        readyScans = bucket->getReadyRangeScans();
+    }
 }
 
 VB::RangeScanOwner::~RangeScanOwner() {
@@ -114,12 +171,23 @@ VB::RangeScanOwner::~RangeScanOwner() {
     }
 }
 
-cb::engine_errc VB::RangeScanOwner::addNewScan(
-        std::shared_ptr<RangeScan> scan) {
+cb::engine_errc VB::RangeScanOwner::addNewScan(std::shared_ptr<RangeScan> scan,
+                                               EPVBucket& vb,
+                                               EpEngineTaskable& taskable) {
     Expects(readyScans);
-    if (rangeScans.withWLock([&scan](auto& map) {
+    if (rangeScans.withWLock([&scan, &vb, &taskable, this](auto& map) {
             auto [itr, emplaced] =
                     map.try_emplace(scan->getUuid(), std::move(scan));
+            if (!timeoutTask) {
+                // Create the timeout task and set the initial sleep time of the
+                // task to be maxScanDuration. The task will then wake-up after
+                // that duration has passed and ensure the scan is cancelled
+                // if it still exists.
+                timeoutTask = std::make_unique<EventDrivenTimeoutTask>(
+                        std::make_shared<RangeScanTimeoutTask>(
+                                taskable, vb, maxScanDuration));
+            }
+
             return emplaced;
         })) {
         return cb::engine_errc::success;
@@ -200,6 +268,39 @@ cb::engine_errc VB::RangeScanOwner::doStats(const StatCollector& collector) {
     return cb::engine_errc::success;
 }
 
+std::optional<std::chrono::seconds>
+VB::RangeScanOwner::cancelAllExceedingDuration(EPBucket& bucket,
+                                               std::chrono::seconds duration) {
+    // Part of finding all expired tasks is also to find the task which would
+    // expire next so that we can update the timeoutTask to wake-up again
+    auto nextExpiry = std::chrono::seconds::max();
+    auto locked = rangeScans.wlock();
+
+    for (auto itr = locked->begin(); itr != locked->end();) {
+        auto remainingTime = itr->second->getRemainingTime(duration);
+        if (remainingTime == std::chrono::seconds(0)) {
+            itr->second->setStateCancelled();
+            auto scan = itr->second;
+            itr = locked->erase(itr);
+            readyScans->addScan(bucket, scan);
+        } else {
+            nextExpiry = std::min(nextExpiry, remainingTime);
+            ++itr;
+        }
+    }
+
+    // empty before the loop or after, either case return std::nullopt as
+    // there's no deadline available and cancel the timeout task (via destruct)
+    if (locked->empty()) {
+        timeoutTask.reset();
+        return std::nullopt;
+    }
+
+    timeoutTask->updateNextExpiryTime(std::chrono::steady_clock::now() +
+                                      nextExpiry);
+    return nextExpiry;
+}
+
 std::shared_ptr<RangeScan> VB::RangeScanOwner::getScan(
         cb::rangescan::Id id) const {
     auto locked = rangeScans.rlock();
@@ -232,6 +333,10 @@ std::shared_ptr<RangeScan> VB::RangeScanOwner::processScanRemoval(
 
     // Erase from the map, no further continue/cancel allowed.
     locked->erase(itr);
+
+    if (locked->empty()) {
+        timeoutTask.reset();
+    }
     return scan;
 }
 
@@ -245,4 +350,8 @@ cb::engine_errc VB::RangeScanOwner::hasPrivilege(
     }
 
     return scan->hasPrivilege(cookie, engine);
+}
+
+size_t VB::RangeScanOwner::size() const {
+    return rangeScans.rlock()->size();
 }
