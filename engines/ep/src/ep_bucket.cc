@@ -2382,12 +2382,8 @@ void EPBucket::releaseBlockedCookies() {
     }
 }
 
-std::shared_ptr<RangeScan> EPBucket::takeNextRangeScan() {
-    return rangeScans.takeNextScan();
-}
-
-void EPBucket::addRangeScan(std::shared_ptr<RangeScan> scan) {
-    rangeScans.addScan(std::move(scan));
+std::shared_ptr<RangeScan> EPBucket::takeNextRangeScan(size_t taskId) {
+    return rangeScans.takeNextScan(taskId);
 }
 
 std::pair<cb::engine_errc, cb::rangescan::Id> EPBucket::createRangeScan(

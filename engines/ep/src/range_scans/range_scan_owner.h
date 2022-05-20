@@ -21,8 +21,11 @@
 
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 
+class EPBucket;
 class KVStoreIface;
+class RangeScanContinueTask;
 
 /**
  * ReadyRangeScans keeps a reference (shared_ptr) to all scans that are ready
@@ -34,15 +37,19 @@ public:
     /**
      * Take the next available scan out of the 'ready' scans container
      */
-    std::shared_ptr<RangeScan> takeNextScan();
+    std::shared_ptr<RangeScan> takeNextScan(size_t taskId);
 
     /**
      * Add scan to the 'ready' scans container
      */
-    void addScan(std::shared_ptr<RangeScan> scan);
+    void addScan(EPBucket& bucket, std::shared_ptr<RangeScan> scan);
 
 protected:
     folly::Synchronized<std::queue<std::shared_ptr<RangeScan>>> rangeScans;
+
+    // The IDs of the tasks that will run the range scans. This container size
+    // is what limits concurrency to our maximum.
+    folly::Synchronized<std::unordered_set<size_t>> continueTasks;
 };
 
 namespace VB {
@@ -80,6 +87,7 @@ public:
      * Failure to locate the scan -> cb::engine_errc::no_such_key
      * Scan already continued -> cb::engine_errc::too_busy
      *
+     * @param bucket The bucket of the scan
      * @param id of the scan to continue
      * @param cookie client cookie requesting the continue
      * @param itemLimit limit for the items that can be read in this continue
@@ -87,7 +95,8 @@ public:
      *        for no limit.
      * @return success or other status (see above)
      */
-    cb::engine_errc continueScan(cb::rangescan::Id id,
+    cb::engine_errc continueScan(EPBucket& bucket,
+                                 cb::rangescan::Id id,
                                  const CookieIface& cookie,
                                  size_t itemLimit,
                                  std::chrono::milliseconds timeLimit);
@@ -97,11 +106,15 @@ public:
      * scan and mark it cancelled and remove it from the set of known scans.
      *
      * Failure to locate the scan -> cb::engine_errc::no_such_key
+     *
+     * @param bucket The bucket of the scan
      * @param id of the scan to cancel
      * @param addScan should the cancelled scan be added to ::RangeScans
      * @return success or other status (see above)
      */
-    cb::engine_errc cancelScan(cb::rangescan::Id id, bool addScan);
+    cb::engine_errc cancelScan(EPBucket& bucket,
+                               cb::rangescan::Id id,
+                               bool addScan);
 
     /**
      * Call RangeScan::addStats on all RangeScan objects in the rangeScans map

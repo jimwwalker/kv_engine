@@ -1179,6 +1179,81 @@ TEST_P(RangeScanTest, wait_for_persistence_timeout) {
     EXPECT_EQ(cb::engine_errc::temporary_failure, mock_waitfor_cookie(cookie));
 }
 
+// Create lots and lots of scans, continue them all and check only max tasks
+// are scheduled
+TEST_P(RangeScanTest, concurrency_maxxed) {
+    auto vb = store->getVBucket(vbid);
+
+    std::vector<std::pair<cb::rangescan::Id, MockCookie*>> scans;
+    // At time of writing, getNumAuxIO was 8
+    ASSERT_GT(task_executor->getNumAuxIO(), 2);
+    const int numScans = task_executor->getNumAuxIO() + 1;
+    for (int ii = 0; ii < numScans; ii++) {
+        // Create the scan and a cookie
+        scans.push_back({createScan(scanCollection,
+                                    {"user"},
+                                    {"user\xFF"},
+                                    {/* no snapshot requirements */},
+                                    {/* no sampling*/}),
+                         create_mock_cookie()});
+        ;
+    }
+
+    for (const auto& scan : scans) {
+        EXPECT_EQ(cb::engine_errc::would_block,
+                  store->continueRangeScan(vbid,
+                                           scan.first,
+                                           *scan.second,
+                                           0,
+                                           std::chrono::milliseconds(0)));
+    }
+
+    auto& q = task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
+    EXPECT_EQ(task_executor->getNumAuxIO() - 1, q->getFutureQueueSize());
+
+    // No more tasks if now cancel everything
+    for (const auto& scan : scans) {
+        EXPECT_EQ(cb::engine_errc::success,
+                  store->cancelRangeScan(vbid, scan.first, *cookie));
+    }
+
+    EXPECT_EQ(task_executor->getNumAuxIO() - 1, q->getFutureQueueSize());
+    for (const auto& scan : scans) {
+        runNextTask(*q, "RangeScanContinueTask");
+        destroy_mock_cookie(scan.second);
+    }
+}
+
+TEST_P(RangeScanTest, concurrency_maxxed_cancel_only) {
+    auto vb = store->getVBucket(vbid);
+
+    std::vector<cb::rangescan::Id> scans;
+    // At time of writing, getNumAuxIO was 8
+    ASSERT_GT(task_executor->getNumAuxIO(), 2);
+    const int numScans = task_executor->getNumAuxIO() + 1;
+    for (int ii = 0; ii < numScans; ii++) {
+        // Create the scan and a cookie
+        scans.push_back(createScan(scanCollection,
+                                   {"user"},
+                                   {"user\xFF"},
+                                   {/* no snapshot requirements */},
+                                   {/* no sampling*/}));
+    }
+
+    for (const auto& scan : scans) {
+        EXPECT_EQ(cb::engine_errc::success,
+                  store->cancelRangeScan(vbid, scan, *cookie));
+    }
+
+    auto& q = task_executor->getLpTaskQ()[AUXIO_TASK_IDX];
+    EXPECT_EQ(task_executor->getNumAuxIO() - 1, q->getFutureQueueSize());
+
+    for (const auto& scan : scans) {
+        (void)scan;
+        runNextTask(*q, "RangeScanContinueTask");
+    }
+}
+
 bool TestRangeScanHandler::validateStatus(cb::engine_errc code) {
     switch (code) {
     case cb::engine_errc::success:
