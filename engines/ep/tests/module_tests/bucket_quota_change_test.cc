@@ -135,8 +135,9 @@ public:
     }
 
     void checkMaxRunningBackfills(size_t quotaValue) {
-        EXPECT_EQ(engine->getDcpConnMap().getMaxRunningBackfillsForQuota(
-                          quotaValue),
+        EXPECT_EQ(engine->getDcpConnMap()
+                          .getMaxRunningBackfillsForQuota(quotaValue)
+                          .first,
                   engine->getDcpConnMap().getMaxRunningBackfills());
     }
 

@@ -147,6 +147,7 @@ struct BackfillTrackingIface {
      * If no more backfills can be added to the active set, returns false.
      */
     virtual bool canAddBackfillToActiveQ() = 0;
+    virtual bool canAddRangeScan() = 0;
 
     /**
      * Decrement by one the number of running (active/initializing/snoozing)

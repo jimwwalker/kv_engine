@@ -114,8 +114,9 @@ public:
 
     void manageConnections() override;
 
+    // BackfillTrackingIface methods
     bool canAddBackfillToActiveQ() override;
-
+    bool canAddRangeScan() override;
     void decrNumRunningBackfills() override;
 
     void updateMaxRunningBackfills(size_t maxDataSize);
@@ -126,16 +127,17 @@ public:
      * @param maxDataSize bucket quota
      * @return number of backfills we can run with the given quota
      */
-    static uint16_t getMaxRunningBackfillsForQuota(size_t maxDataSize);
+    // @todo: move this api? To me it is more of an engine/kvbucket thing - dcp
+    // should just be told the limit
+    static std::pair<uint16_t, uint16_t> getMaxRunningBackfillsForQuota(
+            size_t maxDataSize);
 
     uint16_t getNumRunningBackfills() {
-        std::lock_guard<std::mutex> lh(backfills.mutex);
-        return backfills.running;
+        return backfills.rlock()->running;
     }
 
     uint16_t getMaxRunningBackfills() {
-        std::lock_guard<std::mutex> lh(backfills.mutex);
-        return backfills.maxRunning;
+        return backfills.rlock()->maxRunning;
     }
 
     cb::engine_errc addPassiveStream(ConnHandler& conn,
@@ -230,11 +232,15 @@ protected:
 
     // Current and maximum number of running (active/initializing/snoozing)
     // backfills. Does not include pending backfills.
-    struct {
-        std::mutex mutex;
-        uint16_t running;
-        uint16_t maxRunning;
-    } backfills;
+    struct Backfills {
+        // total of backfills and rangescans
+        uint16_t running{0};
+        // backfill limit
+        uint16_t maxRunning{0};
+        // range scan limit (set to some % of maxRunning)
+        uint16_t maxRunningRangeScans{0};
+    };
+    folly::Synchronized<Backfills> backfills;
 
     /* Max num of backfills we want to have irrespective of memory */
     static const uint16_t numBackfillsThreshold;

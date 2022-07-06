@@ -30,6 +30,7 @@ public:
 class GMockBackfillTracker : public BackfillTrackingIface {
 public:
     MOCK_METHOD0(canAddBackfillToActiveQ, bool());
+    MOCK_METHOD0(canAddRangeScan, bool());
     MOCK_METHOD0(decrNumRunningBackfills, void());
 };
 

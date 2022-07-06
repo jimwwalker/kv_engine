@@ -12,6 +12,7 @@
 
 #include "bucket_logger.h"
 #include "collections/collection_persisted_stats.h"
+#include "dcp/dcpconnmap.h"
 #include "ep_bucket.h"
 #include "ep_engine.h"
 #include "failover-table.h"
@@ -41,11 +42,23 @@ RangeScan::RangeScan(
       end(std::move(end)),
       vbUuid(vbucket.failovers->getLatestUUID()),
       handler(std::move(handler)),
+      resourceTracker(static_cast<BackfillTrackingIface&>(
+              bucket.getEPEngine().getDcpConnMap())),
       vbid(vbucket.getId()),
       keyOnly(keyOnly) {
-    // Don't init the uuid in the initialisation list as we may read various
-    // members which must be initialised first
-    uuid = createScan(cookie, bucket, snapshotReqs, samplingConfig);
+    if (!resourceTracker.canAddRangeScan()) {
+        throw cb::engine_error(cb::engine_errc::temporary_failure,
+                               fmt::format("RangeScan::createScan {} denied by "
+                                           "BackfillTrackingIface",
+                                           getVBucketId()));
+    }
+
+    try {
+        uuid = createScan(cookie, bucket, snapshotReqs, samplingConfig);
+    } catch (...) {
+        resourceTracker.decrNumRunningBackfills();
+        throw;
+    }
     createTime = now();
 
     fmt::memory_buffer snapshotLog, samplingLog;
@@ -86,14 +99,19 @@ RangeScan::RangeScan(
                 std::string_view{samplingLog.data(), samplingLog.size()});
 }
 
-RangeScan::RangeScan(cb::rangescan::Id id)
+RangeScan::RangeScan(cb::rangescan::Id id,
+                     BackfillTrackingIface& resourceTracker)
     : uuid(id),
       start(StoredDocKey("start", CollectionID::Default)),
-      end(StoredDocKey("end", CollectionID::Default)) {
+      end(StoredDocKey("end", CollectionID::Default)),
+      resourceTracker(resourceTracker) {
     createTime = now();
+    resourceTracker.canAddBackfillToActiveQ();
 }
 
 RangeScan::~RangeScan() {
+    resourceTracker.decrNumRunningBackfills();
+
     fmt::memory_buffer valueScanStats;
     if (keyOnly == cb::rangescan::KeyOnly::No) {
         // format the value read stats

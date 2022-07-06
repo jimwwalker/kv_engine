@@ -25,6 +25,7 @@
 #include <optional>
 #include <random>
 
+struct BackfillTrackingIface;
 class ByIdScanContext;
 class CookieIface;
 class EPBucket;
@@ -85,8 +86,9 @@ public:
      * constructed with this will fail to scan.
      *
      * @param id value to use for RangeScan::uuid
+     * @param resouceTracker required to set a reference member
      */
-    RangeScan(cb::rangescan::Id id);
+    RangeScan(cb::rangescan::Id id, BackfillTrackingIface& resourceTracker);
 
     ~RangeScan();
 
@@ -298,6 +300,7 @@ protected:
     uint64_t vbUuid{0};
     std::unique_ptr<ByIdScanContext> scanCtx;
     std::unique_ptr<RangeScanDataHandlerIFace> handler;
+    BackfillTrackingIface& resourceTracker;
     /// keys read for the life of this scan (counted for key and value scans)
     size_t totalKeys{0};
     /// items read from memory for the life of this scan (only for value scans)

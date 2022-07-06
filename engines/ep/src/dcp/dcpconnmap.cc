@@ -43,7 +43,6 @@ private:
 DcpConnMap::DcpConnMap(EventuallyPersistentEngine &e)
     : ConnMap(e),
       aggrDcpConsumerBufferSize(0) {
-    backfills.running = 0;
     updateMaxRunningBackfills(engine.getEpStats().getMaxDataSize());
     minCompressionRatioForProducer.store(
                     engine.getConfiguration().getDcpMinCompressionRatio());
@@ -435,49 +434,85 @@ void DcpConnMap::notifyBackfillManagerTasks() {
         }
     }
 }
-
-bool DcpConnMap::canAddBackfillToActiveQ()
-{
+#if 0
+bool canAddDiskConsumer(size_t limit) {
     std::lock_guard<std::mutex> lh(backfills.mutex);
-    if (backfills.running < backfills.maxRunning) {
+    if (backfills.running < limit) {
         ++backfills.running;
         return true;
     }
     return false;
 }
+#endif
+
+bool DcpConnMap::canAddBackfillToActiveQ() {
+    // return canAddDiskConsumer(backfills.maxRunning);
+
+    return backfills.withWLock([](auto& backfills) {
+        if (backfills.running < backfills.maxRunning) {
+            ++backfills.running;
+            return true;
+        }
+        return false;
+    });
+}
+
+bool DcpConnMap::canAddRangeScan() {
+    // return canAddDiskConsumer(backfills.maxRunning - 0);
+
+    return backfills.withWLock([](auto& backfills) {
+        if (backfills.running < backfills.maxRunningRangeScans) {
+            ++backfills.running;
+            return true;
+        }
+        return false;
+    });
+}
 
 void DcpConnMap::decrNumRunningBackfills() {
-    {
-        std::lock_guard<std::mutex> lh(backfills.mutex);
-        if (backfills.running > 0) {
-            --backfills.running;
-            return;
-        }
+    if (!backfills.withWLock([](auto& backfills) {
+            if (backfills.running > 0) {
+                --backfills.running;
+                return true;
+            }
+            return false;
+        })) {
+        EP_LOG_WARN_RAW("RunningBackfills already zero!!!");
     }
-    EP_LOG_WARN_RAW("RunningBackfills already zero!!!");
 }
 
 void DcpConnMap::updateMaxRunningBackfills(size_t maxDataSize) {
-    auto newMaxRunningBackfills = getMaxRunningBackfillsForQuota(maxDataSize);
+    auto newConfig = getMaxRunningBackfillsForQuota(maxDataSize);
     {
-        std::lock_guard<std::mutex> lh(backfills.mutex);
         /* We must have atleast one active/snoozing backfill */
-        backfills.maxRunning = newMaxRunningBackfills;
+        backfills.withWLock([&newConfig](auto& backfills) {
+            backfills.maxRunning = newConfig.first;
+            backfills.maxRunningRangeScans = newConfig.second;
+        });
     }
-    EP_LOG_DEBUG("Max running backfills set to {}", newMaxRunningBackfills);
+    EP_LOG_DEBUG("Max running backfills set to {}", newConfig.first);
 }
 
-uint16_t DcpConnMap::getMaxRunningBackfillsForQuota(size_t maxDataSize) {
+std::pair<uint16_t, uint16_t> DcpConnMap::getMaxRunningBackfillsForQuota(
+        size_t maxDataSize) {
     double numBackfillsMemThresholdPercent =
             static_cast<double>(numBackfillsMemThreshold) / 100;
     size_t max = maxDataSize * numBackfillsMemThresholdPercent / dbFileMem;
 
-    size_t newMaxActive;
     /* We must have atleast one active/snoozing backfill */
-    newMaxActive =
+    size_t newMaxBackfills =
             std::max(static_cast<size_t>(1),
                      std::min(max, static_cast<size_t>(numBackfillsThreshold)));
-    return gsl::narrow_cast<uint16_t>(newMaxActive);
+
+    // Calculate how many range scans can exist. RangeScans themselves must not
+    // consumer all file handles, so are capped, but then further capped so that
+    // there is some room for backfills.
+    // The final max is either 1 or some % of newMaxBackfills
+    size_t rangeScans = newMaxBackfills * 0.8;
+    size_t newMaxRangeScans = std::max(static_cast<size_t>(1), rangeScans);
+
+    return std::make_pair(gsl::narrow_cast<uint16_t>(newMaxBackfills),
+                          gsl::narrow_cast<uint16_t>(newMaxRangeScans));
 }
 
 void DcpConnMap::addStats(const AddStatFn& add_stat, const CookieIface* c) {

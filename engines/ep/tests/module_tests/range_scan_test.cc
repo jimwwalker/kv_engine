@@ -1772,9 +1772,13 @@ public:
         boost::uuids::name_generator_sha1 gen(boost::uuids::ns::dns());
         boost::uuids::uuid udoc = gen(std::to_string(++scanId));
         EXPECT_EQ(cb::engine_errc::success,
-                  rangeScans.addNewScan(std::make_shared<RangeScan>(udoc),
-                                        getEPVBucket(),
-                                        store->getEPEngine().getTaskable()));
+                  rangeScans.addNewScan(
+                          std::make_shared<RangeScan>(
+                                  udoc,
+                                  static_cast<BackfillTrackingIface&>(
+                                          engine->getDcpConnMap())),
+                          getEPVBucket(),
+                          store->getEPEngine().getTaskable()));
         return udoc;
     }
 
