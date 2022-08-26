@@ -113,7 +113,7 @@ bool FlowControl::isBufferSufficientlyDrained() {
 }
 
 bool FlowControl::isBufferSufficientlyDrained_UNLOCKED(uint32_t ackable_bytes) {
-    return ackable_bytes > (bufferSize * .2);
+    return ackable_bytes > 2048;//(bufferSize * .2);
 }
 
 void FlowControl::addStats(const AddStatFn& add_stat, const void* c) {
