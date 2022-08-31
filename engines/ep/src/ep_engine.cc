@@ -4035,10 +4035,12 @@ void EventuallyPersistentEngine::addAggregatedProducerStats(
     col.addStat(Key::dcp_queue_fill, aggregator.conn_queueFill);
     col.addStat(Key::dcp_items_sent, aggregator.conn_queueDrain);
     col.addStat(Key::dcp_items_remaining, aggregator.conn_queueRemaining);
-    col.addStat(Key::dcp_num_running_backfills,
-                dcpConnMap_->getNumRunningBackfills());
-    col.addStat(Key::dcp_max_running_backfills,
-                dcpConnMap_->getMaxRunningBackfills());
+    col.addStat(
+            Key::dcp_num_running_backfills,
+            getKVBucket()->getKVStoreScanTracker().getNumRunningBackfills());
+    col.addStat(
+            Key::dcp_max_running_backfills,
+            getKVBucket()->getKVStoreScanTracker().getMaxRunningBackfills());
 }
 
 cb::engine_errc EventuallyPersistentEngine::doEvictionStats(
@@ -6845,7 +6847,7 @@ void EventuallyPersistentEngine::setMaxDataSize(size_t size) {
     // that will update EPStats
     configureMemWatermarksForQuota(size);
 
-    getDcpConnMap().updateMaxRunningBackfills(size);
+    kvBucket->getKVStoreScanTracker().updateMaxRunningScans(size);
 
     configureStorageMemoryForQuota(size);
 

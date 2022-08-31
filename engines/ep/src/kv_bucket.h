@@ -13,6 +13,7 @@
 
 #include "callbacks.h"
 #include "checkpoint_types.h"
+#include "dcp/backfill.h"
 #include "ep_types.h"
 #include "kv_bucket_iface.h"
 #include "kvstore/kvstore_iface.h"
@@ -980,6 +981,10 @@ public:
      */
     void setMutationMemRatio(float ratio);
 
+    KVStoreScanTracker& getKVStoreScanTracker() {
+        return kvstoreScanTracker;
+    }
+
 protected:
     /**
      * Get the checkpoint destroyer task responsible for checkpoints from the
@@ -1236,6 +1241,8 @@ protected:
      * requested will always be used over a currently running change request
      */
     std::shared_ptr<BucketQuotaChangeTask> bucketQuotaChangeTask;
+
+    KVStoreScanTracker kvstoreScanTracker;
 
     friend class KVBucketTest;
 
