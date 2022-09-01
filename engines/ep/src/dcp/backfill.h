@@ -151,31 +151,74 @@ public:
     virtual bool canCreateBackfill();
 
     /**
-     * Decrement by one the number of running backfills
+     * Check if a RangeScan can be created (which will create a ScanContext).
+     * If true is returned the KVStoreScanTracker has incremented the tracking
+     * to include a new scan and the caller must now proceed to create the scan.
+     * If no more backfills can be created returns false.
+     */
+    virtual bool canCreateRangeScan();
+
+    /**
+     * Decrement by one the number of running scans
      */
     virtual void decrNumRunningBackfills();
 
+    /**
+     * Decrement by one the number of running scans
+     */
+    virtual void decrNumRunningRangeScans();
+
+    /**
+     * Update the max running scans using the maxDataSize as input to the
+     * calculation (see getMaxRunningScansForQuota)
+     */
     void updateMaxRunningScans(size_t maxDataSize);
 
+    /**
+     * Set the max running scans (separate limits for backfill/rangescan) to any
+     * value to permit simpler testing
+     * @param newMaxRunningBackfills How many DCP backfills can exist
+     * @param newMaxRunningRangeScans How many RangeScans can exist
+     */
+    void setMaxRunningScans(uint16_t newMaxRunningBackfills,
+                            uint16_t newMaxRunningRangeScans);
+
     uint16_t getNumRunningBackfills() {
-        return scans.rlock()->running;
+        return scans.rlock()->runningBackfills;
     }
 
     uint16_t getMaxRunningBackfills() {
         return scans.rlock()->maxRunning;
     }
 
-    static uint16_t getMaxRunningScansForQuota(size_t maxDataSize);
+    uint16_t getNumRunningRangeScans() {
+        return scans.rlock()->runningRangeScans;
+    }
+
+    uint16_t getMaxRunningRangeScans() {
+        return scans.rlock()->maxRunningRangeScans;
+    }
+
+    static std::pair<uint16_t, uint16_t> getMaxRunningScansForQuota(
+            size_t maxDataSize);
 
 private:
     // Current and maximum number of scans (i.e. DCPBackfills). These may not
     // be actively scanning, but have an open snapshot.
     struct Scans {
-        // count of backfills
-        uint16_t running{0};
+        uint16_t getTotalRunning() const {
+            return runningBackfills + runningRangeScans;
+        }
+
+        uint16_t runningBackfills{0};
+
+        uint16_t runningRangeScans{0};
 
         // The upper limit
         uint16_t maxRunning{0};
+
+        // The upper limit for RangeScan and is generally lower than maxRunning
+        uint16_t maxRunningRangeScans{0};
     };
     folly::Synchronized<Scans> scans;
 };
