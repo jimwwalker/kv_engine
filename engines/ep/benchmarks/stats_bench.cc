@@ -56,6 +56,7 @@ public:
                     {0x0, cid},
                     "collection-" + std::to_string(cid),
                     cb::NoExpiryLimit,
+                    true,
                     0);
         }
     }

@@ -1033,7 +1033,7 @@ TEST_F(VBucketManifestTest, check_applyChanges) {
             manifest.getActiveVB(), changes);
     EXPECT_FALSE(value.has_value());
     changes.collectionsToCreate.push_back(
-            {std::make_pair(0, 8), "name1", cb::NoExpiryLimit});
+            {std::make_pair(0, 8), "name1", cb::NoExpiryLimit, true});
     value = manifest.getActiveManifest().public_applyCreates(
             manifest.getActiveVB(), changes);
     ASSERT_TRUE(value.has_value());
@@ -1043,9 +1043,9 @@ TEST_F(VBucketManifestTest, check_applyChanges) {
     EXPECT_TRUE(changes.collectionsToCreate.empty());
 
     changes.collectionsToCreate.push_back(
-            {std::make_pair(0, 8), "name2", cb::NoExpiryLimit});
+            {std::make_pair(0, 8), "name2", cb::NoExpiryLimit, true});
     changes.collectionsToCreate.push_back(
-            {std::make_pair(0, 9), "name3", cb::NoExpiryLimit});
+            {std::make_pair(0, 9), "name3", cb::NoExpiryLimit, true});
     EXPECT_EQ(1, manifest.getActiveManifest().size());
     value = manifest.getActiveManifest().public_applyCreates(
             manifest.getActiveVB(), changes);

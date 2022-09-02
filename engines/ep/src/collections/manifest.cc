@@ -661,6 +661,14 @@ DataLimit Manifest::getScopeDataLimit(ScopeID sid) const {
     return scopeItr->second.dataLimit;
 }
 
+std::optional<bool> Manifest::isMetered(CollectionID cid) const {
+    auto itr = collections.find(cid);
+    if (itr != collections.end()) {
+        return itr->second.metered;
+    }
+    return {};
+}
+
 void Manifest::dump() const {
     std::cerr << *this << std::endl;
 }

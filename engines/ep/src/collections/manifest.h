@@ -253,6 +253,12 @@ public:
     DataLimit getScopeDataLimit(ScopeID sid) const;
 
     /**
+     * Get the 'metered' state of the collection. If the collection is unknown
+     * the returned value is uninitialised.
+     */
+    std::optional<bool> isMetered(CollectionID cid) const;
+
+    /**
      * @returns this manifest as nlohmann::json object
      */
     nlohmann::json toJson(

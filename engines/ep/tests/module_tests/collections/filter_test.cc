@@ -74,13 +74,13 @@ public:
             std::make_unique<Collections::VB::ManifestEntry>(
                     manager->createOrReferenceMeta(
                             CollectionID::Default,
-                            {"name1", ScopeID::Default, {}}),
+                            {"name1", ScopeID::Default, {}, true}),
                     0);
     std::unique_ptr<Collections::VB::ManifestEntry> entryInShop1Scope =
             std::make_unique<Collections::VB::ManifestEntry>(
                     manager->createOrReferenceMeta(
                             CollectionID::Default,
-                            {"name2", ScopeUid::shop1, {}}),
+                            {"name2", ScopeUid::shop1, {}, true}),
                     0);
 
     CookieIface* cookie = nullptr;
