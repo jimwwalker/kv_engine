@@ -377,6 +377,11 @@ void Filter::addStats(const AddStatFn& add_stat,
                       const CookieIface* c,
                       const std::string& prefix,
                       Vbid vb) const {
+    // Skip adding stats for the replication filter
+    if (passthrough && systemEventsAllowed) {
+        return;
+    }
+
     try {
         const int bsize = 1024;
         char buffer[bsize];
