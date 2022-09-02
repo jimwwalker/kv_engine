@@ -59,8 +59,9 @@ void cb::test::ClusterTest::createDefaultBucket() {
     cluster->collections = {};
     // Add fruit, vegetable to default scope
     // Add a second scope and collection
-    cluster->collections.add(CollectionEntry::fruit)
-            .add(CollectionEntry::vegetable);
+    auto x = CollectionEntry::vegetable;
+    x.metered = false;
+    cluster->collections.add(CollectionEntry::fruit).add(x);
     cluster->collections.add(ScopeEntry::customer);
     cluster->collections.add(CollectionEntry::customer1, ScopeEntry::customer);
     cluster->collections.add(ScopeEntry::maxScope);

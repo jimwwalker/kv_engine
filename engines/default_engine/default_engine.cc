@@ -1016,22 +1016,22 @@ cb::EngineErrorGetScopeIDResult default_engine::get_scope_id(
         }
         generate_unknown_collection_response(&cookie);
         // Return just the manifest-uid of 0 which sets error to unknown_scope
-        return cb::EngineErrorGetScopeIDResult{cb::engine_errc::unknown_scope,
-                                               0};
+        return cb::EngineErrorGetScopeIDResult{0};
     }
     return cb::EngineErrorGetScopeIDResult{cb::engine_errc::invalid_arguments};
 }
 
 // permit lookup of the default scope only
-cb::EngineErrorGetScopeIDResult default_engine::get_scope_id(
+cb::EngineErrorGetCollectionMetaResult default_engine::get_collection_meta(
         const CookieIface& cookie,
         CollectionID cid,
         std::optional<Vbid> vbid) const {
     if (cid.isDefaultCollection()) {
-        return cb::EngineErrorGetScopeIDResult(0, ScopeID{ScopeID::Default});
+        // Return default scope and that the collection is metered
+        return cb::EngineErrorGetCollectionMetaResult(
+                0, ScopeID{ScopeID::Default}, true);
     }
-    return cb::EngineErrorGetScopeIDResult(cb::engine_errc::unknown_collection,
-                                           0);
+    return cb::EngineErrorGetCollectionMetaResult(0);
 }
 
 void default_engine::generate_unknown_collection_response(

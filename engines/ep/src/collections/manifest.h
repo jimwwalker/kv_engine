@@ -45,6 +45,9 @@ struct CollectionEntry {
     }
 };
 
+const CollectionEntry DefaultCollectionEntry = {
+        CollectionID::Default, "_default", {}, ScopeID::Default, true};
+
 struct Scope {
     /**
      * Store the dataLimit we will use (which is the clusters value / nVbuckets)
@@ -257,6 +260,8 @@ public:
      * the returned value is uninitialised.
      */
     std::optional<bool> isMetered(CollectionID cid) const;
+
+    std::optional<CollectionEntry> getCollectionEntry(CollectionID cid) const;
 
     /**
      * @returns this manifest as nlohmann::json object
