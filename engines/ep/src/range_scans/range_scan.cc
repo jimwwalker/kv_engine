@@ -545,6 +545,9 @@ bool RangeScan::areLimitsExceeded() const {
     } else if (continueRunState.cState.limits.byteLimit) {
         return continueRunState.byteCount >=
                continueRunState.cState.limits.byteLimit;
+    } else if (continueRunState.cState.cookie &&
+               continueRunState.cState.cookie->shouldThrottle()) {
+        return true;
     }
     return false;
 }

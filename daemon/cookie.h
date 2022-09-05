@@ -630,6 +630,8 @@ public:
         return durable;
     }
 
+    bool shouldThrottle() const override;
+
 protected:
     /**
      * Log the current connection if its execution time exceeds the

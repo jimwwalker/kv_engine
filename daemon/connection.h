@@ -303,6 +303,8 @@ public:
     /// commands
     bool reEvaluateThrottledCookies();
 
+    bool shouldThrottle(const Cookie& cookie) const;
+
     /**
      * Add the specified number of ns to the amount of CPU time this
      * connection have used on the CPU (We could alternatively have

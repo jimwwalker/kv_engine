@@ -1153,3 +1153,7 @@ bool Cookie::isCollectionsSupported() const {
 bool Cookie::isDatatypeSupported(protocol_binary_datatype_t datatype) const {
     return connection.isDatatypeEnabled(datatype);
 }
+bool Cookie::shouldThrottle() const {
+    return connection.shouldThrottle(*this);
+}
+

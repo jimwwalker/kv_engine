@@ -143,6 +143,10 @@ public:
     cb::rbac::PrivilegeAccess checkForPrivilegeAtLeastInOneCollection(
             cb::rbac::Privilege privilege) const override;
 
+    bool shouldThrottle() const override {
+        return false;
+    }
+
 protected:
     static CheckPrivilegeFunction checkPrivilegeFunction;
     static CheckForPrivilegeAtLeastInOneCollectionFunction

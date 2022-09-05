@@ -107,6 +107,8 @@ public:
         return {document_bytes_read.load(std::memory_order_acquire), size_t{0}};
     }
 
+    virtual bool shouldThrottle() const = 0;
+
 protected:
     std::atomic<size_t> document_bytes_read = 0;
     std::atomic<size_t> document_bytes_written = 0;

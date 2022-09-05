@@ -539,6 +539,10 @@ bool Connection::reEvaluateThrottledCookies() {
     return throttled;
 }
 
+bool Connection::shouldThrottle(const Cookie& cookie) const {
+    return getBucket().shouldThrottle(cookie, false);
+}
+
 bool Connection::processAllReadyCookies() {
     // Look at the existing commands and check possibly execute them
     bool active = false;
