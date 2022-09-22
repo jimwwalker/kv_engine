@@ -31,6 +31,7 @@
 #include "settings.h"
 #include "stats.h"
 #include "tracing.h"
+#include "utilities/scheduling_monitor.h"
 #include "utilities/terminate_handler.h"
 #include <cbsasl/logging.h>
 #include <cbsasl/mechanism.h>
@@ -79,6 +80,7 @@ bool is_memcached_shutting_down() {
 }
 
 void shutdown_server() {
+    SchedulingMonitor::instance().setShutdown();
     memcached_shutdown = true;
 }
 
@@ -1042,6 +1044,9 @@ int memcached_main(int argc, char** argv) {
 
     /* Initialise memcached time keeping */
     mc_time_init(*main_base);
+
+    /* schedule the scheduling_monitor */
+    SchedulingMonitor::instance().beginMonitoring(*main_base);
 
     // Optional parent monitor
     {

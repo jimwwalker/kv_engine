@@ -1,0 +1,2 @@
+add_executable(scheduling_monitor scheduling_monitor.cc)
+target_link_libraries(scheduling_monitor PUBLIC spdlog::spdlog PRIVATE mc_program_utils mc_client_connection mcbp)

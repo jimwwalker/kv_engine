@@ -35,6 +35,7 @@ add_library(mcd_util STATIC
             lock_utilities.h
             logtags.cc
             logtags.h
+            scheduling_monitor.cc
             serverless_config.cc
             stat_group.cc
             string_utilities.cc
