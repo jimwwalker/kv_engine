@@ -13,16 +13,15 @@
 #include <folly/io/async/EventBase.h>
 #include <logger/logger.h>
 #include <nlohmann/json.hpp>
+#include <platform/platform_time.h>
 
-SchedulingMonitor& SchedulingMonitor::instance(
-        std::chrono::milliseconds interval,
-        std::chrono::milliseconds tolerance) {
+SchedulingMonitor& SchedulingMonitor::instance(time_unit interval,
+                                               time_unit tolerance) {
     static SchedulingMonitor instance{interval, tolerance};
     return instance;
 }
 
-SchedulingMonitor::SchedulingMonitor(std::chrono::milliseconds interval,
-                                     std::chrono::milliseconds tolerance)
+SchedulingMonitor::SchedulingMonitor(time_unit interval, time_unit tolerance)
     : interval(interval), warnTolerance(tolerance) {
 }
 
@@ -45,18 +44,16 @@ void SchedulingMonitor::callback(folly::EventBase& eventBase) {
     auto expectedNow = start + interval;
     auto now = std::chrono::system_clock::now();
 
-    auto difference = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - expectedNow);
+    auto difference = std::chrono::duration_cast<time_unit>(now - expectedNow);
+
     accumulativeDifference += difference.count(); // negative??
     samples++;
 
     if (difference > warnTolerance) {
         LOG_WARNING(
-                "SchedulingMonitor: callback delayed by {}ms "
+                "SchedulingMonitor: callback delayed by {} "
                 "accumulativeDifference:{}, samples:{}",
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                        difference)
-                        .count(),
+                std::chrono::duration_cast<time_unit>(difference).count(),
                 accumulativeDifference,
                 samples);
     }
@@ -67,8 +64,8 @@ void SchedulingMonitor::callback(folly::EventBase& eventBase) {
 nlohmann::json SchedulingMonitor::toJSON() const {
     nlohmann::json json;
 
-    json["interval_ms"] = interval.count();
-    json["warn_ms"] = warnTolerance.count();
+    json["interval"] = interval.count();
+    json["warn"] = warnTolerance.count();
     json["samples"] = samples;
     json["difference"] = accumulativeDifference;
 

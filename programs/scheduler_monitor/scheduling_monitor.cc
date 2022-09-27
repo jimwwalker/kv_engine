@@ -32,13 +32,21 @@ public:
     }
 };
 
-int main() {
+int main(int argc, char** argv) {
     cb::logger::createConsoleLogger();
+
+    if (argc != 3) {
+        std::cerr << "wrong args";
+        return 1;
+    }
+
+    std::chrono::microseconds sched{std::strtol(argv[1], nullptr, 10)};
+    std::chrono::microseconds trigger{std::strtol(argv[2], nullptr, 10)};
 
     auto evBase = std::make_unique<folly::EventBase>();
     auto sigHandler = std::make_unique<Handler>(evBase.get());
     sigHandler->registerSignalHandler(2);
-    SchedulingMonitor::instance(100ms, 150ms).beginMonitoring(*evBase);
+    SchedulingMonitor::instance(sched, trigger).beginMonitoring(*evBase);
 
     // SIGINT to stop
     evBase->loopForever();

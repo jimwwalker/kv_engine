@@ -19,18 +19,18 @@ namespace folly {
 class EventBase;
 }
 
+using time_unit = std::chrono::microseconds;
+
 /**
  * The SchedulingMonitor a singleton that captures statistics regarding the
  * performance of the system scheduler.
  */
 class SchedulingMonitor {
 public:
-    static SchedulingMonitor& instance(
-            std::chrono::milliseconds interval = 100ms,
-            std::chrono::milliseconds tolerance = 100ms);
+    static SchedulingMonitor& instance(time_unit interval = 100us,
+                                       time_unit tolerance = 100us);
 
-    SchedulingMonitor(std::chrono::milliseconds interval,
-                      std::chrono::milliseconds tolerance);
+    SchedulingMonitor(time_unit interval, time_unit tolerance);
 
     /**
      * Starts the SchedulingMonitor, which is a callback that runs every
@@ -61,10 +61,10 @@ private:
     void callback(folly::EventBase& eventBase);
 
     /// How long between executions of the callback
-    const std::chrono::milliseconds interval{100};
+    const time_unit interval{100};
 
     /// A tolerance which when exceeded triggers a log warning message
-    const std::chrono::milliseconds warnTolerance{100};
+    const time_unit warnTolerance{100};
 
     /// records the time_point of when the schedule request occurs
     std::chrono::system_clock::time_point start;
