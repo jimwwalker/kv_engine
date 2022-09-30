@@ -725,9 +725,13 @@ public:
         StoredValueProxy(const StoredValueProxy& other) = delete;
         StoredValueProxy& operator=(const StoredValueProxy& other) = delete;
 
-        // But move is.
-        StoredValueProxy(StoredValueProxy&&) = default;
-        StoredValueProxy& operator=(StoredValueProxy&&) = default;
+        /**
+         * StoredValueProxy can be moved
+         * This method is custom defined to ensure the moved from object
+         * has "value" set to nullptr.
+         */
+        StoredValueProxy(StoredValueProxy&& other);
+        StoredValueProxy& operator=(StoredValueProxy&& other);
 
         // Any read only access is okay, allow this via the -> and * operators.
         const StoredValue* operator->() const {

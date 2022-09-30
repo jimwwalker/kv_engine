@@ -102,6 +102,27 @@ HashTable::StoredValueProxy::~StoredValueProxy() {
     }
 }
 
+HashTable::StoredValueProxy::StoredValueProxy(StoredValueProxy&& other)
+    : lock(std::move(other.lock)), value(other.value), valueStats(other.valueStats), pre(other.pre) {
+    // Make other.value null so when 'other' destructs it does not call epilogue
+    other.value = nullptr;
+}
+
+HashTable::StoredValueProxy& HashTable::StoredValueProxy::operator=(
+        StoredValueProxy&& other) {
+    if (this != &other) {
+        lock = std::move(other.lock);
+        value = other.value;
+        valueStats = std::move(other.valueStats);
+        pre = std::move(other.pre);
+
+        // Make other.value null so when 'other' destructs it does not call
+        // epilogue
+        other.value = nullptr;
+    }
+    return *this;
+}
+
 void HashTable::StoredValueProxy::setCommitted(CommittedState state) {
     value->setCommitted(state);
     value->markDirty();
