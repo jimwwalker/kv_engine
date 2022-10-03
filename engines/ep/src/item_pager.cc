@@ -256,16 +256,15 @@ size_t ItemPager::getEvictableBytes(const VBucketFilter& filter) const {
     return visitor.getTotalEvictableMemory();
 }
 
-ExpiredItemPager::ExpiredItemPager(EventuallyPersistentEngine *e,
-                                   EPStats &st, size_t stime,
-                                   ssize_t taskTime) :
-    GlobalTask(e, TaskId::ExpiredItemPager,
-               static_cast<double>(stime), false),
-    engine(e),
-    stats(st),
-    sleepTime(static_cast<double>(stime)),
-    available(new std::atomic<bool>(true)) {
-
+ExpiredItemPager::ExpiredItemPager(EventuallyPersistentEngine* e,
+                                   EPStats& st,
+                                   size_t stime,
+                                   ssize_t taskTime)
+    : GlobalTask(e, TaskId::ExpiredItemPager, static_cast<double>(0.1), false),
+      engine(e),
+      stats(st),
+      sleepTime(static_cast<double>(0.1)),
+      available(new std::atomic<bool>(true)) {
     double initialSleep = sleepTime;
     if (taskTime != -1) {
         /*

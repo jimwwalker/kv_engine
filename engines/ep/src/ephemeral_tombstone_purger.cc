@@ -148,7 +148,7 @@ bool EphTombstoneHTCleaner::run() {
             uint64_t(visitor.getNumItemsMarkedStale()),
             uint64_t(getSleepTime()));
 
-    snooze(getSleepTime());
+    snooze(0.1); // getSleepTime());
     ExecutorPool::get()->wake(staleItemDeleterTaskId);
     return true;
 }
@@ -163,7 +163,7 @@ std::chrono::microseconds EphTombstoneHTCleaner::maxExpectedDuration() {
     // long. However, the ProgressTracker used estimates the time remaining, so
     // apply some headroom to that figure so we don't get inundated with
     // spurious "slow tasks" which only just exceed the limit.
-    return getChunkDuration() * 10;
+    return getChunkDuration() * 100;
 }
 
 std::chrono::milliseconds EphTombstoneHTCleaner::getChunkDuration() const {

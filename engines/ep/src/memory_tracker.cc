@@ -94,6 +94,7 @@ void MemoryTracker::DeleteHook(const void* ptr) {
         void* p = const_cast<void*>(ptr);
         size_t alloc = tracker->hooks_api.get_allocation_size(p);
         ObjectRegistry::memoryDeallocated(alloc);
+        // std::memset(p, 4, alloc);
     }
 }
 

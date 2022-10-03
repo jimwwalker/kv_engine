@@ -33,6 +33,7 @@
 #include "hash_table.h"
 #include "hash_table_stat_visitor.h"
 #include "kvstore.h"
+#include "logger/logger.h"
 #include "pre_link_document_context.h"
 #include "rollback_result.h"
 #include "statwriter.h"
@@ -1600,6 +1601,11 @@ ENGINE_ERROR_CODE VBucket::set(
                                                  queueItmCtx,
                                                  storeIfStatus,
                                                  maybeKeyExists);
+        if (htRes.pending && htRes.pending->isStale1()) {
+            std::stringstream ss;
+            ss << *htRes.pending;
+            LOG_CRITICAL("Came out of processSet with isStale {}", ss.str());
+        }
 
         // For pending SyncWrites we initially return ENGINE_SYNC_WRITE_PENDING;
         // will notify client when request is committed / aborted later. This is

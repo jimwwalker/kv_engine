@@ -828,6 +828,11 @@ public:
      */
     void setCompletedOrDeletedTime(time_t time);
 
+    // tmp
+    bool isStale1() const {
+        return isStalePriv();
+    }
+
 protected:
     /**
      * Constructor - protected as allocation needs to be done via
@@ -1081,6 +1086,10 @@ public:
      * param.
      */
     bool isStale(std::lock_guard<std::mutex>& writeGuard) const {
+        return isStalePriv();
+    }
+
+    bool isStale1() const {
         return isStalePriv();
     }
 

@@ -868,6 +868,13 @@ HashTable::StoredValueProxy HashTable::findForWrite(StoredValueProxy::RetSVPTag,
 HashTable::FindUpdateResult HashTable::findForUpdate(const DocKey& key) {
     auto result = findInner(key);
 
+    if (result.pendingSV) {
+        Expects(!result.pendingSV->toOrderedStoredValue()->isStale1());
+    }
+    if (result.committedSV) {
+        Expects(!result.committedSV->toOrderedStoredValue()->isStale1());
+    }
+
     StoredValueProxy prepare{
             std::move(result.lock), result.pendingSV, valueStats};
     return {std::move(prepare), result.committedSV, *this};
