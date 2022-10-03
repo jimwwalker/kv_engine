@@ -834,6 +834,15 @@ public:
             return pending.getHBL();
         }
 
+        /**
+         * Release all resources of this object.
+         * 1) Set committed to nullptr
+         * 2) Destruct pending, which may finalise Statistics and unlock the
+         *    HashBucketLock which protected access to committed and
+         *    pending.value
+         */
+        void release();
+
         StoredValueProxy pending;
         StoredValue* committed;
 

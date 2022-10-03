@@ -174,6 +174,11 @@ StoredValue* HashTable::FindUpdateResult::selectSVForRead(
                               pending.getSV());
 }
 
+void HashTable::FindUpdateResult::release() {
+    committed = nullptr;
+    pending.~StoredValueProxy();
+}
+
 HashTable::HashTable(EPStats& st,
                      std::unique_ptr<AbstractStoredValueFactory> svFactory,
                      size_t initialSize,

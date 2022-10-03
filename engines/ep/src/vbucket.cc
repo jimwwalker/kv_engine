@@ -1429,6 +1429,7 @@ VBucket::FetchForWriteResult VBucket::fetchValueForWrite(
 
     auto res = ht.findForUpdate(cHandle.getKey());
     auto* sv = res.selectSVToModify(false /*durability*/);
+    res.pending.release();
 
     if (!sv) {
         // No item found.
@@ -1863,9 +1864,10 @@ ENGINE_ERROR_CODE VBucket::prepare(
         if (seqno) {
             *seqno = static_cast<uint64_t>(v->getBySeqno());
         }
-        // we unlock ht lock here because we want to avoid potential lock
-        // inversions arising from notifyNewSeqno() call
-        hbl.getHTLock().unlock();
+
+        // Release the htRes here (dropping the lock and updating any stats) as
+        // we want to avoid lock inversions arising from notifyNewSeqno() call
+        htRes.release();
         notifyNewSeqno(*notifyCtx);
         doCollectionsStats(cHandle, *notifyCtx);
     } break;
@@ -2002,9 +2004,9 @@ ENGINE_ERROR_CODE VBucket::setWithMeta(
         if (seqno) {
             *seqno = static_cast<uint64_t>(v->getBySeqno());
         }
-        // we unlock ht lock here because we want to avoid potential lock
-        // inversions arising from notifyNewSeqno() call
-        hbl.getHTLock().unlock();
+        // Release the htRes here (dropping the lock and updating any stats) as
+        // we want to avoid lock inversions arising from notifyNewSeqno() call
+        htRes.release();
         notifyNewSeqno(*notifyCtx);
         doCollectionsStats(cHandle, *notifyCtx);
     } break;
@@ -2335,15 +2337,17 @@ ENGINE_ERROR_CODE VBucket::deleteWithMeta(
         if (seqno) {
             *seqno = static_cast<uint64_t>(v->getBySeqno());
         }
-        // we unlock ht lock here because we want to avoid potential lock
-        // inversions arising from notifyNewSeqno() call
-        hbl.getHTLock().unlock();
+        // Release the htRes here (dropping the lock and updating any stats) as
+        // we want to avoid lock inversions arising from notifyNewSeqno() call
+        htRes.release();
         notifyNewSeqno(*notifyCtx);
         doCollectionsStats(cHandle, *notifyCtx);
         break;
     }
     case MutationStatus::NeedBgFetch:
-        hbl.getHTLock().unlock();
+        // Release the htRes here (dropping the lock and updating any stats) as
+        // we want to avoid lock inversions arising from notifyNewSeqno() call
+        htRes.release();
         bgFetch(key, cookie, engine, metaBgFetch);
         return ENGINE_EWOULDBLOCK;
 
@@ -2411,9 +2415,9 @@ void VBucket::deleteExpiredItem(const Item& it,
             ht.unlocked_updateStoredValue(hbl, *v, it);
             std::tie(std::ignore, std::ignore, notifyCtx) =
                     processExpiredItem(htRes, cHandle);
-            // we unlock ht lock here because we want to avoid potential lock
-            // inversions arising from notifyNewSeqno() call
-            hbl.getHTLock().unlock();
+            // Release the htRes here (dropping the lock and updating any stats)
+            // as we want to avoid lock inversions arising from notifyNewSeqno()
+            htRes.release();
             notifyNewSeqno(notifyCtx);
             doCollectionsStats(cHandle, notifyCtx);
         }
@@ -2439,9 +2443,10 @@ void VBucket::deleteExpiredItem(const Item& it,
                 VBNotifyCtx notifyCtx;
                 std::tie(std::ignore, std::ignore, notifyCtx) =
                         processExpiredItem(htRes, cHandle);
-                // we unlock ht lock here because we want to avoid potential
-                // lock inversions arising from notifyNewSeqno() call
-                hbl.getHTLock().unlock();
+                // Release the htRes here (dropping the lock and updating any
+                // stats) as we want to avoid lock inversions arising from
+                // notifyNewSeqno()
+                htRes.release();
                 notifyNewSeqno(notifyCtx);
                 doCollectionsStats(cHandle, notifyCtx);
             }
@@ -2502,7 +2507,7 @@ ENGINE_ERROR_CODE VBucket::add(
             return addTempItemAndBGFetch(
                     hbl, itm.getKey(), cookie, engine, true);
         case AddStatus::BgFetch:
-            hbl.getHTLock().unlock();
+            htRes.release();
             bgFetch(itm.getKey(), cookie, engine, true);
             return ENGINE_EWOULDBLOCK;
         case AddStatus::Success:
