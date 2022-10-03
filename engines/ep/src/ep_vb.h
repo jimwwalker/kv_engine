@@ -240,20 +240,20 @@ protected:
 
 private:
     std::tuple<StoredValue*, MutationStatus, VBNotifyCtx> updateStoredValue(
-            const HashTable::HashBucketLock& hbl,
+            HashTable::FindResult& htRes,
             StoredValue& v,
             const Item& itm,
             const VBQueueItemCtx& queueItmCtx,
             bool justTouch = false) override;
 
     std::pair<StoredValue*, VBNotifyCtx> addNewStoredValue(
-            const HashTable::HashBucketLock& hbl,
+            HashTable::FindResult& htRes,
             const Item& itm,
             const VBQueueItemCtx& queueItmCtx,
             GenerateRevSeqno genRevSeqno) override;
 
     std::tuple<StoredValue*, DeletionStatus, VBNotifyCtx> softDeleteStoredValue(
-            const HashTable::HashBucketLock& hbl,
+            HashTable::FindResult& htRes,
             StoredValue& v,
             bool onlyMarkDeleted,
             const VBQueueItemCtx& queueItmCtx,
@@ -266,7 +266,7 @@ private:
             const VBQueueItemCtx& queueItmCtx,
             boost::optional<int64_t> commitSeqno) override;
 
-    VBNotifyCtx abortStoredValue(const HashTable::HashBucketLock& hbl,
+    VBNotifyCtx abortStoredValue(HashTable::FindUpdateResult& htRes,
                                  StoredValue& v,
                                  int64_t prepareSeqno,
                                  boost::optional<int64_t> abortSeqno) override;
@@ -311,7 +311,7 @@ private:
     bool isValidDurabilityLevel(cb::durability::Level level) override;
 
     void processImplicitlyCompletedPrepare(
-            HashTable::StoredValueProxy& v) override;
+            HashTable::FindUpdateResult& htRes) override;
 
     /**
      * Total number of alive (non-deleted), Committed items on-disk in this

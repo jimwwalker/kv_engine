@@ -116,7 +116,7 @@ void DefragmenterTest::fragment(size_t num_docs, size_t& num_remaining) {
                     vbucket->ht
                             .findForRead(DocKey(keyScratch,
                                                 DocKeyEncodesCollectionId::No))
-                            .storedValue;
+                            .getSV();
             ASSERT_NE(nullptr, item);
 
             uintptr_t address =
@@ -138,8 +138,8 @@ void DefragmenterTest::fragment(size_t num_docs, size_t& num_remaining) {
                 snprintf(keyScratch, sizeof(keyScratch), keyPattern, doc_id);
                 auto res = vbucket->ht.findForWrite(
                         DocKey(keyScratch, DocKeyEncodesCollectionId::No));
-                ASSERT_TRUE(res.storedValue);
-                vbucket->ht.unlocked_del(res.lock, res.storedValue);
+                ASSERT_TRUE(res.getSV());
+                vbucket->ht.unlocked_del(res.getHBL(), res.getSV());
                 kv->second.pop_back();
                 num_remaining--;
             }

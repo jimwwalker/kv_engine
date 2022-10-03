@@ -625,9 +625,9 @@ void DurabilityEPBucketTest::testPersistPrepareAbort(DocumentState docState) {
 
     {
         auto res = vb.ht.findForWrite(key);
-        ASSERT_TRUE(res.storedValue);
-        ASSERT_EQ(CommittedState::Pending, res.storedValue->getCommitted());
-        ASSERT_EQ(1, res.storedValue->getBySeqno());
+        ASSERT_TRUE(res.getSV());
+        ASSERT_EQ(CommittedState::Pending, res.getSV()->getCommitted());
+        ASSERT_EQ(1, res.getSV()->getBySeqno());
     }
     const auto& stats = engine->getEpStats();
     ASSERT_EQ(1, stats.diskQueueSize);
@@ -2992,7 +2992,7 @@ TEST_P(DurabilityEphemeralBucketTest, CompletedPreparesNotExpired) {
             cfg.getItemEvictionFreqCounterAgeThreshold());
 
     {
-        auto pending = vb->ht.findForUpdate(key).pending;
+        const auto* pending = vb->ht.findForUpdate(key).getPending();
         ASSERT_TRUE(pending);
         ASSERT_TRUE(pending->isCompleted());
         ASSERT_EQ(pending->getCommitted(), CommittedState::PrepareCommitted);
@@ -3006,7 +3006,7 @@ TEST_P(DurabilityEphemeralBucketTest, CompletedPreparesNotExpired) {
     }
 
     {
-        auto pending = vb->ht.findForUpdate(key).pending;
+        const auto* pending = vb->ht.findForUpdate(key).getPending();
         EXPECT_TRUE(pending);
         EXPECT_TRUE(pending->isCompleted());
     }
@@ -3123,7 +3123,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
 
     // Check completed prepare is present
     if (!persistent()) {
-        auto pending = vbucket->ht.findForUpdate(key).pending;
+        const auto* pending = vbucket->ht.findForUpdate(key).getPending();
         ASSERT_TRUE(pending);
         ASSERT_TRUE(pending->isCompleted());
         ASSERT_EQ(pending->getCommitted(), CommittedState::PrepareCommitted);
@@ -3151,7 +3151,7 @@ TEST_P(DurabilityBucketTest, CompletedPreparesDoNotPreventDelWithMetaReplica) {
                                       vbucket->lockCollections(key),
                                       DeleteSource::TTL));
 
-    EXPECT_FALSE(vbucket->ht.findForRead(key).storedValue);
+    EXPECT_FALSE(vbucket->ht.findForRead(key).getSV());
 }
 
 /**
@@ -3414,7 +3414,7 @@ void DurabilityBucketTest::
     // SyncWrite should now be in ResolvedQueue, but not yet Committed.
     auto key = makeStoredDocKey("key");
     {
-        const auto sv = vb->ht.findForSyncWrite(key).storedValue;
+        const auto sv = vb->ht.findForSyncWrite(key).getSV();
         ASSERT_TRUE(sv);
         ASSERT_EQ(CommittedState::Pending, sv->getCommitted());
     }
@@ -3430,7 +3430,7 @@ void DurabilityBucketTest::
     // Check that the item is still pending in the HashTable. It will actually
     // be PreparedMaybeVisible as we have transitioned from active to non-active
     {
-        const auto sv = vb->ht.findForWrite(key).storedValue;
+        const auto sv = vb->ht.findForWrite(key).getSV();
         ASSERT_TRUE(sv);
         EXPECT_EQ(CommittedState::PreparedMaybeVisible, sv->getCommitted());
     }
@@ -3998,8 +3998,8 @@ TEST_P(DurabilityEPBucketTest, MB_40480) {
     // here causing "prepare not found" errors when we attempt to complete
     // this prepare.
     const auto res = vb->ht.findForUpdate(key);
-    EXPECT_TRUE(res.pending);
-    EXPECT_FALSE(res.committed);
+    EXPECT_TRUE(res.getPending());
+    EXPECT_FALSE(res.getSV());
 }
 
 TEST_P(DurabilityBucketTest, ObserveReturnsErrorIfRecommitInProgress) {
@@ -4077,7 +4077,7 @@ void DurabilityBucketTest::testReplaceAtPendingSW(DocState docState) {
         flush_vbucket_to_disk(vbid, 1 /*expectedNumFlused*/);
         {
             auto res = vb.ht.findForWrite(key);
-            ASSERT_TRUE(res.storedValue);
+            ASSERT_TRUE(res.getSV());
         }
         auto cHandle = vb.lockCollections(key);
         ASSERT_TRUE(cHandle.valid());
@@ -4097,18 +4097,18 @@ void DurabilityBucketTest::testReplaceAtPendingSW(DocState docState) {
 
     {
         const auto res = vb.ht.findForUpdate(key);
-        ASSERT_TRUE(res.pending);
+        ASSERT_TRUE(res.getPending());
 
         // Verify committed state in HT and residency
         switch (docState) {
         case DocState::NOENT: {
-            ASSERT_FALSE(res.committed);
+            ASSERT_FALSE(res.getSV());
             ASSERT_EQ(0, vb.getNumTotalItems());
             expectedRes = ENGINE_KEY_ENOENT;
             break;
         }
         case DocState::RESIDENT: {
-            ASSERT_TRUE(res.committed);
+            ASSERT_TRUE(res.getSV());
             ASSERT_EQ(1, vb.getNumTotalItems());
             expectedRes = ENGINE_SYNC_WRITE_IN_PROGRESS;
             break;
@@ -4117,10 +4117,10 @@ void DurabilityBucketTest::testReplaceAtPendingSW(DocState docState) {
             if (fullEviction()) {
                 // The committed item is fully ejected, the bloom filter must
                 // trigger a bg-fetch
-                ASSERT_FALSE(res.committed);
+                ASSERT_FALSE(res.getSV());
                 expectedRes = ENGINE_EWOULDBLOCK;
             } else {
-                ASSERT_TRUE(res.committed);
+                ASSERT_TRUE(res.getSV());
                 expectedRes = ENGINE_SYNC_WRITE_IN_PROGRESS;
             }
             ASSERT_EQ(1, vb.getNumTotalItems());
@@ -4249,8 +4249,8 @@ void DurabilityBucketTest::testUpgradeToMinDurabilityLevel(
     auto& ht = vb.ht;
     {
         const auto res = ht.findForUpdate(key);
-        ASSERT_EQ(engineOp != EngineOp::Remove, res.committed == nullptr);
-        ASSERT_FALSE(res.pending);
+        ASSERT_EQ(engineOp != EngineOp::Remove, res.getSV() == nullptr);
+        ASSERT_FALSE(res.getPending());
     }
 
     // * TEST - write the document *
@@ -4302,8 +4302,8 @@ void DurabilityBucketTest::testUpgradeToMinDurabilityLevel(
     ASSERT_TRUE(engine->getEngineSpecific(cookie));
     {
         const auto res = ht.findForUpdate(key);
-        ASSERT_EQ(engineOp != EngineOp::Remove, res.committed == nullptr);
-        ASSERT_TRUE(res.pending);
+        ASSERT_EQ(engineOp != EngineOp::Remove, res.getSV() == nullptr);
+        ASSERT_TRUE(res.getPending());
     }
 
     auto& manager = *vb.checkpointManager;
@@ -4429,8 +4429,8 @@ TEST_P(DurabilityBucketTest, PrepareDoesNotExpire) {
     const auto key = makeStoredDocKey("key");
     {
         const auto res = ht.findForUpdate(key);
-        ASSERT_FALSE(res.committed);
-        ASSERT_FALSE(res.pending);
+        ASSERT_FALSE(res.getSV());
+        ASSERT_FALSE(res.getPending());
     }
 
     // Load a SyncWrite with exptime != 0
@@ -4449,9 +4449,9 @@ TEST_P(DurabilityBucketTest, PrepareDoesNotExpire) {
 
     {
         const auto res = ht.findForRead(key);
-        ASSERT_TRUE(res.storedValue);
-        EXPECT_TRUE(res.storedValue->isPreparedMaybeVisible());
-        EXPECT_FALSE(res.storedValue->isDeleted());
+        ASSERT_TRUE(res.getSV());
+        EXPECT_TRUE(res.getSV()->isPreparedMaybeVisible());
+        EXPECT_FALSE(res.getSV()->isDeleted());
     }
 
     // Now access the StoredValue via the expiry code path, must NOT expire has
@@ -4461,9 +4461,9 @@ TEST_P(DurabilityBucketTest, PrepareDoesNotExpire) {
                                       TrackReference::No,
                                       QueueExpired::Yes,
                                       vb.lockCollections(key));
-        ASSERT_TRUE(res.storedValue);
-        EXPECT_TRUE(res.storedValue->isPreparedMaybeVisible());
-        EXPECT_FALSE(res.storedValue->isDeleted());
+        ASSERT_TRUE(res.getSV());
+        EXPECT_TRUE(res.getSV()->isPreparedMaybeVisible());
+        EXPECT_FALSE(res.getSV()->isDeleted());
     };
     checkNotExpired();
 
@@ -4486,10 +4486,10 @@ TEST_P(DurabilityBucketTest, PrepareDoesNotExpire) {
                                   TrackReference::No,
                                   QueueExpired::Yes,
                                   vb.lockCollections(key));
-    ASSERT_TRUE(res.storedValue);
-    EXPECT_TRUE(res.storedValue->isCommitted());
-    EXPECT_TRUE(res.storedValue->isDeleted());
-    EXPECT_EQ(DeleteSource::TTL, res.storedValue->getDeletionSource());
+    ASSERT_TRUE(res.getSV());
+    EXPECT_TRUE(res.getSV()->isCommitted());
+    EXPECT_TRUE(res.getSV()->isDeleted());
+    EXPECT_EQ(DeleteSource::TTL, res.getSV()->getDeletionSource());
 }
 
 TEST_P(DurabilityBucketTest, MB_46272) {

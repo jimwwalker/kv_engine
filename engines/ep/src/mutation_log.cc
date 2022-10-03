@@ -1091,7 +1091,7 @@ void MutationLogHarvester::apply(void *arg, mlCallbackWithQueue mlc) {
         for (auto it = committed[vb].begin(); it != committed[vb].end(); ) {
             if ((vbucket->ht
                          .findForRead(*it, TrackReference::No, WantsDeleted::No)
-                         .storedValue == nullptr)) {
+                         .getSV() == nullptr)) {
                 it = committed[vb].erase(it);
             } else {
                 ++it;

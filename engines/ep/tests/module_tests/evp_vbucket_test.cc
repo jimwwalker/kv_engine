@@ -159,11 +159,11 @@ TEST_P(EPVBucketTest, EjectionResidentCount) {
     EXPECT_EQ(0, this->vbucket->getNumNonResidentItems());
 
     auto stored_item = this->vbucket->ht.findForWrite(makeStoredDocKey("key"));
-    EXPECT_NE(nullptr, stored_item.storedValue);
+    EXPECT_NE(nullptr, stored_item.getSV());
     // Need to clear the dirty flag to allow it to be ejected.
-    stored_item.storedValue->markClean();
+    stored_item.getSV()->markClean();
     EXPECT_TRUE(this->vbucket->ht.unlocked_ejectItem(
-            stored_item.lock, stored_item.storedValue, eviction_policy));
+            stored_item.getHBL(), stored_item.getSVRef(), eviction_policy));
 
     switch (eviction_policy) {
     case EvictionPolicy::Value:

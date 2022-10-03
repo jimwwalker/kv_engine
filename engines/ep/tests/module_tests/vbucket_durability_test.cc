@@ -122,8 +122,8 @@ void VBucketDurabilityTest::testAddPrepare(
     for (auto write : writes) {
         auto key = makeStoredDocKey("key" + std::to_string(write.seqno));
 
-        EXPECT_EQ(nullptr, ht->findOnlyCommitted(key).storedValue);
-        const auto sv = ht->findForWrite(key).storedValue;
+        EXPECT_EQ(nullptr, ht->findOnlyCommitted(key).getSV());
+        const auto sv = ht->findForWrite(key).getSV();
         ASSERT_NE(nullptr, sv);
         EXPECT_TRUE(sv->isPending());
         EXPECT_EQ(write.deletion, sv->isDeleted());
@@ -150,7 +150,8 @@ void VBucketDurabilityTest::testAddPrepareAndCommit(
         cas.push_back(
                 ht->findForWrite(
                           makeStoredDocKey("key" + std::to_string(write.seqno)))
-                        .storedValue->getCas());
+                        .getSV()
+                        ->getCas());
     }
 
     // Simulate flush + checkpoint-removal
@@ -169,9 +170,9 @@ void VBucketDurabilityTest::testAddPrepareAndCommit(
 
         const auto sv =
                 ht->findForRead(key, TrackReference::Yes, WantsDeleted::Yes)
-                        .storedValue;
+                        .getSV();
         ASSERT_NE(nullptr, sv);
-        EXPECT_NE(nullptr, ht->findForWrite(key).storedValue);
+        EXPECT_NE(nullptr, ht->findForWrite(key).getSV());
         EXPECT_EQ(CommittedState::CommittedViaPrepare, sv->getCommitted());
         EXPECT_EQ(write.deletion, sv->isDeleted());
         EXPECT_EQ(cas[i], sv->getCas());
@@ -560,8 +561,8 @@ TEST_P(VBucketDurabilityTest, Active_Commit_MultipleReplicas) {
                     *ckptMgr);
 
     auto checkPending = [this, &key, &ckptList, preparedSeqno]() -> void {
-        EXPECT_EQ(nullptr, ht->findForRead(key).storedValue);
-        const auto sv = ht->findForWrite(key).storedValue;
+        EXPECT_EQ(nullptr, ht->findForRead(key).getSV());
+        const auto sv = ht->findForWrite(key).getSV();
         ASSERT_NE(nullptr, sv);
         EXPECT_EQ(CommittedState::Pending, sv->getCommitted());
         EXPECT_EQ(1, ckptList.size());
@@ -576,9 +577,9 @@ TEST_P(VBucketDurabilityTest, Active_Commit_MultipleReplicas) {
     };
 
     auto checkCommitted = [this, &key, &ckptList, preparedSeqno]() -> void {
-        const auto sv = ht->findForRead(key).storedValue;
+        const auto sv = ht->findForRead(key).getSV();
         ASSERT_NE(nullptr, sv);
-        EXPECT_NE(nullptr, ht->findForWrite(key).storedValue);
+        EXPECT_NE(nullptr, ht->findForWrite(key).getSV());
         EXPECT_EQ(CommittedState::CommittedViaPrepare, sv->getCommitted());
         EXPECT_EQ(1, ckptList.size());
         EXPECT_EQ(1, ckptList.front()->getNumItems());
@@ -633,19 +634,18 @@ TEST_P(VBucketDurabilityTest, Active_PendingSkippedAtEjectionAndCommit) {
 
     // HashTable state:
     // not visible at read
-    EXPECT_FALSE(ht->findForRead(key).storedValue);
+    EXPECT_FALSE(ht->findForRead(key).getSV());
     // Note: Need to release the HashBucketLock before calling again the
     //     HT::find* functions below, deadlock otherwise
     {
         // visible at write
         auto storedItem = ht->findForWrite(key);
-        ASSERT_TRUE(storedItem.storedValue);
+        ASSERT_TRUE(storedItem.getSV());
         // item pending
-        EXPECT_EQ(CommittedState::Pending,
-                  storedItem.storedValue->getCommitted());
+        EXPECT_EQ(CommittedState::Pending, storedItem.getSV()->getCommitted());
         // value is resident
-        ASSERT_TRUE(storedItem.storedValue->getValue());
-        EXPECT_EQ("value", storedItem.storedValue->getValue()->to_s());
+        ASSERT_TRUE(storedItem.getSV()->getValue());
+        EXPECT_EQ("value", storedItem.getSV()->getValue()->to_s());
 
         // CheckpointManager state:
         // 1 checkpoint
@@ -667,16 +667,17 @@ TEST_P(VBucketDurabilityTest, Active_PendingSkippedAtEjectionAndCommit) {
         // Need to clear the dirty flag to ensure that we are testing the right
         // thing, i.e. that the item is not ejected because it is Pending (not
         // because it is dirty).
-        storedItem.storedValue->markClean();
-        ASSERT_FALSE(ht->unlocked_ejectItem(
-                storedItem.lock, storedItem.storedValue, getEvictionPolicy()));
+        storedItem.getSV()->markClean();
+        ASSERT_FALSE(ht->unlocked_ejectItem(storedItem.getHBL(),
+                                            storedItem.getSVRef(),
+                                            getEvictionPolicy()));
     }
 
     // HashTable state:
     // not visible at read
-    EXPECT_FALSE(ht->findForRead(key).storedValue);
+    EXPECT_FALSE(ht->findForRead(key).getSV());
     // visible at write
-    const auto* sv = ht->findForWrite(key).storedValue;
+    const auto* sv = ht->findForWrite(key).getSV();
     ASSERT_TRUE(sv);
     // item pending
     EXPECT_EQ(CommittedState::Pending, sv->getCommitted());
@@ -703,10 +704,10 @@ TEST_P(VBucketDurabilityTest, Active_PendingSkippedAtEjectionAndCommit) {
 
     // HashTable state:
     // visible at read
-    sv = ht->findForRead(key).storedValue;
+    sv = ht->findForRead(key).getSV();
     ASSERT_TRUE(sv);
     // visible at write
-    EXPECT_TRUE(ht->findForWrite(key).storedValue);
+    EXPECT_TRUE(ht->findForWrite(key).getSV());
     // still pending
     EXPECT_EQ(CommittedState::CommittedViaPrepare, sv->getCommitted());
     // value is resident
@@ -747,7 +748,7 @@ TEST_P(VBucketDurabilityTest, NonPendingKeyAtAbort) {
               public_processSet(nonPendingItem, 0 /*cas*/, VBQueueItemCtx()));
     EXPECT_EQ(1, ht->getNumItems());
     // Visible at read
-    const auto* sv = ht->findForRead(nonPendingKey).storedValue;
+    const auto* sv = ht->findForRead(nonPendingKey).getSV();
     ASSERT_TRUE(sv);
     const int64_t bySeqno = 1001;
     ASSERT_EQ(bySeqno, sv->getBySeqno());
@@ -770,8 +771,8 @@ TEST_P(VBucketDurabilityTest, NonExistingKeyAtAbortReplica) {
     auto key = makeStoredDocKey("key1");
 
     // nothing in the hashtable
-    ASSERT_FALSE(ht->findOnlyCommitted(key).storedValue);
-    ASSERT_FALSE(ht->findOnlyPrepared(key).storedValue);
+    ASSERT_FALSE(ht->findOnlyCommitted(key).getSV());
+    ASSERT_FALSE(ht->findOnlyPrepared(key).getSV());
 
     const int64_t prepareSeqno = lastSeqno + 1;
     const int64_t abortSeqno = lastSeqno + 2;
@@ -801,8 +802,8 @@ TEST_P(VBucketDurabilityTest, NonExistingKeyAtAbortReplica) {
                              vbucket->lockCollections(key)));
 
     // no committed item still
-    EXPECT_FALSE(ht->findOnlyCommitted(key).storedValue);
-    const auto* abortedSv = ht->findOnlyPrepared(key).storedValue;
+    EXPECT_FALSE(ht->findOnlyCommitted(key).getSV());
+    const auto* abortedSv = ht->findOnlyPrepared(key).getSV();
 
     if (std::get<0>(GetParam()) == VBucketTestBase::VBType::Ephemeral) {
         // completed sv is correctly stored in the hashtable
@@ -827,8 +828,8 @@ TEST_P(VBucketDurabilityTest, NonPendingKeyAtAbortReplica) {
     auto key = makeStoredDocKey("key1");
 
     // nothing in the hashtable
-    ASSERT_FALSE(ht->findOnlyCommitted(key).storedValue);
-    ASSERT_FALSE(ht->findOnlyPrepared(key).storedValue);
+    ASSERT_FALSE(ht->findOnlyCommitted(key).getSV());
+    ASSERT_FALSE(ht->findOnlyPrepared(key).getSV());
 
     auto nonPendingItem = make_item(vbucket->getId(), key, "value");
 
@@ -838,10 +839,10 @@ TEST_P(VBucketDurabilityTest, NonPendingKeyAtAbortReplica) {
 
     EXPECT_EQ(1, ht->getNumItems());
     // item is found in hashtable
-    const auto* sv = ht->findForRead(key).storedValue;
+    const auto* sv = ht->findForRead(key).getSV();
     ASSERT_TRUE(sv);
     ASSERT_TRUE(sv->isCommitted());
-    ASSERT_FALSE(ht->findOnlyPrepared(key).storedValue);
+    ASSERT_FALSE(ht->findOnlyPrepared(key).getSV());
 
     const int64_t committedSeqno = sv->getBySeqno();
     EXPECT_EQ(lastSeqno + 1, committedSeqno);
@@ -874,8 +875,8 @@ TEST_P(VBucketDurabilityTest, NonPendingKeyAtAbortReplica) {
                              abortSeqno /*abortSeqno*/,
                              vbucket->lockCollections(key)));
 
-    const auto* committedSv = ht->findOnlyCommitted(key).storedValue;
-    const auto* abortedSv = ht->findOnlyPrepared(key).storedValue;
+    const auto* committedSv = ht->findOnlyCommitted(key).getSV();
+    const auto* abortedSv = ht->findOnlyPrepared(key).getSV();
 
     // original committed item untouched
     EXPECT_EQ(sv, committedSv);
@@ -907,16 +908,15 @@ TEST_P(VBucketDurabilityTest, Active_AbortSyncWrite) {
 
     EXPECT_EQ(1, ht->getNumItems());
     // Not visible at read
-    EXPECT_FALSE(ht->findForRead(key).storedValue);
+    EXPECT_FALSE(ht->findForRead(key).getSV());
     // Note: Need to release the HashBucketLock before calling VBucket::abort
     //     (which acquires the same HBL), deadlock otherwise
     {
         // Visible at write
         auto storedItem = ht->findForWrite(key);
-        ASSERT_TRUE(storedItem.storedValue);
-        EXPECT_EQ(CommittedState::Pending,
-                  storedItem.storedValue->getCommitted());
-        EXPECT_EQ(preparedSeqno, storedItem.storedValue->getBySeqno());
+        ASSERT_TRUE(storedItem.getSV());
+        EXPECT_EQ(CommittedState::Pending, storedItem.getSV()->getCommitted());
+        EXPECT_EQ(preparedSeqno, storedItem.getSV()->getBySeqno());
     }
 
     const auto& ckptList =
@@ -971,8 +971,8 @@ TEST_P(VBucketDurabilityTest, Active_AbortSyncWrite) {
     } else {
         EXPECT_EQ(1, ht->getNumItems());
     }
-    EXPECT_FALSE(ht->findForRead(key).storedValue);
-    EXPECT_FALSE(ht->findForWrite(key).storedValue);
+    EXPECT_FALSE(ht->findForRead(key).getSV());
+    EXPECT_FALSE(ht->findForWrite(key).getSV());
 
     // CheckpointManager state:
     // 1 checkpoint
@@ -1086,7 +1086,7 @@ TEST_P(VBucketDurabilityTest, Commit) {
     storeSyncWrites({1});
 
     // Check preconditions - pending item should be found as pending.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(CommittedState::Pending, result->getCommitted());
 
@@ -1098,8 +1098,8 @@ TEST_P(VBucketDurabilityTest, Commit) {
                               vbucket->lockCollections(key)));
 
     // Check postconditions - should only have one item for that key.
-    auto readView = ht->findForRead(key).storedValue;
-    auto writeView = ht->findForWrite(key).storedValue;
+    auto readView = ht->findForRead(key).getSV();
+    auto writeView = ht->findForWrite(key).getSV();
     EXPECT_TRUE(readView);
     EXPECT_TRUE(writeView);
     EXPECT_EQ(CommittedState::CommittedViaPrepare, readView->getCommitted());
@@ -1123,7 +1123,7 @@ void VBucketDurabilityTest::testHTCommitExisting() {
     ASSERT_EQ(2, ht->getNumItems());
 
     // Check preconditions - item should be found as pending.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(CommittedState::Pending, result->getCommitted());
 
@@ -1132,8 +1132,8 @@ void VBucketDurabilityTest::testHTCommitExisting() {
               vbucket->commit(key, 2, {}, vbucket->lockCollections(key)));
 
     // Check postconditions - should only have one item for that key.
-    auto readView = ht->findForRead(key).storedValue;
-    auto writeView = ht->findForWrite(key).storedValue;
+    auto readView = ht->findForRead(key).getSV();
+    auto writeView = ht->findForWrite(key).getSV();
     EXPECT_TRUE(readView);
     EXPECT_TRUE(writeView);
     EXPECT_EQ(*readView, *writeView);
@@ -1154,7 +1154,7 @@ TEST_P(EphemeralVBucketDurabilityTest, CommitExisting) {
     EXPECT_EQ(2, ht->getNumItems());
     auto key = makeStoredDocKey("key");
     auto res = ht->findForUpdate(key);
-    EXPECT_TRUE(res.pending->isCompleted());
+    EXPECT_TRUE(res.getPending()->isCompleted());
 
     // Check that we have the expected items in the seqList.
     // 2 items total (prepare + commit)
@@ -1217,7 +1217,7 @@ TEST_P(EphemeralVBucketDurabilityTest, PrepareOnCommitted) {
     ASSERT_EQ(MutationStatus::WasClean,
               public_processSet(*item, 0 /*cas*/, ctx));
 
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(CommittedState::Pending, result->getCommitted());
 
@@ -1258,7 +1258,7 @@ void VBucketDurabilityTest::testHTSyncDeleteCommit() {
     }
 
     // Do a SyncDelete
-    auto* writeView = ht->findForWrite(key).storedValue;
+    auto* writeView = ht->findForWrite(key).getSV();
     ASSERT_TRUE(writeView);
     VBQueueItemCtx ctx;
     ctx.durability = DurabilityItemCtx{
@@ -1270,10 +1270,10 @@ void VBucketDurabilityTest::testHTSyncDeleteCommit() {
             << "opsDelete should not be incremented by prepared SyncDelete";
 
     // Test - commit the pending SyncDelete.
-    writeView = ht->findForWrite(key).storedValue;
+    writeView = ht->findForWrite(key).getSV();
     ASSERT_TRUE(writeView);
 
-    auto* readView = ht->findForRead(key).storedValue;
+    auto* readView = ht->findForRead(key).getSV();
     ASSERT_TRUE(readView);
     EXPECT_FALSE(readView->isDeleted());
     EXPECT_TRUE(readView->getValue());
@@ -1288,9 +1288,9 @@ void VBucketDurabilityTest::testHTSyncDeleteCommit() {
     // Check postconditions:
     // 1. Upon commit, both read and write view should show same deleted item.
     readView = ht->findForRead(key, TrackReference::Yes, WantsDeleted::Yes)
-                       .storedValue;
+                       .getSV();
     ASSERT_TRUE(readView);
-    writeView = ht->findForWrite(key).storedValue;
+    writeView = ht->findForWrite(key).getSV();
     ASSERT_TRUE(writeView);
 
     EXPECT_EQ(readView, writeView);
@@ -1317,7 +1317,7 @@ void VBucketDurabilityTest::testSyncDeleteUpdateMaxDelRevSeqno(Resolution res) {
     EXPECT_EQ(0, ht->getMaxDeletedRevSeqno());
     auto key = makeStoredDocKey("key");
 
-    auto sv = ht->findOnlyCommitted(key).storedValue;
+    auto sv = ht->findOnlyCommitted(key).getSV();
     ASSERT_TRUE(sv);
     // stored item should have rev seqno one greater than the seen max
     EXPECT_EQ(1, sv->getRevSeqno());
@@ -1335,7 +1335,7 @@ void VBucketDurabilityTest::testSyncDeleteUpdateMaxDelRevSeqno(Resolution res) {
     // actually deleted yet!
     EXPECT_EQ(0, ht->getMaxDeletedRevSeqno());
 
-    sv = ht->findForWrite(key).storedValue;
+    sv = ht->findForWrite(key).getSV();
     ASSERT_TRUE(sv);
 
     if (res == Resolution::Commit) {
@@ -1353,7 +1353,7 @@ void VBucketDurabilityTest::testSyncDeleteUpdateMaxDelRevSeqno(Resolution res) {
         // still not changed by a non-delete op
         EXPECT_EQ(2, ht->getMaxDeletedRevSeqno());
 
-        sv = ht->findOnlyCommitted(key).storedValue;
+        sv = ht->findOnlyCommitted(key).getSV();
         ASSERT_TRUE(sv);
         // the new item again has rev seqno one greater than max del rev.
         // MB-48179: this would fail and instead be 1 as the max del rev had
@@ -1374,7 +1374,7 @@ void VBucketDurabilityTest::testSyncDeleteUpdateMaxDelRevSeqno(Resolution res) {
         // still not changed by a non-delete op
         EXPECT_EQ(0, ht->getMaxDeletedRevSeqno());
 
-        sv = ht->findOnlyCommitted(key).storedValue;
+        sv = ht->findOnlyCommitted(key).getSV();
         ASSERT_TRUE(sv);
         // the new item is one greater than the _original_ stored value,
         // not the aborted sync delete prepare.
@@ -1464,7 +1464,7 @@ TEST_P(VBucketDurabilityTest, CommitNonPendingFails) {
     ASSERT_EQ(MutationStatus::WasClean, public_processSet(*committed, 0, {}));
 
     // Check preconditions - item should be found as committed.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(CommittedState::CommittedViaMutation, result->getCommitted());
 
@@ -1485,7 +1485,7 @@ TEST_P(VBucketDurabilityTest, MutationAfterCommit) {
     ASSERT_EQ(1, ht->getNumItems());
 
     // Check preconditions - item should be found as pending.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(CommittedState::Pending, result->getCommitted());
     ASSERT_EQ(ENGINE_SUCCESS,
@@ -1494,7 +1494,7 @@ TEST_P(VBucketDurabilityTest, MutationAfterCommit) {
                               {},
                               vbucket->lockCollections(key)));
 
-    auto readView = ht->findForRead(key).storedValue;
+    auto readView = ht->findForRead(key).getSV();
     ASSERT_TRUE(readView);
     ASSERT_EQ(CommittedState::CommittedViaPrepare, readView->getCommitted());
 
@@ -1504,8 +1504,8 @@ TEST_P(VBucketDurabilityTest, MutationAfterCommit) {
 
     // Check postconditions
     // 1. Should only have 1 item (and should be same)
-    readView = ht->findForRead(key).storedValue;
-    auto writeView = ht->findForWrite(key).storedValue;
+    readView = ht->findForRead(key).getSV();
+    auto writeView = ht->findForWrite(key).getSV();
     EXPECT_TRUE(readView);
     EXPECT_TRUE(writeView);
     EXPECT_EQ(*readView, *writeView);
@@ -1520,7 +1520,7 @@ void VBucketDurabilityTest::doSyncWriteAndCommit() {
     ASSERT_EQ(1, ht->getNumPreparedSyncWrites());
     auto preparedSeqno = vbucket->getHighSeqno();
 
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(ENGINE_SUCCESS,
               vbucket->commit(
@@ -1546,7 +1546,7 @@ TEST_P(VBucketDurabilityTest, SyncWriteSyncDeleteEmptyValue) {
               public_processSoftDelete(key, ctx).first);
 
     // Test: Check the prepared item has a zero length, raw value.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
 
     EXPECT_TRUE(result->isDeleted());
@@ -1577,7 +1577,7 @@ void VBucketDurabilityTest::doSyncDelete() {
     ctx.durability = DurabilityItemCtx{prepared->getDurabilityReqs(), cookie};
     ASSERT_EQ(MutationStatus::WasClean, public_processSet(*prepared, 0, ctx));
 
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     ASSERT_EQ(ENGINE_SUCCESS,
               vbucket->commit(
@@ -1692,8 +1692,8 @@ void VBucketDurabilityTest::testConvertPassiveDMToActiveDM(
                                                TrackReference::No,
                                                QueueExpired::No,
                                                vbucket->lockCollections(key));
-        ASSERT_TRUE(result.storedValue);
-        EXPECT_TRUE(result.storedValue->isPreparedMaybeVisible());
+        ASSERT_TRUE(result.getSV());
+        EXPECT_TRUE(result.getSV()->isPreparedMaybeVisible());
     }
 
     // Check that the SyncWrite journey now proceeds to completion as expected
@@ -1718,8 +1718,8 @@ void VBucketDurabilityTest::testConvertPassiveDMToActiveDM(
                                                TrackReference::No,
                                                QueueExpired::No,
                                                vbucket->lockCollections(key));
-        ASSERT_TRUE(result.storedValue);
-        EXPECT_TRUE(result.storedValue->isCommitted());
+        ASSERT_TRUE(result.getSV());
+        EXPECT_TRUE(result.getSV()->isCommitted());
     }
 }
 
@@ -2500,8 +2500,8 @@ TEST_P(VBucketDurabilityTest, ActiveDM_DoubleSetVBState) {
                                                TrackReference::No,
                                                QueueExpired::No,
                                                vbucket->lockCollections(key));
-        ASSERT_TRUE(result.storedValue);
-        EXPECT_TRUE(result.storedValue->isCommitted());
+        ASSERT_TRUE(result.getSV());
+        EXPECT_TRUE(result.getSV()->isCommitted());
     }
 }
 
@@ -2566,8 +2566,8 @@ TEST_P(EPVBucketDurabilityTest,
                                                TrackReference::No,
                                                QueueExpired::No,
                                                vbucket->lockCollections(key));
-        ASSERT_TRUE(result.storedValue);
-        EXPECT_TRUE(result.storedValue->isCommitted());
+        ASSERT_TRUE(result.getSV());
+        EXPECT_TRUE(result.getSV()->isCommitted());
     }
 }
 
@@ -2598,7 +2598,7 @@ void VBucketDurabilityTest::setupPendingDelete(StoredDocKey key) {
     ASSERT_EQ(1, ht->getNumItems());
 
     // Test: Now delete it via a SyncDelete.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
     VBQueueItemCtx ctx;
     ctx.durability = DurabilityItemCtx{
@@ -2610,13 +2610,13 @@ void VBucketDurabilityTest::setupPendingDelete(StoredDocKey key) {
     // Check postconditions:
     // 1. Original item should still be the same (when looking up via
     // findForRead):
-    auto* readView = ht->findForRead(key).storedValue;
+    auto* readView = ht->findForRead(key).getSV();
     ASSERT_TRUE(readView);
     EXPECT_FALSE(readView->isDeleted());
     EXPECT_EQ(committed->getValue(), readView->getValue());
 
     // 2. Pending delete should be visible via findForWrite:
-    auto* writeView = ht->findForWrite(key).storedValue;
+    auto* writeView = ht->findForWrite(key).getSV();
     ASSERT_TRUE(writeView);
     EXPECT_TRUE(writeView->isDeleted());
     EXPECT_EQ(CommittedState::Pending, writeView->getCommitted());
@@ -2711,7 +2711,7 @@ TEST_P(VBucketDurabilityTest, PendingSyncDeleteToPendingDeleteFails) {
 
     // Test - attempt to mutate a key which has a pending SyncDelete against it
     // with a pending SyncDelete.
-    auto result = ht->findForWrite(key).storedValue;
+    auto result = ht->findForWrite(key).getSV();
     ASSERT_TRUE(result);
 
     VBQueueItemCtx ctx;
@@ -2781,10 +2781,10 @@ void VBucketDurabilityTest::testCompleteSWInPassiveDM(vbucket_state_t state,
                                       prepare.seqno + 10 /*commitSeqno*/,
                                       vbucket->lockCollections(key)));
 
-            const auto sv = ht->findForRead(key).storedValue;
+            const auto sv = ht->findForRead(key).getSV();
             EXPECT_TRUE(sv);
             EXPECT_EQ(CommittedState::CommittedViaPrepare, sv->getCommitted());
-            EXPECT_TRUE(ht->findForWrite(key).storedValue);
+            EXPECT_TRUE(ht->findForWrite(key).getSV());
 
             break;
         }
@@ -2795,8 +2795,8 @@ void VBucketDurabilityTest::testCompleteSWInPassiveDM(vbucket_state_t state,
                                      prepare.seqno + 10 /*abortSeqno*/,
                                      vbucket->lockCollections(key)));
 
-            EXPECT_FALSE(ht->findForRead(key).storedValue);
-            EXPECT_FALSE(ht->findForWrite(key).storedValue);
+            EXPECT_FALSE(ht->findForRead(key).getSV());
+            EXPECT_FALSE(ht->findForWrite(key).getSV());
 
             break;
         }
@@ -2880,13 +2880,13 @@ void VBucketDurabilityTest::testConvertADMMakesPreparesMaybeVisible(
     auto prepareKey = makeStoredDocKey("key1");
     auto htRes = vbucket->ht.findForUpdate(prepareKey);
 
-    ASSERT_TRUE(htRes.pending);
+    ASSERT_TRUE(htRes.getPending());
     if (expectPreparedMaybeVisible) {
         EXPECT_EQ(CommittedState::PreparedMaybeVisible,
-                  htRes.pending->getCommitted());
+                  htRes.getPending()->getCommitted());
     } else {
         EXPECT_NE(CommittedState::PreparedMaybeVisible,
-                  htRes.pending->getCommitted());
+                  htRes.getPending()->getCommitted());
     }
 }
 
@@ -3122,7 +3122,7 @@ TEST_P(VBucketDurabilityTest, SyncAddUsesCommittedValueRevSeqno) {
     // max del rev not changed by a non-delete op
     EXPECT_EQ(0, ht->getMaxDeletedRevSeqno());
 
-    auto sv = ht->findOnlyCommitted(key).storedValue;
+    auto sv = ht->findOnlyCommitted(key).getSV();
     ASSERT_TRUE(sv);
     // stored item should have rev seqno one greater than the seen max del rev
     EXPECT_EQ(1, sv->getRevSeqno());
@@ -3133,7 +3133,7 @@ TEST_P(VBucketDurabilityTest, SyncAddUsesCommittedValueRevSeqno) {
 
     // committed, deleted item has rev seqno one greater than the item it
     // deleted, and has updated the max deleted rev seqno to that value
-    sv = ht->findOnlyCommitted(key).storedValue;
+    sv = ht->findOnlyCommitted(key).getSV();
     ASSERT_TRUE(sv);
     // stored item should have rev seqno one greater than the seen max del rev
     EXPECT_EQ(2, sv->getRevSeqno());
@@ -3160,7 +3160,7 @@ TEST_P(VBucketDurabilityTest, SyncAddUsesCommittedValueRevSeqno) {
     // still not changed by a non-delete op
     EXPECT_EQ(2, ht->getMaxDeletedRevSeqno());
 
-    sv = ht->findOnlyCommitted(key).storedValue;
+    sv = ht->findOnlyCommitted(key).getSV();
     ASSERT_TRUE(sv);
     // the new item again has rev seqno one greater than max del rev.
     // MB-48713: this would fail and instead be 2 as the second sync add prepare
@@ -3192,7 +3192,7 @@ TEST_P(VBucketDurabilityTest, DoNotExpireCommittedIfPending) {
     std::tie(status, sv, notifyCtx) =
             public_processExpiredItem(findUpdateResult, cHandle);
     EXPECT_EQ(MutationStatus::IsPendingSyncWrite, status);
-    EXPECT_EQ(findUpdateResult.committed, sv);
+    EXPECT_EQ(findUpdateResult.getSV(), sv);
     EXPECT_EQ(0, notifyCtx.bySeqno);
     EXPECT_FALSE(notifyCtx.notifyReplication);
     EXPECT_FALSE(notifyCtx.notifyFlusher);

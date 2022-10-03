@@ -1888,7 +1888,7 @@ protected:
      * prepares.
      */
     std::tuple<MutationStatus, StoredValue*, boost::optional<VBNotifyCtx>>
-    processSoftDeleteInner(const HashTable::HashBucketLock& hbl,
+    processSoftDeleteInner(HashTable::FindUpdateResult& htRes,
                            StoredValue& v,
                            uint64_t cas,
                            const ItemMetaData& metadata,
@@ -2171,7 +2171,8 @@ private:
      * Updates an existing StoredValue in in-memory data structures like HT.
      * Assumes that HT bucket lock is grabbed.
      *
-     * @param hbl Hash table lock that must be held
+     * @param htRes owns lock and existing StoredValues that are relevant to the
+     *        update.
      * @param v Reference to the StoredValue to be updated.
      * @param itm Item to be updated.
      * @param queueItmCtx holds info needed to queue an item in chkpt
@@ -2184,7 +2185,7 @@ private:
      *         notification info.
      */
     virtual std::tuple<StoredValue*, MutationStatus, VBNotifyCtx>
-    updateStoredValue(const HashTable::HashBucketLock& hbl,
+    updateStoredValue(HashTable::FindResult& htRes,
                       StoredValue& v,
                       const Item& itm,
                       const VBQueueItemCtx& queueItmCtx,
@@ -2194,7 +2195,8 @@ private:
      * Adds a new StoredValue in in-memory data structures like HT.
      * Assumes that HT bucket lock is grabbed.
      *
-     * @param hbl Hash table bucket lock that must be held
+     * @param htRes owns lock and existing StoredValues that are relevant to the
+     *        add.
      * @param itm Item to be added.
      * @param queueItmCtx holds info needed to queue an item in chkpt
      * @param genRevSeqno whether to generate new revision sequence number
@@ -2203,7 +2205,7 @@ private:
      * @return Ptr of the StoredValue added and notification info
      */
     virtual std::pair<StoredValue*, VBNotifyCtx> addNewStoredValue(
-            const HashTable::HashBucketLock& hbl,
+            HashTable::FindResult& htRes,
             const Item& itm,
             const VBQueueItemCtx& queueItmCtx,
             GenerateRevSeqno genRevSeqno) = 0;
@@ -2233,7 +2235,7 @@ private:
      *         - notification info.
      */
     virtual std::tuple<StoredValue*, DeletionStatus, VBNotifyCtx>
-    softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
+    softDeleteStoredValue(HashTable::FindResult& htRes,
                           StoredValue& v,
                           bool onlyMarkDeleted,
                           const VBQueueItemCtx& queueItmCtx,
@@ -2269,7 +2271,7 @@ private:
      * @return Information on who should be notified of the commit.
      */
     virtual VBNotifyCtx abortStoredValue(
-            const HashTable::HashBucketLock& hbl,
+            HashTable::FindUpdateResult& htRes,
             StoredValue& v,
             int64_t prepareSeqno,
             boost::optional<int64_t> abortSeqno) = 0;
@@ -2447,10 +2449,10 @@ private:
      * as it is to be "replaced" by a mutation. Consumes the StoredValue* in the
      * StoredValueProxy making it no longer usable.
      *
-     * @param v StoredValueProxy of the prepare to complete
+     * @param htRes reference to the current HashTable FindUpdateResult
      */
     virtual void processImplicitlyCompletedPrepare(
-            HashTable::StoredValueProxy& v) = 0;
+            HashTable::FindUpdateResult& htRes) = 0;
 
     /**
      * Remove any queued acks for the given node from the ActiveDM.

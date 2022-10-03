@@ -1143,7 +1143,7 @@ void LoadValueCallback::callback(CacheLookup &lookup)
 
     // We explicitly want the committedSV (if exists).
     auto res = vb->ht.findOnlyCommitted(lookup.getKey().getDocKey());
-    if (res.storedValue && res.storedValue->isResident()) {
+    if (res.getSV() && res.getSV()->isResident()) {
         // Already resident in memory - skip loading from disk.
         setStatus(ENGINE_KEY_EEXISTS);
         return;

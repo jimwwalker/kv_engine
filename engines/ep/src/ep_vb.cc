@@ -111,12 +111,11 @@ ENGINE_ERROR_CODE EPVBucket::completeBGFetchForSingleItem(
                 cHandle,
                 getState() == vbucket_state_replica ? ForGetReplicaOp::Yes
                                                     : ForGetReplicaOp::No);
-        auto* v = res.storedValue;
+        auto* v = res.getSV();
         if (fetched_item.metaDataOnly) {
             if (status == ENGINE_SUCCESS) {
                 if (v && v->isTempInitialItem()) {
-                    ht.unlocked_restoreMeta(
-                            res.lock.getHTLock(), *fetchedValue, *v);
+                    ht.unlocked_restoreMeta(res.getHBL(), *fetchedValue, *v);
                 }
             } else if (status == ENGINE_KEY_ENOENT) {
                 if (v && v->isTempInitialItem()) {
@@ -159,8 +158,7 @@ ENGINE_ERROR_CODE EPVBucket::completeBGFetchForSingleItem(
 
             if (restore) {
                 if (status == ENGINE_SUCCESS) {
-                    ht.unlocked_restoreValue(
-                            res.lock.getHTLock(), *fetchedValue, *v);
+                    ht.unlocked_restoreValue(res.getHBL(), *fetchedValue, *v);
                     if (!v->isResident()) {
                         throw std::logic_error(
                                 "VBucket::completeBGFetchForSingleItem: "
@@ -338,10 +336,10 @@ ENGINE_ERROR_CODE EPVBucket::statsVKey(const DocKey& key,
                                QueueExpired::Yes,
                                readHandle);
 
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
     if (v) {
         if (VBucket::isLogicallyNonExistent(*v, readHandle)) {
-            ht.cleanupIfTemporaryItem(res.lock, *v);
+            ht.cleanupIfTemporaryItem(res.getHBL(), *v);
             return ENGINE_KEY_ENOENT;
         }
         ++stats.numRemainingBgJobs;
@@ -358,7 +356,7 @@ ENGINE_ERROR_CODE EPVBucket::statsVKey(const DocKey& key,
         if (eviction == EvictionPolicy::Value) {
             return ENGINE_KEY_ENOENT;
         } else {
-            auto rv = addTempStoredValue(res.lock, key);
+            auto rv = addTempStoredValue(res.getHBL(), key);
             switch (rv.status) {
             case TempAddStatus::NoMem:
                 return ENGINE_ENOMEM;
@@ -384,10 +382,10 @@ void EPVBucket::completeStatsVKey(const DocKey& key, const GetValue& gcb) {
             cHandle.valid() ? QueueExpired::Yes : QueueExpired::No,
             cHandle);
 
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
     if (v && v->isTempInitialItem()) {
         if (gcb.getStatus() == ENGINE_SUCCESS) {
-            ht.unlocked_restoreValue(res.lock.getHTLock(), *gcb.item, *v);
+            ht.unlocked_restoreValue(res.getHBL(), *gcb.item, *v);
             if (!v->isResident()) {
                 throw std::logic_error(
                         "VBucket::completeStatsVKey: "
@@ -448,7 +446,7 @@ cb::mcbp::Status EPVBucket::evictKey(
         const Collections::VB::Manifest::CachingReadHandle& cHandle) {
     auto res = fetchValidValue(
             WantsDeleted::No, TrackReference::No, QueueExpired::Yes, cHandle);
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
     if (!v) {
         if (eviction == EvictionPolicy::Value) {
             *msg = "Not found.";
@@ -459,7 +457,7 @@ cb::mcbp::Status EPVBucket::evictKey(
     }
 
     if (v->isResident()) {
-        if (ht.unlocked_ejectItem(res.lock, v, eviction)) {
+        if (ht.unlocked_ejectItem(res.getHBL(), v, eviction)) {
             *msg = "Ejected.";
 
             // Add key to bloom filter in case of full eviction mode
@@ -522,7 +520,7 @@ size_t EPVBucket::queueBGFetchItem(const DocKey& key,
 }
 
 std::tuple<StoredValue*, MutationStatus, VBNotifyCtx>
-EPVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
+EPVBucket::updateStoredValue(HashTable::FindResult& htRes,
                              StoredValue& v,
                              const Item& itm,
                              const VBQueueItemCtx& queueItmCtx,
@@ -532,7 +530,7 @@ EPVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
         result.status = MutationStatus::WasDirty;
         result.storedValue = &v;
     } else {
-        result = ht.unlocked_updateStoredValue(hbl, v, itm);
+        result = ht.unlocked_updateStoredValue(htRes.getHBL(), v, itm);
         switch (result.status) {
         case MutationStatus::WasClean:
         case MutationStatus::WasDirty:
@@ -549,34 +547,36 @@ EPVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
         }
     }
 
-    return std::make_tuple(result.storedValue,
-                           result.status,
-                           queueDirty(hbl, *result.storedValue, queueItmCtx));
+    return std::make_tuple(
+            result.storedValue,
+            result.status,
+            queueDirty(htRes.getHBL(), *result.storedValue, queueItmCtx));
 }
 
 std::pair<StoredValue*, VBNotifyCtx> EPVBucket::addNewStoredValue(
-        const HashTable::HashBucketLock& hbl,
+        HashTable::FindResult& htRes,
         const Item& itm,
         const VBQueueItemCtx& queueItmCtx,
         GenerateRevSeqno genRevSeqno) {
-    StoredValue* v = ht.unlocked_addNewStoredValue(hbl, itm);
+    StoredValue* v = ht.unlocked_addNewStoredValue(htRes.getHBL(), itm);
 
     if (genRevSeqno == GenerateRevSeqno::Yes) {
         /* This item could potentially be recreated */
         updateRevSeqNoOfNewStoredValue(*v);
     }
 
-    return {v, queueDirty(hbl, *v, queueItmCtx)};
+    return {v, queueDirty(htRes.getHBL(), *v, queueItmCtx)};
 }
 
 std::tuple<StoredValue*, DeletionStatus, VBNotifyCtx>
-EPVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
+EPVBucket::softDeleteStoredValue(HashTable::FindResult& htRes,
                                  StoredValue& v,
                                  bool onlyMarkDeleted,
                                  const VBQueueItemCtx& queueItmCtx,
                                  uint64_t bySeqno,
                                  DeleteSource deleteSource) {
-    auto result = ht.unlocked_softDelete(hbl, v, onlyMarkDeleted, deleteSource);
+    auto result = ht.unlocked_softDelete(
+            htRes.getHBL(), v, onlyMarkDeleted, deleteSource);
     switch (result.status) {
     case DeletionStatus::Success:
         // Proceed to queue the deletion into the CheckpointManager.
@@ -586,7 +586,7 @@ EPVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
         return std::make_tuple(
                 result.deletedValue,
                 result.status,
-                queueDirty(hbl, *result.deletedValue, queueItmCtx));
+                queueDirty(htRes.getHBL(), *result.deletedValue, queueItmCtx));
 
     case DeletionStatus::IsPendingSyncWrite:
         return std::make_tuple(
@@ -600,23 +600,22 @@ VBNotifyCtx EPVBucket::commitStoredValue(HashTable::FindUpdateResult& values,
                                          const VBQueueItemCtx& queueItmCtx,
                                          boost::optional<int64_t> commitSeqno) {
     // Remove a previously committed SV if one exists
-    if (values.committed) {
+    if (values.getSV()) {
         // Only delete the existing committed item
-        ht.unlocked_del(values.pending.getHBL(), values.committed);
+        ht.unlocked_del(values.getHBL(), values.getSV());
     }
 
-    values.pending.setCommitted(CommittedState::CommittedViaPrepare);
+    values.getPending()->setCommitted(CommittedState::CommittedViaPrepare);
 
     if (commitSeqno) {
         Expects(queueItmCtx.genBySeqno == GenerateBySeqno::No);
-        values.pending.setBySeqno(*commitSeqno);
+        values.getPending()->setBySeqno(*commitSeqno);
     }
 
-    return queueDirty(
-            values.pending.getHBL(), *values.pending.getSV(), queueItmCtx);
+    return queueDirty(values.getHBL(), *values.getPending(), queueItmCtx);
 }
 
-VBNotifyCtx EPVBucket::abortStoredValue(const HashTable::HashBucketLock& hbl,
+VBNotifyCtx EPVBucket::abortStoredValue(HashTable::FindUpdateResult& htRes,
                                         StoredValue& v,
                                         int64_t prepareSeqno,
                                         boost::optional<int64_t> abortSeqno) {
@@ -627,9 +626,9 @@ VBNotifyCtx EPVBucket::abortStoredValue(const HashTable::HashBucketLock& hbl,
         queueItmCtx.genBySeqno = GenerateBySeqno::No;
         v.setBySeqno(*abortSeqno);
     }
-    auto notify = queueAbort(hbl, v, prepareSeqno, queueItmCtx);
+    auto notify = queueAbort(htRes.getHBL(), v, prepareSeqno, queueItmCtx);
 
-    ht.unlocked_del(hbl, &v);
+    ht.unlocked_del(htRes.getHBL(), &v);
 
     return notify;
 }
@@ -823,8 +822,8 @@ void EPVBucket::dropKey(int64_t bySeqno,
     // collection.
     auto res = fetchValidValue(
             WantsDeleted::No, TrackReference::No, QueueExpired::No, cHandle);
-    if (res.storedValue && res.storedValue->getBySeqno() == bySeqno) {
-        ht.unlocked_del(res.lock, res.storedValue);
+    if (res.getSV() && res.getSV()->getBySeqno() == bySeqno) {
+        ht.unlocked_del(res.getHBL(), res.getSV());
     }
 }
 
@@ -879,17 +878,8 @@ bool EPVBucket::isValidDurabilityLevel(cb::durability::Level level) {
 }
 
 void EPVBucket::processImplicitlyCompletedPrepare(
-        HashTable::StoredValueProxy& v) {
-    // As we have passed a StoredValueProxy to this function (the callers need
-    // a HashTable::FindUpdateResult) we need to be careful about our stats
-    // updates. The StoredValueProxy attempts to do a
-    // HashTable::Statistics::epilogue stats update when we destruct it. This is
-    // generally fine, but if we want to use any other HashTable function with
-    // a StoredValueProxy we need a way to skip the StoredValueProxy's stats
-    // update as the other HashTable function will do it's own. In this case,
-    // we can call StoredValueProxy::release to release the ownership of the
-    // pointer in the StoredValueProxy and skip any stats update. This consumes
-    // the StoredValue* and invalidates the StoredValueProxy so it should not be
-    // used after.
-    ht.unlocked_del(v.getHBL(), v.release());
+        HashTable::FindUpdateResult& htRes) {
+    // Release the pending StoredValue so that no statistic updates happen in
+    // the destructor of FindUpdateResult.
+    ht.unlocked_del(htRes.getHBL(), htRes.releasePending());
 }

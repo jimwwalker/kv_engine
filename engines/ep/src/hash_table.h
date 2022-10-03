@@ -432,6 +432,10 @@ public:
             return bucketNum;
         }
 
+        operator bool() const {
+            return htLock.owns_lock();
+        }
+
         const std::unique_lock<std::mutex>& getHTLock() const {
             return htLock;
         }
@@ -633,50 +637,25 @@ public:
     /**
      * Result of the findForRead() method.
      */
-    struct FindROResult {
-        /// If find successful then pointer to found StoredValue; else nullptr.
-        const StoredValue* storedValue;
-        /**
-         * The (locked) HashBucketLock for the given key. Note this always
-         * returns a locked object; even if the requested key doesn't exist.
-         * This is to facilitate use-cases where the caller subsequently needs
-         * to insert a StoredValue for this key, to avoid unlocking and
-         * re-locking the mutex.
-         */
-        HashBucketLock lock;
-    };
+    class FindROResult {
+    public:
+        FindROResult(StoredValue* sv, HashBucketLock&& lock)
+            : storedValue(sv), lock(std::move(lock)) {
+        }
 
-    /**
-     * Find an item with the specified key for read-only access.
-     *
-     * Only StoredValues which are committed will be returned, unless the key
-     * has a Pending SyncWrite which is MaybeVisible - in which case that
-     * PreparedMaybeVisible item will be returned (so caller should check and
-     * block access to the key).
-     *
-     * @param key The key of the item to find
-     * @param trackReference Should this lookup update referenced status (i.e.
-     *                       increase the hotness of this key?)
-     * @param wantsDeleted whether a deleted value needs to be returned
-     * @param fetchRequestedForReplicaItem used to inform the method if we are
-     * finding an item for a GET_REPLICA op
-     *                     or not
-     * @return A FindROResult consisting of:
-     *         - a pointer to a StoredValue -- NULL if not found
-     *         - a (locked) HashBucketLock for the key's hash bucket.
-     */
-    FindROResult findForRead(
-            const DocKey& key,
-            TrackReference trackReference = TrackReference::Yes,
-            WantsDeleted wantsDeleted = WantsDeleted::No,
-            ForGetReplicaOp fetchRequestedForReplicaItem = ForGetReplicaOp::No);
+        const StoredValue* getSV() const {
+            return storedValue;
+        }
 
-    /**
-     * Result of the findFor...() methods which return a non-const result.
-     */
-    struct FindResult {
+        /// @todo: make const as part of MB-53922 so this can't be unlocked
+        /// whilst FindROResult could still access a StoredValue
+        HashBucketLock& getHBL() {
+            return lock;
+        }
+
+    private:
         /// If find successful then pointer to found StoredValue; else nullptr.
-        StoredValue* storedValue;
+        const StoredValue* storedValue{nullptr};
         /**
          * The (locked) HashBucketLock for the given key. Note this always
          * returns a locked object; even if the requested key doesn't exist.
@@ -709,6 +688,8 @@ public:
      * Instead, just allow the caller to do what they need to, but in a more
      * managed way.
      */
+#if 0
+// DONE GONE BYE
     class StoredValueProxy {
     public:
         // Tag used for overload resolution while we migrate to using
@@ -780,6 +761,68 @@ public:
         std::reference_wrapper<Statistics> valueStats;
         Statistics::StoredValueProperties pre;
     };
+#endif
+
+    /**
+     * Result of the findFor...() methods which return a non-const result.
+     */
+    class FindResult {
+    public:
+        /**
+         * Construct FindResult with StoredValue (non-owning pointer) and the
+         * lock which protects access to that StoredValue
+         */
+        FindResult(StoredValue* sv, HashBucketLock&& lock)
+            : lock(std::move(lock)), storedValue{sv} {
+        }
+
+        StoredValue* getSV() {
+            return storedValue;
+        }
+
+        const StoredValue* getSV() const {
+            return storedValue;
+        }
+
+        /**
+         * Obtain a reference to the StoredValue* for the few code paths which
+         * can replace which StoredValue FindResult uses
+         */
+        StoredValue*& getSVRef() {
+            return storedValue;
+        }
+
+        bool isLocked() const {
+            return lock.getHTLock().owns_lock();
+        }
+
+        /// @todo: remove and leave only const variant as part of MB-53922 so
+        // this cannot simply be unlocked
+        HashBucketLock& getHBL() {
+            return lock;
+        }
+
+        /**
+         * Obtain a const reference to the lock - typically required to prove
+         * the caller has obtained a lock before calling a HashTable method
+         */
+        const HashBucketLock& getHBL() const {
+            return lock;
+        }
+
+    protected:
+        /**
+         * The (locked) HashBucketLock for the given key. Note this always
+         * returns a locked object; even if the requested key doesn't exist.
+         * This is to facilitate use-cases where the caller subsequently needs
+         * to insert a StoredValue for this key, to avoid unlocking and
+         * re-locking the mutex.
+         */
+        HashBucketLock lock;
+
+        /// If find successful then pointer to found StoredValue; else nullptr.
+        StoredValue* storedValue{nullptr};
+    };
 
     /**
      * Result of the findForUpdate() method.
@@ -790,10 +833,22 @@ public:
      * and committed items exist in the same HashBucket, as only one lock is
      * returned (in the pending StoredValueProxy).
      */
-    struct FindUpdateResult {
-        FindUpdateResult(StoredValueProxy&& prepare,
+    class FindUpdateResult : public FindResult {
+    public:
+        FindUpdateResult(HashBucketLock&& lock,
+                         StoredValue* prepare,
                          StoredValue* committed,
+                         Statistics& stats,
                          HashTable& ht);
+
+        ~FindUpdateResult();
+
+        FindUpdateResult(const FindUpdateResult& other) = delete;
+        FindUpdateResult& operator=(const FindUpdateResult& other) = delete;
+
+        // But move is.
+        FindUpdateResult(FindUpdateResult&&);
+        FindUpdateResult& operator=(FindUpdateResult&&);
 
         /**
          * Return the StoredValue (prepared or committed) that should generally
@@ -826,16 +881,51 @@ public:
                                      WantsDeleted wantsDeleted,
                                      ForGetReplicaOp forGetReplica);
 
-        HashBucketLock& getHBL() {
-            return pending.getHBL();
+        StoredValue* getPending() {
+            return pending;
         }
 
-        StoredValueProxy pending;
-        StoredValue* committed;
+        const StoredValue* getPending() const {
+            return pending;
+        }
+
+        /// @return the pending StoredValue and nullify this objects copy
+        StoredValue* releasePending();
 
     private:
-        HashTable& ht;
+        StoredValue* pending;
+
+        std::reference_wrapper<Statistics> valueStats;
+
+        std::reference_wrapper<HashTable> ht;
+
+        Statistics::StoredValueProperties pre;
     };
+
+    /**
+     * Find an item with the specified key for read-only access.
+     *
+     * Only StoredValues which are committed will be returned, unless the key
+     * has a Pending SyncWrite which is MaybeVisible - in which case that
+     * PreparedMaybeVisible item will be returned (so caller should check and
+     * block access to the key).
+     *
+     * @param key The key of the item to find
+     * @param trackReference Should this lookup update referenced status (i.e.
+     *                       increase the hotness of this key?)
+     * @param wantsDeleted whether a deleted value needs to be returned
+     * @param fetchRequestedForReplicaItem used to inform the method if we are
+     * finding an item for a GET_REPLICA op
+     *                     or not
+     * @return A FindROResult consisting of:
+     *         - a pointer to a StoredValue -- NULL if not found
+     *         - a (locked) HashBucketLock for the key's hash bucket.
+     */
+    FindROResult findForRead(
+            const DocKey& key,
+            TrackReference trackReference = TrackReference::Yes,
+            WantsDeleted wantsDeleted = WantsDeleted::No,
+            ForGetReplicaOp fetchRequestedForReplicaItem = ForGetReplicaOp::No);
 
     /**
      * Find an item with the specified key for write access.
@@ -862,12 +952,6 @@ public:
      */
     FindResult findForWrite(const DocKey& key,
                             WantsDeleted wantsDeleted = WantsDeleted::Yes);
-
-    /// @return Overload of above function returning a StoredValueProxy
-    StoredValueProxy findForWrite(
-            StoredValueProxy::RetSVPTag,
-            const DocKey& key,
-            WantsDeleted wantsDeleted = WantsDeleted::Yes);
 
     /**
      * Find an item with the specified key for write access.
@@ -1261,7 +1345,7 @@ public:
      *
      * @return true if restored; else false
      */
-    bool unlocked_restoreValue(const std::unique_lock<std::mutex>& htLock,
+    bool unlocked_restoreValue(const HashTable::HashBucketLock& hbl,
                                const Item& itm,
                                StoredValue& v);
 
@@ -1274,7 +1358,7 @@ public:
      * @param itm the Item whose metadata is being restored
      * @param v corresponding StoredValue
      */
-    void unlocked_restoreMeta(const std::unique_lock<std::mutex>& htLock,
+    void unlocked_restoreMeta(const HashTable::HashBucketLock& hbl,
                               const Item& itm,
                               StoredValue& v);
 

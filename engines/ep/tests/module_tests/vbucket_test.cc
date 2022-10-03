@@ -189,7 +189,7 @@ void VBucketTestBase::softDeleteMany(std::vector<StoredDocKey>& keys,
 }
 
 StoredValue* VBucketTestBase::findValue(StoredDocKey& key) {
-    return vbucket->ht.findForWrite(key).storedValue;
+    return vbucket->ht.findForWrite(key).getSV();
 }
 
 void VBucketTestBase::verifyValue(StoredDocKey& key,
@@ -197,8 +197,8 @@ void VBucketTestBase::verifyValue(StoredDocKey& key,
                                   TrackReference trackReference,
                                   WantsDeleted wantDeleted) {
     auto v = vbucket->ht.findForRead(key, trackReference, wantDeleted);
-    EXPECT_NE(nullptr, v.storedValue);
-    value_t val = v.storedValue->getValue();
+    EXPECT_NE(nullptr, v.getSV());
+    value_t val = v.getSV()->getValue();
 
     if (!value) {
         EXPECT_EQ(nullptr, val.get().get());
@@ -211,7 +211,7 @@ std::pair<HashTable::HashBucketLock, StoredValue*> VBucketTestBase::lockAndFind(
         const StoredDocKey& key, const VBQueueItemCtx& ctx) {
     auto htRes = ctx.durability ? vbucket->ht.findForSyncWrite(key)
                                 : vbucket->ht.findForWrite(key);
-    return {std::move(htRes.lock), htRes.storedValue};
+    return {std::move(htRes.getHBL()), htRes.getSV()};
 }
 
 MutationStatus VBucketTestBase::public_processSet(Item& itm,
@@ -353,15 +353,15 @@ TEST_P(VBucketTest, Add) {
     addMany(keys, AddStatus::Success);
 
     StoredDocKey missingKey = makeStoredDocKey("aMissingKey");
-    EXPECT_FALSE(this->vbucket->ht.findForRead(missingKey).storedValue);
+    EXPECT_FALSE(this->vbucket->ht.findForRead(missingKey).getSV());
 
     for (const auto& key : keys) {
-        EXPECT_TRUE(this->vbucket->ht.findForRead(key).storedValue);
+        EXPECT_TRUE(this->vbucket->ht.findForRead(key).getSV());
     }
 
     addMany(keys, AddStatus::Exists);
     for (const auto& key : keys) {
-        EXPECT_TRUE(this->vbucket->ht.findForRead(key).storedValue);
+        EXPECT_TRUE(this->vbucket->ht.findForRead(key).getSV());
     }
 
     // Verify we can read after a soft deletion.
@@ -369,7 +369,7 @@ TEST_P(VBucketTest, Add) {
               this->public_processSoftDelete(keys[0]).first);
     EXPECT_EQ(MutationStatus::NotFound,
               this->public_processSoftDelete(keys[0]).first);
-    EXPECT_FALSE(this->vbucket->ht.findForRead(keys[0]).storedValue);
+    EXPECT_FALSE(this->vbucket->ht.findForRead(keys[0]).getSV());
 
     Item i(keys[0], 0, 0, "newtest", 7);
     EXPECT_EQ(AddStatus::UnDel, this->public_processAdd(i));
@@ -385,7 +385,7 @@ TEST_P(VBucketTest, AddExpiry) {
     ASSERT_EQ(AddStatus::Success, addOne(k, ep_real_time() + 5));
     EXPECT_EQ(AddStatus::Exists, addOne(k, ep_real_time() + 5));
 
-    const auto* v = this->vbucket->ht.findForRead(k).storedValue;
+    const auto* v = this->vbucket->ht.findForRead(k).getSV();
     EXPECT_TRUE(v);
     EXPECT_FALSE(v->isExpired(ep_real_time()));
     EXPECT_TRUE(v->isExpired(ep_real_time() + 6));
@@ -414,7 +414,7 @@ TEST_P(VBucketTest, unlockedSoftDeleteWithValue) {
     ASSERT_EQ(MutationStatus::WasClean,
               this->public_processSet(stored_item, stored_item.getCas()));
 
-    auto* v(this->vbucket->ht.findForRead(key).storedValue);
+    auto* v(this->vbucket->ht.findForRead(key).getSV());
     EXPECT_NE(nullptr, v);
 
     // Create an item and set its state to deleted
@@ -442,7 +442,7 @@ TEST_P(VBucketTest, updateExpiredItem) {
     ASSERT_EQ(MutationStatus::WasClean,
               this->public_processSet(stored_item, stored_item.getCas()));
 
-    const auto* v = this->vbucket->ht.findForRead(key).storedValue;
+    const auto* v = this->vbucket->ht.findForRead(key).getSV();
     EXPECT_TRUE(v);
     EXPECT_TRUE(v->isExpired(ep_real_time()));
 
@@ -680,13 +680,13 @@ TEST_P(VBucketEvictionTest, Durability_PendingNeverEjected) {
     EXPECT_EQ(0, ht.getNumInMemoryNonResItems());
 
     auto storedItem = ht.findForWrite(item->getKey());
-    ASSERT_TRUE(storedItem.storedValue);
+    ASSERT_TRUE(storedItem.getSV());
     // Need to clear the dirty flag to ensure that we are testing the right
     // thing, i.e. that the item is not ejected because it is Pending (not
     // because it is dirty).
-    storedItem.storedValue->markClean();
+    storedItem.getSV()->markClean();
     ASSERT_FALSE(ht.unlocked_ejectItem(
-            storedItem.lock, storedItem.storedValue, getEvictionPolicy()));
+            storedItem.getHBL(), storedItem.getSVRef(), getEvictionPolicy()));
 
     // A Pending is never ejected (Key + Metadata + Value always resident)
     EXPECT_EQ(1, ht.getNumItems());
@@ -705,7 +705,7 @@ TEST_P(VBucketFullEvictionTest, MB_30137) {
     // (1) Store k
     EXPECT_EQ(MutationStatus::WasClean, public_processSet(*qi, qi->getCas()));
 
-    auto storedValue = vbucket->ht.findForRead(k).storedValue;
+    auto storedValue = vbucket->ht.findForRead(k).getSV();
     ASSERT_TRUE(storedValue);
     PersistenceCallback cb1;
 

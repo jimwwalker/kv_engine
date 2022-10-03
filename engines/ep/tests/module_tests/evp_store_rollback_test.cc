@@ -2138,7 +2138,7 @@ TEST_P(RollbackDcpTest, RollbackUnpersistedAbortDoesNotLoadOlderPrepare) {
 
     // MB-39333: Rolling back the abort would erroneously reload the first
     // prepare (seqno 2 here) into the ht.
-    EXPECT_FALSE(vb->ht.findOnlyPrepared(key).storedValue);
+    EXPECT_FALSE(vb->ht.findOnlyPrepared(key).getSV());
 
     EXPECT_EQ(htState.dump(), getHtState().dump());
 }

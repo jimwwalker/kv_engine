@@ -656,7 +656,7 @@ bool KVBucket::isMetaDataResident(VBucketPtr &vb, const DocKey& key) {
 
     auto result = vb->ht.findForRead(key, TrackReference::No, WantsDeleted::No);
 
-    return result.storedValue && !result.storedValue->isTempItem();
+    return result.getSV() && !result.getSV()->isTempItem();
 }
 
 void KVBucket::logQTime(TaskId taskType,
@@ -1897,10 +1897,10 @@ std::string KVBucket::validateKey(const DocKey& key,
 
     auto res = vb->fetchValidValue(
             WantsDeleted::Yes, TrackReference::No, QueueExpired::Yes, cHandle);
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
     if (v) {
         if (VBucket::isLogicallyNonExistent(*v, cHandle)) {
-            vb->ht.cleanupIfTemporaryItem(res.lock, *v);
+            vb->ht.cleanupIfTemporaryItem(res.getHBL(), *v);
             return "item_deleted";
         }
 

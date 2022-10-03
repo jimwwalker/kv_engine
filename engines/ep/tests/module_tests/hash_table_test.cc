@@ -118,10 +118,10 @@ HashTableTest::HashTableTest() : defaultHtSize(Configuration().getHtSize()) {
 
 bool HashTableTest::del(HashTable& ht, const DocKey& key) {
     auto htRes = ht.findForWrite(key);
-    if (!htRes.storedValue) {
+    if (!htRes.getSV()) {
         return false;
     }
-    ht.unlocked_del(htRes.lock, htRes.storedValue);
+    ht.unlocked_del(htRes.getHBL(), htRes.getSV());
     return true;
 }
 
@@ -205,10 +205,10 @@ TEST_F(HashTableTest, ForwardDeletions) {
 }
 
 static void verifyFound(HashTable &h, const std::vector<StoredDocKey> &keys) {
-    EXPECT_FALSE(h.findForRead(makeStoredDocKey("aMissingKey")).storedValue);
+    EXPECT_FALSE(h.findForRead(makeStoredDocKey("aMissingKey")).getSV());
 
     for (const auto& key : keys) {
-        EXPECT_TRUE(h.findForRead(key).storedValue);
+        EXPECT_TRUE(h.findForRead(key).getSV());
     }
 }
 
@@ -395,11 +395,11 @@ protected:
         EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
         auto result(ht.findForWrite(key));
-        EXPECT_TRUE(result.storedValue);
-        result.storedValue->markClean();
+        EXPECT_TRUE(result.getSV());
+        result.getSV()->markClean();
         EXPECT_TRUE(ht.unlocked_ejectItem(
-                result.lock, result.storedValue, evictionPolicy));
-        return result.storedValue;
+                result.getHBL(), result.getSVRef(), evictionPolicy));
+        return result.getSV();
     }
 
     /// How should items be cleaned up at end of test:
@@ -473,7 +473,7 @@ TEST_P(HashTableStatsTest, SizeEjectRestoreValue) {
 
     {
         auto hbl = ht.getLockedBucket(key);
-        EXPECT_TRUE(ht.unlocked_restoreValue(hbl.getHTLock(), item, *v));
+        EXPECT_TRUE(ht.unlocked_restoreValue(hbl, item, *v));
     }
 
     EXPECT_EQ(0, ht.getNumInMemoryNonResItems());
@@ -524,10 +524,10 @@ TEST_P(HashTableStatsTest, EjectFlush) {
 
     {
         auto item(ht.findForWrite(key));
-        EXPECT_TRUE(item.storedValue);
-        item.storedValue->markClean();
+        EXPECT_TRUE(item.getSV());
+        item.getSV()->markClean();
         EXPECT_TRUE(ht.unlocked_ejectItem(
-                item.lock, item.storedValue, evictionPolicy));
+                item.getHBL(), item.getSVRef(), evictionPolicy));
     }
 
     switch (evictionPolicy) {
@@ -559,9 +559,9 @@ TEST_P(HashTableStatsTest, numFailedEjects) {
     EXPECT_EQ(0, stats.numFailedEjects);
     {
         auto item(ht.findForWrite(key));
-        EXPECT_TRUE(item.storedValue);
+        EXPECT_TRUE(item.getSV());
         EXPECT_FALSE(ht.unlocked_ejectItem(
-                item.lock, item.storedValue, evictionPolicy));
+                item.getHBL(), item.getSVRef(), evictionPolicy));
         EXPECT_EQ(1, stats.numFailedEjects);
     }
     ht.clear();
@@ -577,9 +577,9 @@ TEST_P(HashTableStatsTest, TempDeletedRestore) {
     ASSERT_EQ(MutationStatus::WasClean, ht.set(item));
     { // Locking scope.
         auto item = ht.findForWrite(key);
-        ASSERT_NE(nullptr, item.storedValue);
-        item.storedValue->markClean();
-        ht.unlocked_del(item.lock, item.storedValue);
+        ASSERT_NE(nullptr, item.getSV());
+        item.getSV()->markClean();
+        ht.unlocked_del(item.getHBL(), item.getSV());
     }
 
     // Restore as temporary initial item (simulating bg_fetch).
@@ -598,7 +598,7 @@ TEST_P(HashTableStatsTest, TempDeletedRestore) {
         ASSERT_NE(nullptr, sv);
 
         // Restore the metadata for the (deleted) item.
-        ht.unlocked_restoreMeta(hbl.getHTLock(), item, *sv);
+        ht.unlocked_restoreMeta(hbl, item, *sv);
 
         // Check counts:
         EXPECT_EQ(0, ht.getNumItems())
@@ -613,7 +613,7 @@ TEST_P(HashTableStatsTest, TempDeletedRestore) {
                 << "Deleted, meta shouldn't count as deleted items";
 
         // Now restore the whole (deleted) value.
-        EXPECT_TRUE(ht.unlocked_restoreValue(hbl.getHTLock(), item, *sv));
+        EXPECT_TRUE(ht.unlocked_restoreValue(hbl, item, *sv));
     }
 
     // Check counts:
@@ -647,9 +647,9 @@ void HashTableStatsTest::testSoftDelete(CleanupMethod method) {
     {
         // Mark the item as deleted. Locking scope.
         auto htRes = ht.findForWrite(key, WantsDeleted::No);
-        ASSERT_NE(nullptr, htRes.storedValue);
-        ht.unlocked_softDelete(htRes.lock,
-                               *htRes.storedValue,
+        ASSERT_NE(nullptr, htRes.getSV());
+        ht.unlocked_softDelete(htRes.getHBL(),
+                               *htRes.getSV(),
                                /*onlyMarkDeleted*/ true,
                                DeleteSource::Explicit);
     }
@@ -699,7 +699,7 @@ TEST_P(HashTableStatsTest, UncompressedMemorySizeTest) {
      * Ensure that length of the value stored is the same as the length
      * of the compressed item
      */
-    const auto* v = ht.findForRead(makeStoredDocKey("key0")).storedValue;
+    const auto* v = ht.findForRead(makeStoredDocKey("key0")).getSV();
     EXPECT_NE(nullptr, v);
     EXPECT_EQ(item->getNBytes(), v->valuelen());
 
@@ -735,7 +735,7 @@ TEST_P(HashTableStatsTest, DeletedSystemEventItem) {
 
     // Jump through a couple hoops to delete the thing, need the old StoredValue
     // and a new "deleted" system event item
-    StoredValue* found = ht.findForWrite(key, WantsDeleted::No).storedValue;
+    StoredValue* found = ht.findForWrite(key, WantsDeleted::No).getSV();
     Item item(key, 0, 0, "", strlen(""));
     item.setDeleted(DeleteSource::Explicit);
 
@@ -834,7 +834,7 @@ TEST_F(HashTableTest, ItemAge) {
     EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
     // Test
-    StoredValue* v(ht.findForWrite(key).storedValue);
+    StoredValue* v(ht.findForWrite(key).getSV());
     EXPECT_EQ(0, v->getValue()->getAge());
     v->getValue()->incrementAge();
     EXPECT_EQ(1, v->getValue()->getAge());
@@ -868,12 +868,12 @@ TEST_F(HashTableTest, NRUDefault) {
     EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
     // trackReferenced=false so we don't modify the NRU while validating it.
-    const auto* v(ht.findForRead(key, TrackReference::No).storedValue);
+    const auto* v(ht.findForRead(key, TrackReference::No).getSV());
     EXPECT_NE(nullptr, v);
     EXPECT_EQ(INITIAL_NRU_VALUE, v->getNRUValue());
 
     // Check that find() by default /does/ update NRU.
-    v = ht.findForRead(key).storedValue;
+    v = ht.findForRead(key).getSV();
     EXPECT_NE(nullptr, v);
     EXPECT_EQ(INITIAL_NRU_VALUE - 1, v->getNRUValue());
 }
@@ -889,7 +889,7 @@ TEST_F(HashTableTest, NRUMinimum) {
     EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
     // trackReferenced=false so we don't modify the NRU while validating it.
-    const auto* v(ht.findForRead(key, TrackReference::No).storedValue);
+    const auto* v(ht.findForRead(key, TrackReference::No).getSV());
     EXPECT_NE(nullptr, v);
     EXPECT_EQ(MIN_NRU_VALUE, v->getNRUValue());
 }
@@ -908,7 +908,7 @@ TEST_F(HashTableTest, NRUMinimumExistingItem) {
     // considered an update.
     EXPECT_EQ(MutationStatus::WasDirty, ht.set(item));
     // trackReferenced=false so we don't modify the NRU while validating it.
-    const auto* v(ht.findForRead(key, TrackReference::No).storedValue);
+    const auto* v(ht.findForRead(key, TrackReference::No).getSV());
     EXPECT_NE(nullptr, v);
     EXPECT_EQ(MIN_NRU_VALUE, v->getNRUValue());
 }
@@ -942,13 +942,13 @@ TEST_F(HashTableTest, ReleaseItem) {
         // Locking scope.
         auto vToRelease1 = ht.findForWrite(releaseKey1, WantsDeleted::Yes);
         auto releasedSv1 =
-                ht.unlocked_release(vToRelease1.lock, vToRelease1.storedValue);
+                ht.unlocked_release(vToRelease1.getHBL(), vToRelease1.getSV());
 
         /* Validate the copied contents */
-        EXPECT_EQ(*vToRelease1.storedValue, *(releasedSv1).get());
+        EXPECT_EQ(*vToRelease1.getSV(), *(releasedSv1).get());
 
         /* Validate the HT element replace (hence released from HT) */
-        EXPECT_EQ(vToRelease1.storedValue, releasedSv1.get().get());
+        EXPECT_EQ(vToRelease1.getSV(), releasedSv1.get().get());
 
         /* Validate the HT count */
         EXPECT_EQ(numItems - 1, ht.getNumItems());
@@ -961,13 +961,13 @@ TEST_F(HashTableTest, ReleaseItem) {
 
     auto vToRelease2 = ht.findForWrite(releaseKey2);
     auto releasedSv2 =
-            ht.unlocked_release(vToRelease2.lock, vToRelease2.storedValue);
+            ht.unlocked_release(vToRelease2.getHBL(), vToRelease2.getSV());
 
     /* Validate the copied contents */
-    EXPECT_EQ(*vToRelease2.storedValue, *(releasedSv2).get());
+    EXPECT_EQ(*vToRelease2.getSV(), *(releasedSv2).get());
 
     /* Validate the HT element replace (hence released from HT) */
-    EXPECT_EQ(vToRelease2.storedValue, releasedSv2.get().get());
+    EXPECT_EQ(vToRelease2.getSV(), releasedSv2.get().get());
 
     /* Validate the HT count */
     EXPECT_EQ(numItems - 2, ht.getNumItems());
@@ -996,13 +996,13 @@ TEST_F(HashTableTest, CopyItem) {
     auto memSizeBeforeCopy = ht.getItemMemory();
     auto statsCurrSizeBeforeCopy = global_stats.getCurrentSize();
 
-    auto res = ht.unlocked_replaceByCopy(replace.lock, *replace.storedValue);
+    auto res = ht.unlocked_replaceByCopy(replace.getHBL(), *replace.getSV());
 
     /* Validate the copied contents */
-    EXPECT_EQ(*replace.storedValue, *(res.first));
+    EXPECT_EQ(*replace.getSV(), *(res.first));
 
     /* Validate the HT element replace (hence released from HT) */
-    EXPECT_EQ(replace.storedValue, res.second.get().get());
+    EXPECT_EQ(replace.getSV(), res.second.get().get());
 
     /* Validate the HT count */
     EXPECT_EQ(numItems, ht.getNumItems());
@@ -1031,8 +1031,8 @@ TEST_F(HashTableTest, CopyDeletedItem) {
     StoredDocKey copyKey = makeStoredDocKey(std::string(std::to_string(0)));
     auto replace = ht.findForWrite(copyKey);
 
-    ht.unlocked_softDelete(replace.lock,
-                           *replace.storedValue,
+    ht.unlocked_softDelete(replace.getHBL(),
+                           *replace.getSV(),
                            /* onlyMarkDeleted */ false,
                            DeleteSource::Explicit);
     EXPECT_EQ(numItems, ht.getNumItems());
@@ -1047,13 +1047,13 @@ TEST_F(HashTableTest, CopyDeletedItem) {
     auto statsCurrSizeBeforeCopy = global_stats.getCurrentSize();
 
     /* Replace the StoredValue in the HT by its copy */
-    auto res = ht.unlocked_replaceByCopy(replace.lock, *replace.storedValue);
+    auto res = ht.unlocked_replaceByCopy(replace.getHBL(), *replace.getSV());
 
     /* Validate the copied contents */
-    EXPECT_EQ(*replace.storedValue, *(res.first));
+    EXPECT_EQ(*replace.getSV(), *(res.first));
 
     /* Validate the HT element replace (hence released from HT) */
-    EXPECT_EQ(replace.storedValue, res.second.get().get());
+    EXPECT_EQ(replace.getSV(), res.second.get().get());
 
     /* Validate the HT count */
     EXPECT_EQ(numItems, ht.getNumItems());
@@ -1080,9 +1080,9 @@ TEST_F(HashTableTest, LockAfterDelete) {
     store(ht, key);
     {
         auto toDelete = ht.findForWrite(key);
-        sv = toDelete.storedValue;
+        sv = toDelete.getSV();
         TimeTraveller toTheFuture(1985);
-        ht.unlocked_softDelete(toDelete.lock,
+        ht.unlocked_softDelete(toDelete.getHBL(),
                                *sv,
                                /* onlyMarkDeleted */ false,
                                DeleteSource::Explicit);
@@ -1152,7 +1152,7 @@ TEST_F(HashTableTest, ItemFreqDecayerVisitorTest) {
     // Set the frequency count of each document in the range 0 to 255.
     for (int ii = 0; ii < 256; ii++) {
         auto key = makeStoredDocKey(std::to_string(ii));
-        v = ht.findForWrite(key).storedValue;
+        v = ht.findForWrite(key).getSV();
         v->setFreqCounterValue(ii);
        }
 
@@ -1163,7 +1163,7 @@ TEST_F(HashTableTest, ItemFreqDecayerVisitorTest) {
        for (int ii = 0; ii < 256; ii++) {
            auto key = makeStoredDocKey(std::to_string(ii));
            auto item = ht.findForWrite(key);
-           itemFreqDecayerVisitor.visit(item.lock, *item.storedValue);
+           itemFreqDecayerVisitor.visit(item.getHBL(), *item.getSV());
        }
 
        // Confirm we visited all the documents
@@ -1172,7 +1172,7 @@ TEST_F(HashTableTest, ItemFreqDecayerVisitorTest) {
        // Check the frequency of the docs have been decayed by 50%.
        for (int ii = 0; ii < 256; ii++) {
            auto key = makeStoredDocKey(std::to_string(ii));
-           v = ht.findForWrite(key).storedValue;
+           v = ht.findForWrite(key).getSV();
            uint16_t expectVal = ii * 0.5;
            EXPECT_EQ(expectVal, v->getFreqCounterValue());
        }
@@ -1196,19 +1196,19 @@ TEST_F(HashTableTest, reallocateStoredValue) {
         StoredValue* v =
                 ht1.findForWrite(makeStoredDocKey(std::to_string(index)),
                                  WantsDeleted::No)
-                        .storedValue;
+                        .getSV();
         ASSERT_NE(nullptr, v);
         EXPECT_TRUE(ht1.reallocateStoredValue(std::forward<StoredValue>(*v)));
         EXPECT_EQ(10, ht1.getNumItems());
         EXPECT_NE(v,
                   ht1.findForWrite(makeStoredDocKey(std::to_string(index)),
                                    WantsDeleted::No)
-                          .storedValue);
+                          .getSV());
     }
     // Next request ht2 reallocate an sv stored in ht1, should return false
     StoredValue* v2 = ht1.findForWrite(makeStoredDocKey(std::to_string(3)),
                                        WantsDeleted::No)
-                              .storedValue;
+                              .getSV();
     EXPECT_FALSE(ht2.reallocateStoredValue(std::forward<StoredValue>(*v2)));
 
     // Check the empty hash-table returns false as well
@@ -1226,8 +1226,8 @@ TEST_F(HashTableTest, InsertFromWarmupAlreadyResident) {
     {
         // Sanity check - key should be resident.
         auto res = ht.findForRead(key);
-        ASSERT_TRUE(res.storedValue);
-        ASSERT_TRUE(res.storedValue->isResident());
+        ASSERT_TRUE(res.getSV());
+        ASSERT_TRUE(res.getSV()->isResident());
     }
 
     // Test - insertFromWarmup should succesfully skip (re)adding this item.
@@ -1250,7 +1250,7 @@ TEST_F(HashTableTest, ReplaceValueAndDatatype) {
 
     // Verify preconditions
     const auto findRes = ht.findForWrite(key);
-    auto* sv = findRes.storedValue;
+    auto&* sv = findRes.getSVRef();
     ASSERT_EQ(val,
               std::string(sv->getValue()->getData(),
                           sv->getValue()->valueSize()));
@@ -1268,10 +1268,12 @@ TEST_F(HashTableTest, ReplaceValueAndDatatype) {
     // Replace value and datatype
     val = "newVal";
     std::unique_ptr<Blob> newVal(Blob::New(val.data(), val.size()));
-    auto res = ht.unlocked_replaceValueAndDatatype(
-            findRes.lock, *sv, std::move(newVal), PROTOCOL_BINARY_RAW_BYTES);
+    auto res = ht.unlocked_replaceValueAndDatatype(findRes.getHBL(),
+                                                   *sv,
+                                                   std::move(newVal),
+                                                   PROTOCOL_BINARY_RAW_BYTES);
     EXPECT_EQ(MutationStatus::WasDirty, res.status);
-    ASSERT_EQ(sv, res.storedValue);
+    ASSERT_EQ(sv, res.getSV());
 
     // Verify that value and datatype have changed, other properties unchanged
     EXPECT_EQ(val,

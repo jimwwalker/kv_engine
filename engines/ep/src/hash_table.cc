@@ -86,7 +86,7 @@ std::ostream& operator<<(std::ostream& os, const HashTable::Position& pos) {
     os << "{lock:" << pos.lock << " bucket:" << pos.hash_bucket << "/" << pos.ht_size << "}";
     return os;
 }
-
+#if 0
 HashTable::StoredValueProxy::StoredValueProxy(HashBucketLock&& hbl,
                                               StoredValue* sv,
                                               Statistics& stats)
@@ -113,26 +113,38 @@ StoredValue* HashTable::StoredValueProxy::release() {
     value = nullptr;
     return tmp;
 }
+#endif
 
-HashTable::FindUpdateResult::FindUpdateResult(
-        HashTable::StoredValueProxy&& prepare,
-        StoredValue* committed,
-        HashTable& ht)
-    : pending(std::move(prepare)), committed(committed), ht(ht) {
+HashTable::FindUpdateResult::FindUpdateResult(HashBucketLock&& lock,
+                                              StoredValue* pending,
+                                              StoredValue* committed,
+                                              Statistics& stats,
+                                              HashTable& ht)
+    : FindResult(committed, std::move(lock)),
+      pending(pending),
+      valueStats(stats),
+      ht(ht),
+      pre(valueStats.get().prologue(pending)) {
+}
+
+HashTable::FindUpdateResult::~FindUpdateResult() {
+    if (pending) {
+        valueStats.get().epilogue(pre, pending);
+    }
 }
 
 StoredValue* HashTable::FindUpdateResult::selectSVToModify(bool durability) {
     if (durability) {
-        if (pending) {
-            return pending.getSV();
+        if (getPending()) {
+            return getPending();
         } else {
-            return committed;
+            return getSV();
         }
     } else {
-        if (pending && !pending->isCompleted()) {
-            return pending.getSV();
+        if (getPending() && !getPending()->isCompleted()) {
+            return getPending();
         } else {
-            return committed;
+            return getSV();
         }
     }
 }
@@ -145,12 +157,18 @@ StoredValue* HashTable::FindUpdateResult::selectSVForRead(
         TrackReference trackReference,
         WantsDeleted wantsDeleted,
         ForGetReplicaOp forGetReplicaOp) {
-    return ht.selectSVForRead(trackReference,
-                              wantsDeleted,
-                              forGetReplicaOp,
-                              getHBL(),
-                              committed,
-                              pending.getSV());
+    return ht.get().selectSVForRead(trackReference,
+                                    wantsDeleted,
+                                    forGetReplicaOp,
+                                    getHBL(),
+                                    getSV(),
+                                    getPending());
+}
+
+StoredValue* HashTable::FindUpdateResult::releasePending() {
+    auto* rv = pending;
+    pending = nullptr;
+    return rv;
 }
 
 HashTable::HashTable(EPStats& st,
@@ -372,21 +390,21 @@ std::unique_ptr<Item> HashTable::getRandomKey(long rnd) {
 
 MutationStatus HashTable::set(const Item& val) {
     auto htRes = findForWrite(val.getKey());
-    if (htRes.storedValue) {
-        return unlocked_updateStoredValue(htRes.lock, *htRes.storedValue, val)
+    if (htRes.getSV()) {
+        return unlocked_updateStoredValue(htRes.getHBL(), *htRes.getSV(), val)
                 .status;
     } else {
-        unlocked_addNewStoredValue(htRes.lock, val);
+        unlocked_addNewStoredValue(htRes.getHBL(), val);
         return MutationStatus::WasClean;
     }
 }
 
 void HashTable::rollbackItem(const Item& item) {
     auto htRes = findItem(item);
-    if (htRes.storedValue) {
-        unlocked_updateStoredValue(htRes.lock, *htRes.storedValue, item);
+    if (htRes.getSV()) {
+        unlocked_updateStoredValue(htRes.getHBL(), *htRes.getSV(), item);
     } else {
-        unlocked_addNewStoredValue(htRes.lock, item);
+        unlocked_addNewStoredValue(htRes.getHBL(), item);
     }
 }
 
@@ -831,20 +849,13 @@ HashTable::FindResult HashTable::findForSyncReplace(const DocKey& key) {
     return {result.committedSV, std::move(result.lock)};
 }
 
-HashTable::StoredValueProxy HashTable::findForWrite(StoredValueProxy::RetSVPTag,
-                                                    const DocKey& key,
-                                                    WantsDeleted wantsDeleted) {
-    auto result = findForWrite(key, wantsDeleted);
-    return StoredValueProxy(
-            std::move(result.lock), result.storedValue, valueStats);
-}
-
 HashTable::FindUpdateResult HashTable::findForUpdate(const DocKey& key) {
     auto result = findInner(key);
-
-    StoredValueProxy prepare{
-            std::move(result.lock), result.pendingSV, valueStats};
-    return {std::move(prepare), result.committedSV, *this};
+    return {std::move(result.lock),
+            result.pendingSV,
+            result.committedSV,
+            valueStats,
+            *this};
 }
 
 HashTable::FindResult HashTable::findOnlyCommitted(const DocKey& key) {
@@ -950,7 +961,7 @@ MutationStatus HashTable::insertFromWarmup(const Item& itm,
         // CAS is equal - exact same item. Update the SV if it's not already
         // resident.
         if (!v->isResident()) {
-            Expects(unlocked_restoreValue(hbl.getHTLock(), itm, *v));
+            Expects(unlocked_restoreValue(hbl, itm, *v));
             v->markClean();
         }
     }
@@ -1197,11 +1208,10 @@ std::unique_ptr<Item> HashTable::getRandomKeyFromSlot(int slot) {
     return nullptr;
 }
 
-bool HashTable::unlocked_restoreValue(
-        const std::unique_lock<std::mutex>& htLock,
-        const Item& itm,
-        StoredValue& v) {
-    if (!htLock || !isActive() || v.isResident()) {
+bool HashTable::unlocked_restoreValue(const HashTable::HashBucketLock& hbl,
+                                      const Item& itm,
+                                      StoredValue& v) {
+    if (!hbl || !isActive() || v.isResident()) {
         return false;
     }
 
@@ -1214,12 +1224,12 @@ bool HashTable::unlocked_restoreValue(
     return true;
 }
 
-void HashTable::unlocked_restoreMeta(const std::unique_lock<std::mutex>& htLock,
+void HashTable::unlocked_restoreMeta(const HashTable::HashBucketLock& hbl,
                                      const Item& itm,
                                      StoredValue& v) {
-    if (!htLock) {
+    if (!hbl) {
         throw std::invalid_argument(
-                "HashTable::unlocked_restoreMeta: htLock "
+                "HashTable::unlocked_restoreMeta: hbl "
                 "not held");
     }
 

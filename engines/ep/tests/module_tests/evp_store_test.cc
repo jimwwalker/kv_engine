@@ -572,8 +572,8 @@ TEST_P(EPStoreEvictionTest, checkIfResidentAfterBgFetch) {
 
     auto result =
             vb->ht.findForRead(dockey, TrackReference::No, WantsDeleted::Yes);
-    ASSERT_TRUE(result.storedValue);
-    EXPECT_TRUE(result.storedValue->isResident());
+    ASSERT_TRUE(result.getSV());
+    EXPECT_TRUE(result.getSV()->isResident());
 }
 
 TEST_P(EPStoreEvictionTest, xattrExpiryOnFullyEvictedItem) {
@@ -681,9 +681,9 @@ TEST_P(EPStoreEvictionTest, UnDelWithPrepare) {
     // 5) Check that the HashTable state is now correct
     {
         auto htRes = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(htRes.committed);
-        EXPECT_TRUE(htRes.committed->isDeleted());
-        EXPECT_TRUE(htRes.pending);
+        ASSERT_TRUE(htRes.getSV());
+        EXPECT_TRUE(htRes.getSV()->isDeleted());
+        EXPECT_TRUE(htRes.getPending());
     }
 
     // @TODO RDB: Rocks item counting is broken and overcounts assuming

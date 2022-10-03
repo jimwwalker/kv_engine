@@ -770,12 +770,12 @@ TEST_P(STItemPagerTest, EvictBGFetchedDeletedItem) {
                                        QueueExpired::No,
                                        vb->lockCollections(key));
         if (expected) {
-            EXPECT_TRUE(val.storedValue);
-            EXPECT_TRUE(val.storedValue->isDeleted());
-            EXPECT_FALSE(val.storedValue->isDirty());
-            EXPECT_FALSE(val.storedValue->isTempItem());
+            EXPECT_TRUE(val.getSV());
+            EXPECT_TRUE(val.getSV()->isDeleted());
+            EXPECT_FALSE(val.getSV()->isDirty());
+            EXPECT_FALSE(val.getSV()->isTempItem());
         } else {
-            EXPECT_FALSE(val.storedValue);
+            EXPECT_FALSE(val.getSV());
         }
     };
 

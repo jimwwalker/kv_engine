@@ -3616,7 +3616,7 @@ void SingleThreadedPassiveStreamTest::testConsumerSanitizesBodyInDeletion(
     auto& ht = vb.ht;
     {
         auto res = ht.findForUpdate(key);
-        const auto* sv = durReqs ? res.pending.getSV() : res.committed;
+        const auto* sv = durReqs ? res.getPending() : res.getSV();
         EXPECT_TRUE(sv);
         EXPECT_EQ(1, sv->getBySeqno());
         if (durReqs) {
@@ -3661,7 +3661,7 @@ void SingleThreadedPassiveStreamTest::testConsumerSanitizesBodyInDeletion(
     }
     {
         auto res = ht.findForUpdate(key);
-        const auto* sv = durReqs ? res.pending.getSV() : res.committed;
+        const auto* sv = durReqs ? res.getPending() : res.getSV();
         EXPECT_TRUE(sv);
         EXPECT_EQ(nextSeqno, sv->getBySeqno());
         EXPECT_TRUE(sv->getValue().get());

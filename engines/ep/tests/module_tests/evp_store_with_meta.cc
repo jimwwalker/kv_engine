@@ -400,11 +400,11 @@ void WithMetaTest::testWithMetaXattrWithEmptyPayload(
     // Check in memory
     {
         const auto res = vb.ht.findOnlyCommitted(makeStoredDocKey(key));
-        EXPECT_TRUE(res.storedValue);
-        EXPECT_EQ(1, res.storedValue->getBySeqno());
+        EXPECT_TRUE(res.getSV());
+        EXPECT_EQ(1, res.getSV()->getBySeqno());
         EXPECT_EQ(op == ClientOpcode::DelWithMeta ? true : false,
-                  res.storedValue->isDeleted());
-        EXPECT_EQ(PROTOCOL_BINARY_RAW_BYTES, res.storedValue->getDatatype());
+                  res.getSV()->isDeleted());
+        EXPECT_EQ(PROTOCOL_BINARY_RAW_BYTES, res.getSV()->getDatatype());
     }
 
     // Check on disk
@@ -625,7 +625,7 @@ TEST_F(WithMetaTest, storeUncompressedInOffMode) {
               callEngine(cb::mcbp::ClientOpcode::SetWithMeta, swm));
 
     VBucketPtr vb = store->getVBucket(vbid);
-    const auto* v(vb->ht.findForRead(makeStoredDocKey("key")).storedValue);
+    const auto* v(vb->ht.findForRead(makeStoredDocKey("key")).getSV());
     ASSERT_NE(nullptr, v);
     EXPECT_EQ(valueData, v->getValue()->to_s());
     EXPECT_EQ(PROTOCOL_BINARY_DATATYPE_JSON, v->getDatatype());

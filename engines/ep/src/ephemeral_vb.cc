@@ -117,8 +117,9 @@ bool EphemeralVBucket::pageOut(
     // If v was made stale (because a range lock covers it) it may be
     // deleted at any time. Only the new SV ptr which has been returned should
     // be handled now.
+    HashTable::FindResult htRes{v, std::move(lh)};
     std::tie(v, status, notifyCtx) = softDeleteStoredValue(
-            lh, *v, /*onlyMarkDeleted*/ false, queueCtx, 0);
+            htRes, *v, /*onlyMarkDeleted*/ false, queueCtx, 0);
 
     switch (status) {
     case DeletionStatus::Success:
@@ -380,7 +381,7 @@ size_t EphemeralVBucket::purgeStaleItems(std::function<bool()> shouldPauseCbk) {
 }
 
 std::tuple<StoredValue*, MutationStatus, VBNotifyCtx>
-EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
+EphemeralVBucket::updateStoredValue(HashTable::FindResult& htRes,
                                     StoredValue& v,
                                     const Item& itm,
                                     const VBQueueItemCtx& queueItmCtx,
@@ -411,7 +412,7 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
         case SequenceList::UpdateStatus::Success: {
             /* OrderedStoredValue moved to end of the list, just update its
                value */
-            auto result = ht.unlocked_updateStoredValue(hbl, v, itm);
+            auto result = ht.unlocked_updateStoredValue(htRes.getHBL(), v, itm);
             status = result.status;
             newSv = result.storedValue;
         } break;
@@ -426,10 +427,10 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
                      marking stale because once marked stale list assumes the
                      ownership of the item and may delete it anytime. */
             /* Release current storedValue from hash table */
-            ownedSv = ht.unlocked_release(hbl, &v);
+            ownedSv = ht.unlocked_release(htRes.getHBL(), &v);
 
             /* Add a new storedvalue for the item */
-            newSv = ht.unlocked_addNewStoredValue(hbl, itm);
+            newSv = ht.unlocked_addNewStoredValue(htRes.getHBL(), itm);
 
             seqList->appendToList(
                     lh, listWriteLg, *(newSv->toOrderedStoredValue()));
@@ -437,7 +438,7 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
         }
 
         /* Put on checkpoint mgr */
-        notifyCtx = queueDirty(hbl, *newSv, queueItmCtx);
+        notifyCtx = queueDirty(htRes.getHBL(), *newSv, queueItmCtx);
 
         /* Update the high seqno in the sequential storage */
         auto& osv = *(newSv->toOrderedStoredValue());
@@ -458,6 +459,9 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
                (item becomes visible for range read only after updating the list
                 with the seqno of the item) */
             seqList->markItemStale(listWriteLg, std::move(ownedSv), newSv);
+
+            // THE BUG
+#warning "BUG"
         }
     }
 
@@ -479,11 +483,11 @@ EphemeralVBucket::updateStoredValue(const HashTable::HashBucketLock& hbl,
 }
 
 std::pair<StoredValue*, VBNotifyCtx> EphemeralVBucket::addNewStoredValue(
-        const HashTable::HashBucketLock& hbl,
+        HashTable::FindResult& htRes,
         const Item& itm,
         const VBQueueItemCtx& queueItmCtx,
         GenerateRevSeqno genRevSeqno) {
-    StoredValue* v = ht.unlocked_addNewStoredValue(hbl, itm);
+    StoredValue* v = ht.unlocked_addNewStoredValue(htRes.getHBL(), itm);
 
     if (genRevSeqno == GenerateRevSeqno::Yes) {
         /* This item could potentially be recreated */
@@ -512,7 +516,7 @@ std::pair<StoredValue*, VBNotifyCtx> EphemeralVBucket::addNewStoredValue(
         seqList->appendToList(lh, listWriteLg, *osv);
 
         /* Put on checkpoint mgr */
-        notifyCtx = queueDirty(hbl, *v, queueItmCtx);
+        notifyCtx = queueDirty(htRes.getHBL(), *v, queueItmCtx);
 
         /* Update the high seqno in the sequential storage */
         seqList->updateHighSeqno(listWriteLg, *osv);
@@ -537,7 +541,7 @@ std::pair<StoredValue*, VBNotifyCtx> EphemeralVBucket::addNewStoredValue(
 }
 
 std::tuple<StoredValue*, DeletionStatus, VBNotifyCtx>
-EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
+EphemeralVBucket::softDeleteStoredValue(HashTable::FindResult& htRes,
                                         StoredValue& v,
                                         bool onlyMarkDeleted,
                                         const VBQueueItemCtx& queueItmCtx,
@@ -580,7 +584,8 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
 
             /* Replace the current storedValue in the hash table with its
                copy */
-            std::tie(newSv, ownedSv) = ht.unlocked_replaceByCopy(hbl, v);
+            std::tie(newSv, ownedSv) =
+                    ht.unlocked_replaceByCopy(htRes.getHBL(), v);
 
             seqList->appendToList(
                     lh, listWriteLg, *(newSv->toOrderedStoredValue()));
@@ -588,7 +593,8 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
         }
 
         /* Delete the storedvalue */
-        ht.unlocked_softDelete(hbl, *newSv, onlyMarkDeleted, deleteSource);
+        ht.unlocked_softDelete(
+                htRes.getHBL(), *newSv, onlyMarkDeleted, deleteSource);
 
         if (queueItmCtx.genBySeqno == GenerateBySeqno::No) {
             newSv->setBySeqno(bySeqno);
@@ -603,7 +609,7 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
                     newSv->getExptime());
         }
 
-        notifyCtx = queueDirty(hbl, *newSv, queueItmCtx);
+        notifyCtx = queueDirty(htRes.getHBL(), *newSv, queueItmCtx);
         if (wasCommittedNonTemp && !oldValueDeleted) {
             ++opsDelete;
             notifyCtx.itemCountDifference = -1;
@@ -623,6 +629,10 @@ EphemeralVBucket::softDeleteStoredValue(const HashTable::HashBucketLock& hbl,
                (item becomes visible for range read only after updating the list
                with the seqno of the item) */
             seqList->markItemStale(listWriteLg, std::move(ownedSv), newSv);
+
+            // JWW HERE IS A BUG TO FIX - markItemStale now needs to be done on
+            // htRes destruct after we've finished with all SVs
+            // htRes.setFinal(???)
         }
     }
 
@@ -636,7 +646,7 @@ VBNotifyCtx EphemeralVBucket::commitStoredValue(
         uint64_t prepareSeqno,
         const VBQueueItemCtx& queueItmCtx,
         boost::optional<int64_t> commitSeqno) {
-    if (!values.pending) {
+    if (!values.getPending()) {
         throw std::invalid_argument(
                 "EphemeralVBucket::commitStoredValue: Cannot call on a "
                 "non-Pending StoredValue");
@@ -666,25 +676,22 @@ VBNotifyCtx EphemeralVBucket::commitStoredValue(
     // so just provide a dummy requirements.
     auto dummyReqs =
             cb::durability::Requirements(cb::durability::Level::Majority, {});
-    auto item = values.pending->toItem(getId(),
-                                       StoredValue::HideLockedCas::No,
-                                       StoredValue::IncludeValue::Yes,
-                                       dummyReqs);
+    auto item = values.getPending()->toItem(getId(),
+                                            StoredValue::HideLockedCas::No,
+                                            StoredValue::IncludeValue::Yes,
+                                            dummyReqs);
     item->setCommittedviaPrepareSyncWrite();
     if (commitSeqno) {
         item->setBySeqno(*commitSeqno);
     }
 
-    if (values.committed) {
-        std::tie(newCommitted, std::ignore, notifyCtx) = updateStoredValue(
-                values.pending.getHBL(), *values.committed, *item, queueItmCtx);
+    if (values.getSV()) {
+        std::tie(newCommitted, std::ignore, notifyCtx) =
+                updateStoredValue(values, *values.getSV(), *item, queueItmCtx);
         Expects(newCommitted);
     } else {
-        std::tie(newCommitted, notifyCtx) =
-                addNewStoredValue(values.pending.getHBL(),
-                                  *item,
-                                  queueItmCtx,
-                                  GenerateRevSeqno::No);
+        std::tie(newCommitted, notifyCtx) = addNewStoredValue(
+                values, *item, queueItmCtx, GenerateRevSeqno::No);
     }
 
     // Manually set the prepareSeqno on the OSV so that it is stored in the
@@ -694,12 +701,12 @@ VBNotifyCtx EphemeralVBucket::commitStoredValue(
     auto& osv = *(newCommitted->toOrderedStoredValue());
     osv.setPrepareSeqno(prepareSeqno);
 
-    values.pending.setCommitted(CommittedState::PrepareCommitted);
+    values.getPending()->setCommitted(CommittedState::PrepareCommitted);
     return notifyCtx;
 }
 
 VBNotifyCtx EphemeralVBucket::abortStoredValue(
-        const HashTable::HashBucketLock& hbl,
+        HashTable::FindUpdateResult& htRes,
         StoredValue& prepared,
         int64_t prepareSeqno,
         boost::optional<int64_t> abortSeqno) {
@@ -738,7 +745,8 @@ VBNotifyCtx EphemeralVBucket::abortStoredValue(
         case SequenceList::UpdateStatus::Success:
             break;
         case SequenceList::UpdateStatus::Append:
-            std::tie(newSv, oldSv) = ht.unlocked_replaceByCopy(hbl, prepared);
+            std::tie(newSv, oldSv) =
+                    ht.unlocked_replaceByCopy(htRes.getHBL(), prepared);
             seqList->appendToList(
                     lh, listWriteLg, *(newSv->toOrderedStoredValue()));
             break;
@@ -750,7 +758,8 @@ VBNotifyCtx EphemeralVBucket::abortStoredValue(
             queueItmCtx.genBySeqno = GenerateBySeqno::No;
             newSv->setBySeqno(*abortSeqno);
         }
-        notifyCtx = queueAbort(hbl, *newSv, prepareSeqno, queueItmCtx);
+        notifyCtx =
+                queueAbort(htRes.getHBL(), *newSv, prepareSeqno, queueItmCtx);
 
         // A normal deletion does not need to manually set the bySeqno of the
         // abort item because queueDirty does this for you. As we are using
@@ -760,7 +769,7 @@ VBNotifyCtx EphemeralVBucket::abortStoredValue(
         }
 
         // 2) We need to modify the SV to mark it as an abort (not a delete)
-        ht.unlocked_abortPrepare(hbl, *newSv);
+        ht.unlocked_abortPrepare(htRes.getHBL(), *newSv);
 
         /* Update the high seqno in the sequential storage */
         auto& osv = *(newSv->toOrderedStoredValue());
@@ -775,6 +784,10 @@ VBNotifyCtx EphemeralVBucket::abortStoredValue(
         // as stale.
         if (res == SequenceList::UpdateStatus::Append) {
             seqList->markItemStale(listWriteLg, std::move(oldSv), newSv);
+
+#warning "plausible bug/risk"
+            /// theortical issue here - note htRes has released pending so kind
+            /// of safe
         }
     }
 
@@ -916,12 +929,12 @@ void EphemeralVBucket::dropKey(
     auto res = fetchValidValue(
             WantsDeleted::Yes, TrackReference::No, QueueExpired::No, cHandle);
 
-    if (res.storedValue && res.storedValue->getBySeqno() == bySeqno &&
+    if (res.getSV() && res.getSV()->getBySeqno() == bySeqno &&
         !key.getCollectionID().isSystem()) {
         // The found key is the correct one to remove from the HT, we only
         // release but do not free at this point, the staleItem remover will
         // now proceed to erase the element from the seq list and free the SV
-        ht.unlocked_release(res.lock, res.storedValue).release();
+        ht.unlocked_release(res.getHBL(), res.getSV()).release();
     }
     return;
 }
@@ -935,17 +948,16 @@ int64_t EphemeralVBucket::addSystemEventItem(
     std::unique_ptr<Item> item(i);
     item->setVBucketId(getId());
     auto htRes = ht.findForWrite(item->getKey());
-    auto* v = htRes.storedValue;
-    auto& hbl = htRes.lock;
+    auto* v = htRes.getSV();
 
     VBQueueItemCtx queueItmCtx;
     queueItmCtx.genBySeqno = getGenerateBySeqno(seqno);
     if (v) {
         std::tie(v, std::ignore, std::ignore) =
-                updateStoredValue(hbl, *v, *item, queueItmCtx);
+                updateStoredValue(htRes, *v, *item, queueItmCtx);
     } else {
         std::tie(v, std::ignore) = addNewStoredValue(
-                hbl, *item, queueItmCtx, GenerateRevSeqno::Yes);
+                htRes, *item, queueItmCtx, GenerateRevSeqno::Yes);
     }
 
     VBNotifyCtx notifyCtx;
@@ -976,16 +988,17 @@ bool EphemeralVBucket::isValidDurabilityLevel(cb::durability::Level level) {
 }
 
 void EphemeralVBucket::processImplicitlyCompletedPrepare(
-        HashTable::StoredValueProxy& v) {
-    v.setCommitted(CommittedState::PrepareCommitted);
+        HashTable::FindUpdateResult& htRes) {
+    htRes.getPending()->completedPrepare(CommittedState::PrepareCommitted);
 
     std::lock_guard<std::mutex> lh(sequenceLock);
     std::lock_guard<std::mutex> listWriteLg(seqList->getListWriteLock());
 
     // Backfills snapshot may be out of order so only update the HCS if new
     // one is higher
+    auto prepareSeqno = htRes.getPending()->getBySeqno();
     auto currentSeqno = seqList->getHighCompletedSeqno(listWriteLg);
-    if (v->getBySeqno() > static_cast<int64_t>(currentSeqno)) {
-        seqList->updateHighCompletedSeqno(lh, listWriteLg, v->getBySeqno());
+    if (prepareSeqno > static_cast<int64_t>(currentSeqno)) {
+        seqList->updateHighCompletedSeqno(lh, listWriteLg, prepareSeqno);
     }
 }

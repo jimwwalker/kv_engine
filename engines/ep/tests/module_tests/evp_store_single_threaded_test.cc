@@ -2239,7 +2239,7 @@ void STParameterizedBucketTest::test_replicateDeleteTime(time_t deleteTime) {
         auto ro = vb->ht.findForRead(makeStoredDocKey("key1"),
                                      TrackReference::No,
                                      WantsDeleted::Yes);
-        auto* sv = ro.storedValue;
+        auto* sv = ro.getSV();
         ASSERT_NE(nullptr, sv);
         deleted = sv->isDeleted();
         tombstoneTime = sv->toOrderedStoredValue()->getCompletedOrDeletedTime();
@@ -2276,7 +2276,7 @@ void STParameterizedBucketTest::test_replicateDeleteTime(time_t deleteTime) {
         auto ro = vb->ht.findForRead(makeStoredDocKey("key2"),
                                      TrackReference::No,
                                      WantsDeleted::Yes);
-        auto* sv = ro.storedValue;
+        auto* sv = ro.getSV();
         ASSERT_NE(nullptr, sv);
         deleted = sv->isDeleted();
         tombstoneTime = sv->toOrderedStoredValue()->getCompletedOrDeletedTime();
@@ -4577,16 +4577,16 @@ void STParamPersistentBucketTest::testFlushFailureAtPersistNonMetaItems(
 
     const auto checkPreFlushHTState = [&vb]() -> void {
         const auto resA = vb.ht.findForUpdate(makeStoredDocKey("keyA"));
-        ASSERT_TRUE(resA.pending);
-        ASSERT_FALSE(resA.pending->isDeleted());
-        ASSERT_TRUE(resA.pending->isDirty());
-        ASSERT_FALSE(resA.committed);
+        ASSERT_TRUE(resA.getPending());
+        ASSERT_FALSE(resA.getPending()->isDeleted());
+        ASSERT_TRUE(resA.getPending()->isDirty());
+        ASSERT_FALSE(resA.getSV());
 
         const auto resB = vb.ht.findForUpdate(makeStoredDocKey("keyB"));
-        ASSERT_FALSE(resB.pending);
-        ASSERT_TRUE(resB.committed);
-        ASSERT_TRUE(resB.committed->isDeleted());
-        ASSERT_TRUE(resB.committed->isDirty());
+        ASSERT_FALSE(resB.getPending());
+        ASSERT_TRUE(resB.getSV());
+        ASSERT_TRUE(resB.getSV()->isDeleted());
+        ASSERT_TRUE(resB.getSV()->isDirty());
     };
     checkPreFlushHTState();
 
@@ -4661,14 +4661,14 @@ void STParamPersistentBucketTest::testFlushFailureAtPersistNonMetaItems(
 
         // Check HT state
         const auto resA = vb.ht.findForUpdate(makeStoredDocKey("keyA"));
-        ASSERT_TRUE(resA.pending);
-        ASSERT_FALSE(resA.pending->isDeleted());
-        ASSERT_FALSE(resA.pending->isDirty());
-        ASSERT_FALSE(resA.committed);
+        ASSERT_TRUE(resA.getPending());
+        ASSERT_FALSE(resA.getPending()->isDeleted());
+        ASSERT_FALSE(resA.getPending()->isDirty());
+        ASSERT_FALSE(resA.getSV());
 
         const auto resB = vb.ht.findForUpdate(makeStoredDocKey("keyB"));
-        ASSERT_FALSE(resB.pending);
-        ASSERT_FALSE(resB.committed);
+        ASSERT_FALSE(resB.getPending());
+        ASSERT_FALSE(resB.getSV());
     }
 
     // Check persisted docs
@@ -4856,10 +4856,10 @@ void STParamPersistentBucketTest::testFlushFailureStatsAtDedupedNonMetaItems(
 
     const auto checkPreFlushHTState = [&vb, &storedKey]() -> void {
         const auto res = vb.ht.findForUpdate(storedKey);
-        ASSERT_FALSE(res.pending);
-        ASSERT_TRUE(res.committed);
-        ASSERT_FALSE(res.committed->isDeleted());
-        ASSERT_TRUE(res.committed->isDirty());
+        ASSERT_FALSE(res.getPending());
+        ASSERT_TRUE(res.getSV());
+        ASSERT_FALSE(res.getSV()->isDeleted());
+        ASSERT_TRUE(res.getSV()->isDirty());
     };
     checkPreFlushHTState();
 
@@ -4888,10 +4888,10 @@ void STParamPersistentBucketTest::testFlushFailureStatsAtDedupedNonMetaItems(
     EXPECT_EQ(0, vb.dirtyQueueSize);
     // HT state
     const auto res = vb.ht.findForUpdate(storedKey);
-    ASSERT_FALSE(res.pending);
-    ASSERT_TRUE(res.committed);
-    ASSERT_FALSE(res.committed->isDeleted());
-    ASSERT_FALSE(res.committed->isDirty());
+    ASSERT_FALSE(res.getPending());
+    ASSERT_TRUE(res.getSV());
+    ASSERT_FALSE(res.getSV()->isDeleted());
+    ASSERT_FALSE(res.getSV()->isDirty());
     // doc persisted
     doc = kvstore->get(diskKey, vbid);
     EXPECT_EQ(ENGINE_SUCCESS, doc.getStatus());
@@ -5356,10 +5356,10 @@ void STParamPersistentBucketTest::testFlushFailureAtPersistDelete(
     EXPECT_EQ(1, vb.dirtyQueueSize);
     const auto checkPreFlushHTState = [&vb, &storedKey]() -> void {
         const auto res = vb.ht.findForUpdate(storedKey);
-        ASSERT_FALSE(res.pending);
-        ASSERT_TRUE(res.committed);
-        ASSERT_TRUE(res.committed->isDeleted());
-        ASSERT_TRUE(res.committed->isDirty());
+        ASSERT_FALSE(res.getPending());
+        ASSERT_TRUE(res.getSV());
+        ASSERT_TRUE(res.getSV()->isDeleted());
+        ASSERT_TRUE(res.getSV()->isDirty());
     };
     checkPreFlushHTState();
 
@@ -5393,8 +5393,8 @@ void STParamPersistentBucketTest::testFlushFailureAtPersistDelete(
     EXPECT_EQ(0, vb.dirtyQueueSize);
     {
         const auto res = vb.ht.findForUpdate(storedKey);
-        ASSERT_FALSE(res.pending);
-        ASSERT_FALSE(res.committed);
+        ASSERT_FALSE(res.getPending());
+        ASSERT_FALSE(res.getSV());
     }
 
     // All done, nothing to flush
@@ -5607,10 +5607,10 @@ TEST_P(STParamPersistentBucketTest, FlusherMarksCleanBySeqno) {
     {
         const auto readHandle = vb.lockCollections();
         auto res = vb.ht.findOnlyCommitted(docKey);
-        ASSERT_TRUE(res.storedValue);
-        ASSERT_EQ(2, res.storedValue->getBySeqno());
-        EXPECT_TRUE(res.storedValue->isDirty());
-        EXPECT_FALSE(epVB.pageOut(readHandle, res.lock, res.storedValue));
+        ASSERT_TRUE(res.getSV());
+        ASSERT_EQ(2, res.getSV()->getBySeqno());
+        EXPECT_TRUE(res.getSV()->isDirty());
+        EXPECT_FALSE(epVB.pageOut(readHandle, res.getHBL(), res.getSVRef()));
     }
 
     // Note: The flusher has never persisted s:2
@@ -5665,11 +5665,11 @@ TEST_P(STParamPersistentBucketTest, ExpiryFindsPrepareWithSameCas) {
     {
         // Verify that the prepare is there and it's "MaybeVisible"
         auto ret = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(ret.pending);
-        ASSERT_TRUE(ret.pending->isPreparedMaybeVisible());
+        ASSERT_TRUE(ret.getPending());
+        ASSERT_TRUE(ret.getPending()->isPreparedMaybeVisible());
 
         // And that the commit is there too
-        ASSERT_TRUE(ret.committed);
+        ASSERT_TRUE(ret.getSV());
     }
 
     // 5) Grab the item from disk just like the compactor would
@@ -5693,11 +5693,11 @@ TEST_P(STParamPersistentBucketTest, ExpiryFindsPrepareWithSameCas) {
         // fix deleteExpiredItem would select and replace the prepare which is
         // incorrect and causes us to have two committed items in the HashTable.
         auto ret = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(ret.pending);
-        ASSERT_TRUE(ret.pending->isPreparedMaybeVisible());
+        ASSERT_TRUE(ret.getPending());
+        ASSERT_TRUE(ret.getPending()->isPreparedMaybeVisible());
 
         // And that the commit is there too
-        ASSERT_TRUE(ret.committed);
+        ASSERT_TRUE(ret.getSV());
     }
 }
 
@@ -5739,9 +5739,9 @@ TEST_P(STParameterizedBucketTest, SyncWriteXattrExpiryResetsCommittedState) {
 
     {
         auto res = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(res.committed);
+        ASSERT_TRUE(res.getSV());
         ASSERT_EQ(CommittedState::CommittedViaPrepare,
-                  res.committed->getCommitted());
+                  res.getSV()->getCommitted());
     }
 
     // Expiry via get is easiest. It will not return the SV though as it's
@@ -5752,15 +5752,15 @@ TEST_P(STParameterizedBucketTest, SyncWriteXattrExpiryResetsCommittedState) {
                                        TrackReference::No,
                                        QueueExpired::Yes,
                                        vb->lockCollections(key));
-        EXPECT_FALSE(res.storedValue);
+        EXPECT_FALSE(res.getSV());
     }
 
     // So now we can check it manually
     {
         auto res = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(res.committed);
+        ASSERT_TRUE(res.getSV());
         EXPECT_EQ(CommittedState::CommittedViaMutation,
-                  res.committed->getCommitted());
+                  res.getSV()->getCommitted());
     }
 }
 
@@ -5811,9 +5811,9 @@ TEST_P(STParamPersistentBucketTest, SyncWriteXattrExpiryViaDcp) {
 
     {
         auto res = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(res.committed);
+        ASSERT_TRUE(res.getSV());
         ASSERT_EQ(CommittedState::CommittedViaPrepare,
-                  res.committed->getCommitted());
+                  res.getSV()->getCommitted());
     }
 
     // Time travel - expiry should be possible now.
@@ -5911,7 +5911,7 @@ TEST_P(STParamPersistentBucketTest,
                                   TrackReference::No,
                                   WantsDeleted::Yes,
                                   ForGetReplicaOp::No);
-        ASSERT_FALSE(res.storedValue);
+        ASSERT_FALSE(res.getSV());
     }
 
     {
@@ -5933,7 +5933,7 @@ TEST_P(STParamPersistentBucketTest,
     {
         auto res = ht.findForWrite(key, WantsDeleted::Yes);
         ht.unlocked_ejectItem(
-                res.lock, res.storedValue, store->getEvictionPolicy());
+                res.getHBL(), res.getSVRef(), store->getEvictionPolicy());
     }
 
     // check it exists in the desired state
@@ -5942,7 +5942,7 @@ TEST_P(STParamPersistentBucketTest,
                                   TrackReference::No,
                                   WantsDeleted::Yes,
                                   ForGetReplicaOp::No);
-        const auto* v = res.storedValue;
+        const auto* v = res.getSV();
         if (fullEviction()) {
             // Item should be entirely removed.
             EXPECT_FALSE(v);
@@ -5991,7 +5991,7 @@ TEST_P(STParamPersistentBucketTest,
                                   TrackReference::No,
                                   WantsDeleted::Yes,
                                   ForGetReplicaOp::No);
-        const auto* v = res.storedValue;
+        const auto* v = res.getSV();
         EXPECT_TRUE(v->isDeleted());
         EXPECT_EQ(PROTOCOL_BINARY_RAW_BYTES, v->getDatatype());
     }

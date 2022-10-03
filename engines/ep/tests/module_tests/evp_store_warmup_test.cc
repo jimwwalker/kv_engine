@@ -927,10 +927,10 @@ void DurabilityWarmupTest::testPendingSyncWrite(
         // Check that the item is still pending with the correct CAS.
         auto handle = vb->lockCollections(item->getKey());
         auto prepared = vb->fetchPreparedValue(handle);
-        EXPECT_TRUE(prepared.storedValue);
-        EXPECT_TRUE(prepared.storedValue->isPending());
-        EXPECT_EQ(item->isDeleted(), prepared.storedValue->isDeleted());
-        EXPECT_EQ(item->getCas(), prepared.storedValue->getCas());
+        EXPECT_TRUE(prepared.getSV());
+        EXPECT_TRUE(prepared.getSV()->isPending());
+        EXPECT_EQ(item->isDeleted(), prepared.getSV()->isDeleted());
+        EXPECT_EQ(item->getCas(), prepared.getSV()->getCas());
 
         // DurabilityMonitor be tracking the prepare.
         EXPECT_EQ(++numTracked, vb->getDurabilityMonitor().getNumTracked());
@@ -1103,10 +1103,10 @@ void DurabilityWarmupTest::testCommittedAndPendingSyncWrite(
     {
         auto handle = vb->lockCollections(item->getKey());
         auto prepared = vb->fetchPreparedValue(handle);
-        EXPECT_TRUE(prepared.storedValue);
-        EXPECT_TRUE(prepared.storedValue->isPending());
-        EXPECT_EQ(item->getCas(), prepared.storedValue->getCas());
-        EXPECT_EQ("B", prepared.storedValue->getValue()->to_s());
+        EXPECT_TRUE(prepared.getSV());
+        EXPECT_TRUE(prepared.getSV()->isPending());
+        EXPECT_EQ(item->getCas(), prepared.getSV()->getCas());
+        EXPECT_EQ("B", prepared.getSV()->getValue()->to_s());
     }
 
     // DurabilityMonitor be tracking the prepare.
@@ -1189,7 +1189,7 @@ TEST_P(DurabilityWarmupTest, AbortedSyncWritePrepareIsNotLoaded) {
     // Check there's no pending item
     auto handle = vb->lockCollections(item->getKey());
     auto prepared = vb->fetchPreparedValue(handle);
-    EXPECT_FALSE(prepared.storedValue);
+    EXPECT_FALSE(prepared.getSV());
 
     // DurabilityMonitor should be empty.
     EXPECT_EQ(0, vb->getDurabilityMonitor().getNumTracked());
@@ -1281,7 +1281,7 @@ TEST_P(DurabilityWarmupTest, WarmupCommit) {
     ASSERT_TRUE(vb);
     vb->processResolvedSyncWrites();
 
-    auto sv = vb->ht.findForRead(key).storedValue;
+    auto sv = vb->ht.findForRead(key).getSV();
     ASSERT_TRUE(sv);
     ASSERT_TRUE(sv->isCommitted());
 }
@@ -1342,14 +1342,14 @@ TEST_P(DurabilityWarmupTest, WarmupCommitRaceWithPersistence) {
                     ASSERT_TRUE(vb);
 
                     // Sanity check - the prepare should have been warmed up.
-                    const auto* sv = vb->ht.findForWrite(key).storedValue;
+                    const auto* sv = vb->ht.findForWrite(key).getSV();
                     ASSERT_TRUE(sv);
                     ASSERT_TRUE(sv->isPending());
                     vb->processResolvedSyncWrites();
 
                     // After running ActiveDM; item should be committed and
                     // dirty in HT.
-                    sv = vb->ht.findForRead(key).storedValue;
+                    sv = vb->ht.findForRead(key).getSV();
                     ASSERT_TRUE(sv);
                     EXPECT_TRUE(sv->isCommitted());
                     EXPECT_TRUE(sv->isDirty());
@@ -1408,7 +1408,7 @@ TEST_P(DurabilityWarmupTest, WarmupCommitRaceWithPersistence) {
     flusherCompletedBaton.wait();
 
     // Postcondition: verify the Committed item is now marked as clean.
-    auto sv = store->getVBucket(vbid)->ht.findForRead(key).storedValue;
+    auto sv = store->getVBucket(vbid)->ht.findForRead(key).getSV();
     ASSERT_TRUE(sv);
     EXPECT_TRUE(sv->isCommitted());
     EXPECT_FALSE(sv->isDirty());
@@ -1628,7 +1628,7 @@ void DurabilityWarmupTest::testHCSPersistedAndLoadedIntoVBState() {
     const int64_t preparedSeqno = 1;
     auto vb = store->getVBucket(vbid);
     ASSERT_TRUE(vb);
-    const auto* sv = vb->ht.findForWrite(key).storedValue;
+    const auto* sv = vb->ht.findForWrite(key).getSV();
     ASSERT_TRUE(sv);
     ASSERT_TRUE(sv->isPending());
     ASSERT_EQ(preparedSeqno, sv->getBySeqno());
@@ -1662,7 +1662,7 @@ void DurabilityWarmupTest::testHCSPersistedAndLoadedIntoVBState() {
                       preparedSeqno));
     vb->processResolvedSyncWrites();
 
-    sv = vb->ht.findForRead(key).storedValue;
+    sv = vb->ht.findForRead(key).getSV();
     ASSERT_TRUE(sv);
     ASSERT_TRUE(sv->isCommitted());
     ASSERT_GT(sv->getBySeqno(), preparedSeqno);
@@ -1703,7 +1703,7 @@ TEST_P(DurabilityWarmupTest, testHPSPersistedAndLoadedIntoVBState) {
     const int64_t preparedSeqno = 1;
     auto vb = store->getVBucket(vbid);
     ASSERT_TRUE(vb);
-    const auto* sv = vb->ht.findForWrite(key).storedValue;
+    const auto* sv = vb->ht.findForWrite(key).getSV();
     ASSERT_TRUE(sv);
     ASSERT_TRUE(sv->isPending());
     ASSERT_EQ(preparedSeqno, sv->getBySeqno());

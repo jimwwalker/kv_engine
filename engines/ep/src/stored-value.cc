@@ -472,6 +472,12 @@ void StoredValue::setCompletedOrDeletedTime(time_t time) {
     }
 }
 
+void StoredValue::completedPrepare(CommittedState state) {
+    setCommitted(state);
+    markDirty();
+    setCompletedOrDeletedTime(ep_real_time());
+}
+
 void to_json(nlohmann::json& json, const StoredValue& sv) {
     // Add any additional OrderedStoredValue data if required.
     if (sv.isOrdered()) {

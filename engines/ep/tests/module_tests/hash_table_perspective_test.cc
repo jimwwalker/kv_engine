@@ -53,7 +53,7 @@ TEST_P(HashTablePerspectiveTest, PendingItem) {
     // Should be able to get via findForWrite (Pending perspective)
     {
         auto item = ht.findForWrite(key);
-        auto* sv = item.storedValue;
+        auto* sv = item.getSV();
         ASSERT_TRUE(sv);
         EXPECT_EQ(CommittedState::Pending, sv->getCommitted());
         EXPECT_EQ("pending"s, sv->getValue()->to_s());
@@ -62,7 +62,7 @@ TEST_P(HashTablePerspectiveTest, PendingItem) {
     // Should *not* be visible via findForRead (Committed perspective).
     {
         auto item = ht.findForRead(key);
-        EXPECT_FALSE(item.storedValue);
+        EXPECT_FALSE(item.getSV());
     }
 
     del(ht, key);
@@ -77,7 +77,7 @@ TEST_P(HashTablePerspectiveTest, CommittedItem) {
     // Should be able to get via findForWrite (Pending perspective)
     {
         auto item = ht.findForWrite(key);
-        auto* sv = item.storedValue;
+        auto* sv = item.getSV();
         ASSERT_TRUE(sv);
         EXPECT_EQ(CommittedState::CommittedViaMutation, sv->getCommitted());
         EXPECT_EQ("committed"s, sv->getValue()->to_s());
@@ -86,7 +86,7 @@ TEST_P(HashTablePerspectiveTest, CommittedItem) {
     // Should also be visible via Committed (Read) perspective.
     {
         auto item = ht.findForRead(key);
-        auto* sv = item.storedValue;
+        auto* sv = item.getSV();
         ASSERT_TRUE(sv);
         EXPECT_EQ(CommittedState::CommittedViaMutation, sv->getCommitted());
         EXPECT_EQ("committed"s, sv->getValue()->to_s());
@@ -114,7 +114,7 @@ TEST_P(HashTablePerspectiveTest, CorrectItemForEachPerspective) {
     // Test - check both perspectives find the correct item.
     {
         auto item = ht.findForWrite(key);
-        auto* sv = item.storedValue;
+        auto* sv = item.getSV();
         ASSERT_TRUE(sv);
         EXPECT_EQ(CommittedState::Pending, sv->getCommitted());
         EXPECT_EQ("pending"s, sv->getValue()->to_s());
@@ -122,7 +122,7 @@ TEST_P(HashTablePerspectiveTest, CorrectItemForEachPerspective) {
 
     {
         auto item = ht.findForRead(key);
-        auto* sv = item.storedValue;
+        auto* sv = item.getSV();
         ASSERT_TRUE(sv);
         EXPECT_EQ(CommittedState::CommittedViaMutation, sv->getCommitted());
         EXPECT_EQ("committed"s, sv->getValue()->to_s());
@@ -151,12 +151,12 @@ TEST_P(HashTablePerspectiveTest, WarmupPendingAddedBeforeCommited) {
 
     // Test - check that findForRead finds the committed one, and findForWrite
     // the pending one.
-    auto* readView = ht.findForRead(key).storedValue;
+    auto* readView = ht.findForRead(key).getSV();
     ASSERT_TRUE(readView);
     EXPECT_TRUE(readView->isCommitted());
     EXPECT_EQ(1, readView->getBySeqno());
 
-    auto* writeView = ht.findForWrite(key).storedValue;
+    auto* writeView = ht.findForWrite(key).getSV();
     ASSERT_TRUE(writeView);
     EXPECT_TRUE(writeView->isPending());
     EXPECT_EQ(2, writeView->getBySeqno());
@@ -185,23 +185,23 @@ TEST_P(HashTablePerspectiveTest, findOnlyCommitted) {
     {
         auto nonExistentKey = StoredDocKey("missing", CollectionID::Default);
         auto nonExistent = ht.findOnlyCommitted(nonExistentKey);
-        EXPECT_FALSE(nonExistent.storedValue);
-        EXPECT_TRUE(nonExistent.lock.getHTLock()) << "Mutex should be locked";
+        EXPECT_FALSE(nonExistent.getSV());
+        EXPECT_TRUE(nonExistent.getHBL()) << "Mutex should be locked";
     }
 
     // 2) Check looking for the committed&pending key returns committed
     {
         auto actual = ht.findOnlyCommitted(key);
-        ASSERT_TRUE(actual.storedValue);
-        EXPECT_EQ(*committed, *actual.storedValue->toItem(Vbid{0}));
-        EXPECT_TRUE(actual.lock.getHTLock()) << "Mutex should be locked";
+        ASSERT_TRUE(actual.getSV());
+        EXPECT_EQ(*committed, *actual.getSV()->toItem(Vbid{0}));
+        EXPECT_TRUE(actual.getHBL()) << "Mutex should be locked";
     }
 
     // 3) Check looking for the pending key returns nothing
     {
         auto actual = ht.findOnlyCommitted(pendingKey);
-        EXPECT_FALSE(actual.storedValue);
-        EXPECT_TRUE(actual.lock.getHTLock()) << "Mutex should be locked";
+        EXPECT_FALSE(actual.getSV());
+        EXPECT_TRUE(actual.getHBL()) << "Mutex should be locked";
     }
 }
 
@@ -228,28 +228,27 @@ TEST_P(HashTablePerspectiveTest, findOnlyPrepared) {
     {
         auto nonExistentKey = StoredDocKey("missing", CollectionID::Default);
         auto nonExistent = ht.findOnlyPrepared(nonExistentKey);
-        EXPECT_FALSE(nonExistent.storedValue);
-        EXPECT_TRUE(nonExistent.lock.getHTLock()) << "Mutex should be locked";
+        EXPECT_FALSE(nonExistent.getSV());
+        EXPECT_TRUE(nonExistent.getHBL()) << "Mutex should be locked";
     }
 
     // 2) Check looking for the committed&prepared key returns prepared
     {
         auto actual = ht.findOnlyPrepared(key);
-        ASSERT_TRUE(actual.storedValue);
-        auto actualItem =
-                actual.storedValue->toItem(Vbid{0},
-                                           StoredValue::HideLockedCas::No,
-                                           StoredValue::IncludeValue::Yes,
-                                           prepared->getDurabilityReqs());
+        ASSERT_TRUE(actual.getSV());
+        auto actualItem = actual.getSV()->toItem(Vbid{0},
+                                                 StoredValue::HideLockedCas::No,
+                                                 StoredValue::IncludeValue::Yes,
+                                                 prepared->getDurabilityReqs());
         EXPECT_EQ(*prepared, *actualItem);
-        EXPECT_TRUE(actual.lock.getHTLock()) << "Mutex should be locked";
+        EXPECT_TRUE(actual.getHBL()) << "Mutex should be locked";
     }
 
     // 3) Check looking for the committed key returns nothing
     {
         auto actual = ht.findOnlyPrepared(committedKey);
-        EXPECT_FALSE(actual.storedValue);
-        EXPECT_TRUE(actual.lock.getHTLock()) << "Mutex should be locked";
+        EXPECT_FALSE(actual.getSV());
+        EXPECT_TRUE(actual.getHBL()) << "Mutex should be locked";
     }
 }
 
@@ -259,7 +258,7 @@ TEST_P(HashTablePerspectiveTest, ToItemPrepared) {
     auto prepared = makePendingItem(key, "prepared"s);
     prepared->setPreparedMaybeVisible();
     ASSERT_EQ(MutationStatus::WasClean, ht.set(*prepared));
-    auto prepared2 = ht.findOnlyPrepared(key).storedValue->toItem(
+    auto prepared2 = ht.findOnlyPrepared(key).getSV()->toItem(
             Vbid(0),
             StoredValue::HideLockedCas::No,
             StoredValue::IncludeValue::Yes,

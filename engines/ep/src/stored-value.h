@@ -828,6 +828,12 @@ public:
      */
     void setCompletedOrDeletedTime(time_t time);
 
+    /**
+     * StoredValue prepare is now completed
+     * Sets the committed state and marks dirty and sets completed time
+     */
+    void completedPrepare(CommittedState state);
+
 protected:
     /**
      * Constructor - protected as allocation needs to be done via

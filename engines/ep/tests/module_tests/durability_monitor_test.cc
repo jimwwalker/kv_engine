@@ -2044,7 +2044,7 @@ void PassiveDurabilityMonitorTest::testResolvePrepareOutOfOrder(
     auto vb = engine->getVBucket(vbid);
     {
         auto findResult = vb->ht.findOnlyPrepared(key1);
-        auto* sv = findResult.storedValue;
+        auto* sv = findResult.getSV();
         EXPECT_TRUE(sv);
     }
 

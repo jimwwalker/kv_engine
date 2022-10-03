@@ -95,10 +95,10 @@ void DurabilityActiveStreamTest::testSendDcpPrepare() {
     uint64_t cas;
     {
         const auto sv = vb->ht.findForWrite(key);
-        ASSERT_TRUE(sv.storedValue);
-        ASSERT_EQ(CommittedState::Pending, sv.storedValue->getCommitted());
-        ASSERT_EQ(prepareSeqno, sv.storedValue->getBySeqno());
-        cas = sv.storedValue->getCas();
+        ASSERT_TRUE(sv.getSV());
+        ASSERT_EQ(CommittedState::Pending, sv.getSV()->getCommitted());
+        ASSERT_EQ(prepareSeqno, sv.getSV()->getBySeqno());
+        cas = sv.getSV()->getCas();
     }
 
     const auto& ckptList =
@@ -193,11 +193,11 @@ void DurabilityActiveStreamTest::testSendCompleteSyncWrite(Resolution res) {
     const auto key = makeStoredDocKey("key");
     const uint64_t prepareSeqno = 1;
     {
-        ASSERT_FALSE(vb->ht.findForRead(key).storedValue);
+        ASSERT_FALSE(vb->ht.findForRead(key).getSV());
         const auto sv = vb->ht.findForWrite(key);
-        ASSERT_TRUE(sv.storedValue);
-        ASSERT_EQ(CommittedState::Pending, sv.storedValue->getCommitted());
-        ASSERT_EQ(prepareSeqno, sv.storedValue->getBySeqno());
+        ASSERT_TRUE(sv.getSV());
+        ASSERT_EQ(CommittedState::Pending, sv.getSV()->getCommitted());
+        ASSERT_EQ(prepareSeqno, sv.getSV()->getBySeqno());
     }
 
     // Now we proceed with testing the Commit/Abort of that Prepare
@@ -221,12 +221,12 @@ void DurabilityActiveStreamTest::testSendCompleteSyncWrite(Resolution res) {
         } else {
             EXPECT_EQ(0, vb->getNumItems());
         }
-        ASSERT_TRUE(vb->ht.findForWrite(key).storedValue);
+        ASSERT_TRUE(vb->ht.findForWrite(key).getSV());
         const auto sv = vb->ht.findForRead(key);
-        ASSERT_TRUE(sv.storedValue);
+        ASSERT_TRUE(sv.getSV());
         ASSERT_EQ(CommittedState::CommittedViaPrepare,
-                  sv.storedValue->getCommitted());
-        ASSERT_EQ(completedSeqno, sv.storedValue->getBySeqno());
+                  sv.getSV()->getCommitted());
+        ASSERT_EQ(completedSeqno, sv.getSV()->getBySeqno());
         break;
     }
     case Resolution::Abort:
@@ -1495,18 +1495,18 @@ void DurabilityPassiveStreamTest::
     {
         // findForUpdate will return both pending and committed perspectives
         auto res = vb->ht.findForUpdate(key);
-        ASSERT_TRUE(res.committed);
-        EXPECT_EQ(snapEnd, res.committed->getBySeqno());
+        ASSERT_TRUE(res.getSV());
+        EXPECT_EQ(snapEnd, res.getSV()->getBySeqno());
         if (docState == DocumentState::Alive) {
-            EXPECT_TRUE(res.committed->getValue());
+            EXPECT_TRUE(res.getSV()->getValue());
         }
         if (persistent()) {
-            EXPECT_FALSE(res.pending);
+            EXPECT_FALSE(res.getPending());
         } else {
-            ASSERT_TRUE(res.pending);
-            EXPECT_EQ(snapStart, res.pending->getBySeqno());
+            ASSERT_TRUE(res.getPending());
+            EXPECT_EQ(snapStart, res.getPending()->getBySeqno());
             EXPECT_EQ(CommittedState::PrepareCommitted,
-                      res.pending->getCommitted());
+                      res.getPending()->getCommitted());
         }
     }
 
@@ -1648,20 +1648,20 @@ void DurabilityPassiveStreamTest::
         // findForUpdate will return both pending and committed perspectives
         auto res = vb->ht.findForUpdate(key);
         if (persistent()) {
-            EXPECT_FALSE(res.pending);
+            EXPECT_FALSE(res.getPending());
         } else {
-            ASSERT_TRUE(res.pending);
-            EXPECT_EQ(1, res.pending->getBySeqno());
+            ASSERT_TRUE(res.getPending());
+            EXPECT_EQ(1, res.getPending()->getBySeqno());
             EXPECT_EQ(CommittedState::PrepareCommitted,
-                      res.pending->getCommitted());
+                      res.getPending()->getCommitted());
         }
-        ASSERT_TRUE(res.committed);
-        EXPECT_EQ(4, res.committed->getBySeqno());
+        ASSERT_TRUE(res.getSV());
+        EXPECT_EQ(4, res.getSV()->getBySeqno());
         EXPECT_EQ(CommittedState::CommittedViaMutation,
-                  res.committed->getCommitted());
+                  res.getSV()->getCommitted());
         if (docState == DocumentState::Alive) {
-            ASSERT_TRUE(res.committed->getValue());
-            EXPECT_EQ(value, res.committed->getValue()->to_s());
+            ASSERT_TRUE(res.getSV()->getValue());
+            EXPECT_EQ(value, res.getSV()->getValue()->to_s());
         }
     }
 
@@ -2103,10 +2103,10 @@ void DurabilityPassiveStreamTest::testReceiveDcpPrepare() {
     EXPECT_EQ(1, vb->ht.getNumItems());
     {
         const auto sv = vb->ht.findForWrite(key);
-        ASSERT_TRUE(sv.storedValue);
-        EXPECT_EQ(CommittedState::Pending, sv.storedValue->getCommitted());
-        EXPECT_EQ(prepareSeqno, sv.storedValue->getBySeqno());
-        EXPECT_EQ(cas, sv.storedValue->getCas());
+        ASSERT_TRUE(sv.getSV());
+        EXPECT_EQ(CommittedState::Pending, sv.getSV()->getCommitted());
+        EXPECT_EQ(prepareSeqno, sv.getSV()->getBySeqno());
+        EXPECT_EQ(cas, sv.getSV()->getCas());
     }
     const auto& ckptList =
             CheckpointManagerTestIntrospector::public_getCheckpointList(
@@ -2445,7 +2445,7 @@ TEST_P(DurabilityPassiveStreamPersistentTest,
 
     EXPECT_EQ(2, dm.getNumTracked());
 
-    auto* sv = vb->ht.findOnlyPrepared(key).storedValue;
+    auto* sv = vb->ht.findOnlyPrepared(key).getSV();
 
     // confirm the second prepare is present in the hashtable
     ASSERT_TRUE(sv);
@@ -2561,10 +2561,10 @@ void DurabilityPassiveStreamPersistentTest::
         // Check HT
         {
             const auto res = vb->ht.findForUpdate(key);
-            ASSERT_TRUE(res.committed);
-            EXPECT_EQ(snapEnd, res.committed->getBySeqno());
-            EXPECT_TRUE(res.committed->getValue());
-            EXPECT_FALSE(res.pending);
+            ASSERT_TRUE(res.getSV());
+            EXPECT_EQ(snapEnd, res.getSV()->getBySeqno());
+            EXPECT_TRUE(res.getSV()->getValue());
+            EXPECT_FALSE(res.getPending());
         }
         // Check CM
         const auto& ckptList =
@@ -2742,10 +2742,10 @@ void DurabilityPassiveStreamTest::testReceiveDcpPrepareCommit() {
     auto key = makeStoredDocKey("key");
     {
         const auto sv = vb->ht.findForWrite(key);
-        ASSERT_TRUE(sv.storedValue);
-        ASSERT_EQ(CommittedState::Pending, sv.storedValue->getCommitted());
-        ASSERT_EQ(prepareSeqno, sv.storedValue->getBySeqno());
-        cas = sv.storedValue->getCas();
+        ASSERT_TRUE(sv.getSV());
+        ASSERT_EQ(CommittedState::Pending, sv.getSV()->getCommitted());
+        ASSERT_EQ(prepareSeqno, sv.getSV()->getBySeqno());
+        cas = sv.getSV()->getCas();
     }
 
     // At Replica we don't expect multiple Durability items (for the same key)
@@ -2793,10 +2793,10 @@ void DurabilityPassiveStreamTest::testReceiveDcpPrepareCommit() {
     }
 
     {
-        const auto sv = vb->ht.findForWrite(key).storedValue;
+        const auto sv = vb->ht.findForWrite(key).getSV();
         EXPECT_TRUE(sv);
         EXPECT_EQ(CommittedState::CommittedViaPrepare, sv->getCommitted());
-        ASSERT_TRUE(vb->ht.findForWrite(key).storedValue);
+        ASSERT_TRUE(vb->ht.findForWrite(key).getSV());
     }
 
     // empty-item
@@ -2942,7 +2942,7 @@ void DurabilityPassiveStreamTest::testReceiveDcpAbort() {
     }
     {
         const auto sv = vb->ht.findForWrite(key);
-        ASSERT_FALSE(sv.storedValue);
+        ASSERT_FALSE(sv.getSV());
     }
 
     // empty-item
@@ -3763,8 +3763,8 @@ void DurabilityPassiveStreamTest::testPrepareCompletedAtAbort(
     ASSERT_EQ(0, ht.getNumItems());
     {
         const auto htRes = ht.findForUpdate(key);
-        ASSERT_FALSE(htRes.pending);
-        ASSERT_FALSE(htRes.committed);
+        ASSERT_FALSE(htRes.getPending());
+        ASSERT_FALSE(htRes.getSV());
     }
     ASSERT_EQ(0, ckptMgr.getHighSeqno());
     {
@@ -3821,10 +3821,10 @@ void DurabilityPassiveStreamTest::testPrepareCompletedAtAbort(
     EXPECT_EQ(1, ht.getNumItems());
     {
         const auto htRes = ht.findForUpdate(key);
-        ASSERT_TRUE(htRes.pending);
-        EXPECT_EQ(prepareSeqno, htRes.pending->getBySeqno());
-        EXPECT_TRUE(htRes.pending->isPending());
-        ASSERT_FALSE(htRes.committed);
+        ASSERT_TRUE(htRes.getPending());
+        EXPECT_EQ(prepareSeqno, htRes.getPending()->getBySeqno());
+        EXPECT_TRUE(htRes.getPending()->isPending());
+        ASSERT_FALSE(htRes.getSV());
     }
     EXPECT_EQ(prepareSeqno, ckptMgr.getHighSeqno());
     if (persistent() && !flush && level == Level::PersistToMajority) {
@@ -3871,41 +3871,41 @@ void DurabilityPassiveStreamTest::testPrepareCompletedAtAbort(
 
         switch (res) {
         case Resolution::Commit: {
-            ASSERT_TRUE(htRes.committed);
+            ASSERT_TRUE(htRes.getSV());
             EXPECT_EQ(CommittedState::CommittedViaPrepare,
-                      htRes.committed->getCommitted());
-            EXPECT_EQ(completeSeqno, htRes.committed->getBySeqno());
+                      htRes.getSV()->getCommitted());
+            EXPECT_EQ(completeSeqno, htRes.getSV()->getBySeqno());
             if (persistent()) {
                 EXPECT_EQ(1, ht.getNumItems());
-                ASSERT_FALSE(htRes.pending);
+                ASSERT_FALSE(htRes.getPending());
             } else {
                 // Keeping the Prepare SV in HT for Ephemeral.
                 EXPECT_EQ(2, ht.getNumItems());
-                ASSERT_TRUE(htRes.pending);
-                EXPECT_TRUE(htRes.pending->isCompleted());
+                ASSERT_TRUE(htRes.getPending());
+                EXPECT_TRUE(htRes.getPending()->isCompleted());
                 // SV is turned into a PrepareCommitted, seqno is still
                 // prepareSeqno.
                 EXPECT_EQ(CommittedState::PrepareCommitted,
-                          htRes.pending->getCommitted());
-                EXPECT_EQ(prepareSeqno, htRes.pending->getBySeqno());
+                          htRes.getPending()->getCommitted());
+                EXPECT_EQ(prepareSeqno, htRes.getPending()->getBySeqno());
             }
             break;
         }
         case Resolution::Abort: {
-            ASSERT_FALSE(htRes.committed);
+            ASSERT_FALSE(htRes.getSV());
             if (persistent()) {
                 EXPECT_EQ(0, ht.getNumItems());
-                ASSERT_FALSE(htRes.pending);
+                ASSERT_FALSE(htRes.getPending());
             } else {
                 // Keeping the Prepare SV in HT for Ephemeral.
                 EXPECT_EQ(1, ht.getNumItems());
-                ASSERT_TRUE(htRes.pending);
-                EXPECT_TRUE(htRes.pending->isCompleted());
+                ASSERT_TRUE(htRes.getPending());
+                EXPECT_TRUE(htRes.getPending()->isCompleted());
                 // SV is turned into a PrepareAborted, seqno is set to
                 // abortSeqno.
                 EXPECT_EQ(CommittedState::PrepareAborted,
-                          htRes.pending->getCommitted());
-                EXPECT_EQ(completeSeqno, htRes.pending->getBySeqno());
+                          htRes.getPending()->getCommitted());
+                EXPECT_EQ(completeSeqno, htRes.getPending()->getBySeqno());
             }
             break;
         }
@@ -3962,13 +3962,13 @@ void DurabilityPassiveStreamTest::testPrepareCompletedAtAbort(
 
         switch (res) {
         case Resolution::Commit: {
-            ASSERT_TRUE(htRes.committed);
+            ASSERT_TRUE(htRes.getSV());
             EXPECT_EQ(CommittedState::CommittedViaPrepare,
-                      htRes.committed->getCommitted());
-            EXPECT_EQ(completeSeqno, htRes.committed->getBySeqno());
+                      htRes.getSV()->getCommitted());
+            EXPECT_EQ(completeSeqno, htRes.getSV()->getBySeqno());
             if (persistent()) {
                 EXPECT_EQ(1, ht.getNumItems());
-                ASSERT_FALSE(htRes.pending);
+                ASSERT_FALSE(htRes.getPending());
             } else {
                 // Keeping the Prepare SV in HT for Ephemeral.
                 EXPECT_EQ(2, ht.getNumItems());
@@ -3976,10 +3976,10 @@ void DurabilityPassiveStreamTest::testPrepareCompletedAtAbort(
             break;
         }
         case Resolution::Abort: {
-            ASSERT_FALSE(htRes.committed);
+            ASSERT_FALSE(htRes.getSV());
             if (persistent()) {
                 EXPECT_EQ(0, ht.getNumItems());
-                ASSERT_FALSE(htRes.pending);
+                ASSERT_FALSE(htRes.getPending());
             } else {
                 // Keeping the Prepare SV in HT for Ephemeral.
                 EXPECT_EQ(1, ht.getNumItems());
@@ -3990,11 +3990,11 @@ void DurabilityPassiveStreamTest::testPrepareCompletedAtAbort(
         if (ephemeral()) {
             // The old PrepareCommitted SV is turned into a PrepareAborted,
             // seqno is set to abortSeqno.
-            ASSERT_TRUE(htRes.pending);
-            EXPECT_TRUE(htRes.pending->isCompleted());
+            ASSERT_TRUE(htRes.getPending());
+            EXPECT_TRUE(htRes.getPending()->isCompleted());
             EXPECT_EQ(CommittedState::PrepareAborted,
-                      htRes.pending->getCommitted());
-            EXPECT_EQ(abortSeqno, htRes.pending->getBySeqno());
+                      htRes.getPending()->getCommitted());
+            EXPECT_EQ(abortSeqno, htRes.getPending()->getBySeqno());
         }
     }
     EXPECT_EQ(abortSeqno, ckptMgr.getHighSeqno());

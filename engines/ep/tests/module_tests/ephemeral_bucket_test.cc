@@ -544,10 +544,10 @@ TEST_F(SingleThreadedEphemeralPurgerTest, HTCleanerSkipsPrepares) {
     auto& vb = *store->getVBucket(vbid);
     {
         auto res = vb.ht.findForUpdate(key);
-        ASSERT_TRUE(res.pending);
-        ASSERT_TRUE(res.pending->isDeleted());
-        ASSERT_EQ(1, res.pending->getBySeqno());
-        ASSERT_FALSE(res.committed);
+        ASSERT_TRUE(res.getPending());
+        ASSERT_TRUE(res.getPending()->isDeleted());
+        ASSERT_EQ(1, res.getPending()->getBySeqno());
+        ASSERT_FALSE(res.getSV());
     }
 
     // Run the HTCleaner
@@ -561,11 +561,11 @@ TEST_F(SingleThreadedEphemeralPurgerTest, HTCleanerSkipsPrepares) {
     // Core of the test: Verify Prepare still in the HT
     {
         auto res = vb.ht.findForUpdate(key);
-        ASSERT_TRUE(res.pending);
-        ASSERT_EQ(CommittedState::Pending, res.pending->getCommitted());
-        ASSERT_TRUE(res.pending->isDeleted());
-        ASSERT_EQ(1, res.pending->getBySeqno());
-        ASSERT_FALSE(res.committed);
+        ASSERT_TRUE(res.getPending());
+        ASSERT_EQ(CommittedState::Pending, res.getPending()->getCommitted());
+        ASSERT_TRUE(res.getPending()->isDeleted());
+        ASSERT_EQ(1, res.getPending()->getBySeqno());
+        ASSERT_FALSE(res.getSV());
     }
 
     // Proceed with checking that everything behaves as expected at Prepare
@@ -576,16 +576,16 @@ TEST_F(SingleThreadedEphemeralPurgerTest, HTCleanerSkipsPrepares) {
     // Verify Prepare and Commit in the HT
     {
         auto res = vb.ht.findForUpdate(key);
-        ASSERT_TRUE(res.pending);
+        ASSERT_TRUE(res.getPending());
         ASSERT_EQ(CommittedState::PrepareCommitted,
-                  res.pending->getCommitted());
-        ASSERT_TRUE(res.pending->isDeleted());
-        ASSERT_EQ(1, res.pending->getBySeqno());
-        ASSERT_TRUE(res.committed);
+                  res.getPending()->getCommitted());
+        ASSERT_TRUE(res.getPending()->isDeleted());
+        ASSERT_EQ(1, res.getPending()->getBySeqno());
+        ASSERT_TRUE(res.getSV());
         ASSERT_EQ(CommittedState::CommittedViaPrepare,
-                  res.committed->getCommitted());
-        ASSERT_TRUE(res.committed->isDeleted());
-        ASSERT_EQ(2, res.committed->getBySeqno());
+                  res.getSV()->getCommitted());
+        ASSERT_TRUE(res.getSV()->isDeleted());
+        ASSERT_EQ(2, res.getSV()->getBySeqno());
     }
 
     {
@@ -608,7 +608,7 @@ TEST_F(SingleThreadedEphemeralPurgerTest, HTCleanerSkipsPrepares) {
     // - Committed removed as it is a tombstone
     {
         auto res = vb.ht.findForUpdate(key);
-        ASSERT_FALSE(res.pending);
-        ASSERT_FALSE(res.committed);
+        ASSERT_FALSE(res.getPending());
+        ASSERT_FALSE(res.getSV());
     }
 }

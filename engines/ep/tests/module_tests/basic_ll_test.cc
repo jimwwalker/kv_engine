@@ -93,7 +93,7 @@ protected:
                       /*bySeqno*/ i);
             EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
-            sv = ht.findForWrite(key).storedValue->toOrderedStoredValue();
+            sv = ht.findForWrite(key).getSV()->toOrderedStoredValue();
 
             std::lock_guard<std::mutex> listWriteLg(
                     basicLL->getListWriteLock());
@@ -120,7 +120,7 @@ protected:
         EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
         OrderedStoredValue* sv =
-                ht.findForWrite(sKey).storedValue->toOrderedStoredValue();
+                ht.findForWrite(sKey).getSV()->toOrderedStoredValue();
 
         std::lock_guard<std::mutex> listWriteLg(basicLL->getListWriteLock());
         basicLL->appendToList(lg, listWriteLg, *sv);
@@ -146,14 +146,14 @@ protected:
         EXPECT_EQ(MutationStatus::WasClean, ht.set(item));
 
         auto res = ht.findForWrite(sKey);
-        ASSERT_TRUE(res.storedValue);
-        auto* sv = res.storedValue->toOrderedStoredValue();
+        ASSERT_TRUE(res.getSV());
+        auto* sv = res.getSV()->toOrderedStoredValue();
         std::lock_guard<std::mutex> listWriteLg(basicLL->getListWriteLock());
         basicLL->appendToList(lg, listWriteLg, *sv);
         basicLL->updateHighSeqno(listWriteLg, *sv);
 
         /* Mark stale */
-        auto ownedSV = ht.unlocked_release(res.lock, res.storedValue);
+        auto ownedSV = ht.unlocked_release(res.getHBL(), res.getSV());
         basicLL->markItemStale(listWriteLg, std::move(ownedSV), nullptr);
     }
 
@@ -166,7 +166,7 @@ protected:
         std::mutex fakeSeqLock;
         std::lock_guard<std::mutex> lg(fakeSeqLock);
 
-        auto* sv = ht.findForWrite(makeStoredDocKey(key)).storedValue;
+        auto* sv = ht.findForWrite(makeStoredDocKey(key)).getSV();
         ASSERT_TRUE(sv);
         auto* osv = sv->toOrderedStoredValue();
 
@@ -190,15 +190,15 @@ protected:
 
         auto docKey = makeStoredDocKey(key);
         auto res = ht.findForWrite(docKey);
-        EXPECT_TRUE(res.storedValue);
-        auto* osv = res.storedValue->toOrderedStoredValue();
+        EXPECT_TRUE(res.getSV());
+        auto* osv = res.getSV()->toOrderedStoredValue();
 
         std::lock_guard<std::mutex> listWriteLg(basicLL->getListWriteLock());
         EXPECT_EQ(SequenceList::UpdateStatus::Append,
                   basicLL->updateListElem(lg, listWriteLg, *osv));
 
         /* Release the current sv from the HT */
-        auto ownedSv = ht.unlocked_release(res.lock, res.storedValue);
+        auto ownedSv = ht.unlocked_release(res.getHBL(), res.getSV());
 
         /* Add a new storedvalue for the append */
         Item itm(docKey,
@@ -209,7 +209,7 @@ protected:
                  PROTOCOL_BINARY_RAW_BYTES,
                  /*theCas*/ 0,
                  /*bySeqno*/ highSeqno + 1);
-        auto* newSv = ht.unlocked_addNewStoredValue(res.lock, itm);
+        auto* newSv = ht.unlocked_addNewStoredValue(res.getHBL(), itm);
         basicLL->markItemStale(listWriteLg, std::move(ownedSv), newSv);
 
         basicLL->appendToList(
@@ -226,8 +226,8 @@ protected:
         { /* hbl lock scope */
             auto result = ht.findForWrite(makeStoredDocKey(key));
 
-            ht.unlocked_softDelete(result.lock,
-                                   *result.storedValue,
+            ht.unlocked_softDelete(result.getHBL(),
+                                   *result.getSV(),
                                    /* onlyMarkDeleted */ false,
                                    DeleteSource::Explicit);
         }
@@ -240,8 +240,8 @@ protected:
      */
     StoredValue::UniquePtr releaseFromHashTable(const std::string& key) {
         auto res = ht.findForWrite(makeStoredDocKey(key));
-        EXPECT_TRUE(res.storedValue);
-        return ht.unlocked_release(res.lock, res.storedValue);
+        EXPECT_TRUE(res.getSV());
+        return ht.unlocked_release(res.getHBL(), res.getSV());
     }
 
     /**
@@ -392,7 +392,8 @@ TEST_F(BasicLinkedListTest, MarkStale) {
     OrderedStoredValue* replacement =
             ht.findForWrite(makeStoredDocKey(keyPrefix +
                                              std::to_string(numItems + 1)))
-                    .storedValue->toOrderedStoredValue();
+                    .getSV()
+                    ->toOrderedStoredValue();
 
     /* Mark the item stale */
     {

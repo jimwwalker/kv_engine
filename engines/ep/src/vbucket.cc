@@ -604,11 +604,9 @@ void VBucket::setupSyncReplication(const nlohmann::json& topology) {
         trackedWrites = adm.getTrackedWrites();
         for (auto& write : trackedWrites) {
             auto htRes = ht.findOnlyPrepared(write->getKey());
-            Expects(htRes.storedValue);
-            Expects(htRes.storedValue->isPending() ||
-                    htRes.storedValue->isCompleted());
-            htRes.storedValue->setCommitted(
-                    CommittedState::PreparedMaybeVisible);
+            Expects(htRes.getSV());
+            Expects(htRes.getSV()->isPending() || htRes.getSV()->isCompleted());
+            htRes.getSV()->setCommitted(CommittedState::PreparedMaybeVisible);
             write->setPreparedMaybeVisible();
         }
     }
@@ -843,7 +841,7 @@ ENGINE_ERROR_CODE VBucket::commit(
         const Collections::VB::Manifest::CachingReadHandle& cHandle,
         const void* cookie) {
     auto res = ht.findForUpdate(key);
-    if (!res.pending) {
+    if (!res.getPending()) {
         // If we are committing we /should/ always find the pending item.
         EP_LOG_ERR(
                 "VBucket::commit ({}) failed as no HashTable item found with "
@@ -858,11 +856,11 @@ ENGINE_ERROR_CODE VBucket::commit(
     Expects(prepareSeqno);
 
     // Value for Pending must never be ejected
-    Expects(res.pending->isResident());
+    Expects(res.getPending()->isResident());
 
     // If prepare seqno is not the same as our stored seqno then we should be
     // a replica and have missed a completion and a prepare due to de-dupe.
-    if (prepareSeqno != static_cast<uint64_t>(res.pending->getBySeqno())) {
+    if (prepareSeqno != static_cast<uint64_t>(res.getPending()->getBySeqno())) {
         Expects(getState() != vbucket_state_active);
         Expects(isReceivingDiskSnapshot());
         Expects(prepareSeqno >= checkpointManager->getOpenSnapshotStartSeqno());
@@ -876,14 +874,14 @@ ENGINE_ERROR_CODE VBucket::commit(
     // it may have been set explicitly.
     queueItmCtx.genCas = GenerateCas::No;
 
-    queueItmCtx.durability =
-            DurabilityItemCtx{res.pending->getBySeqno(), nullptr /*cookie*/};
+    queueItmCtx.durability = DurabilityItemCtx{res.getPending()->getBySeqno(),
+                                               nullptr /*cookie*/};
 
-    queueItmCtx.hcs = res.pending->getBySeqno();
-    if (res.pending->isDeleted()) {
+    queueItmCtx.hcs = res.getPending()->getBySeqno();
+    if (res.getPending()->isDeleted()) {
         // we are about to commit a sync delete, bump the maxDeletedRevSeqno
         // just as it would be for a non-sync delete
-        ht.updateMaxDeletedRevSeqno(res.pending->getRevSeqno());
+        ht.updateMaxDeletedRevSeqno(res.getPending()->getRevSeqno());
     }
     auto notify =
             commitStoredValue(res, prepareSeqno, queueItmCtx, commitSeqno);
@@ -914,12 +912,13 @@ ENGINE_ERROR_CODE VBucket::abort(
     // Note that, while for EP we just expect no-pending in the HT, for
     // Ephemeral we may have no-pending or a pre-existing completed (Committed
     // or Aborted) Prepare in the HT.
-    if (!htRes.pending || (htRes.pending && htRes.pending->isCompleted())) {
+    if (!htRes.getPending() ||
+        (htRes.getPending() && htRes.getPending()->isCompleted())) {
         // Active should always find the pending item.
         if (getState() == vbucket_state_active) {
-            if (htRes.committed) {
+            if (htRes.getSV()) {
                 std::stringstream ss;
-                ss << *htRes.committed;
+                ss << *htRes.getSV();
                 EP_LOG_ERR(
                         "VBucket::abort ({}) - active failed as HashTable "
                         "value is not "
@@ -959,16 +958,13 @@ ENGINE_ERROR_CODE VBucket::abort(
         //     Ephemeral) then we have to convert/update the existing pending
         //     into a new PersistedAborted item
         VBNotifyCtx ctx;
-        if (!htRes.pending) {
-            ctx = addNewAbort(
-                    htRes.pending.getHBL(), key, prepareSeqno, *abortSeqno);
+        if (!htRes.getPending()) {
+            ctx = addNewAbort(htRes.getHBL(), key, prepareSeqno, *abortSeqno);
         } else {
             // This code path can be reached only at Ephemeral
-            Expects(htRes.pending->isCompleted());
-            ctx = abortStoredValue(htRes.pending.getHBL(),
-                                   *htRes.pending.release(),
-                                   prepareSeqno,
-                                   *abortSeqno);
+            Expects(htRes.getPending()->isCompleted());
+            ctx = abortStoredValue(
+                    htRes, *htRes.releasePending(), prepareSeqno, *abortSeqno);
         }
 
         notifyNewSeqno(ctx);
@@ -979,7 +975,8 @@ ENGINE_ERROR_CODE VBucket::abort(
 
     // If prepare seqno is not the same as our stored seqno then we should be
     // a replica and have missed a completion and a prepare due to de-dupe.
-    if (prepareSeqno != static_cast<uint64_t>(htRes.pending->getBySeqno())) {
+    if (prepareSeqno !=
+        static_cast<uint64_t>(htRes.getPending()->getBySeqno())) {
         Expects(getState() != vbucket_state_active);
         Expects(isReceivingDiskSnapshot());
         Expects(prepareSeqno >= checkpointManager->getOpenSnapshotStartSeqno());
@@ -988,10 +985,8 @@ ENGINE_ERROR_CODE VBucket::abort(
     // abortStoredValue deallocates the pending SV, releasing here so
     // ~StoredValueProxy will not attempt to update stats and lead to
     // use-after-free
-    auto notify = abortStoredValue(htRes.pending.getHBL(),
-                                   *htRes.pending.release(),
-                                   prepareSeqno,
-                                   abortSeqno);
+    auto notify = abortStoredValue(
+            htRes, *htRes.releasePending(), prepareSeqno, abortSeqno);
 
     notifyNewSeqno(notify);
     doCollectionsStats(cHandle, notify);
@@ -1484,10 +1479,10 @@ VBucket::FetchForWriteResult VBucket::fetchValueForWrite(
 HashTable::FindResult VBucket::fetchPreparedValue(
         const Collections::VB::Manifest::CachingReadHandle& cHandle) {
     auto res = ht.findForWrite(cHandle.getKey(), WantsDeleted::Yes);
-    if (res.storedValue && res.storedValue->isPending()) {
+    if (res.getSV() && res.getSV()->isPending()) {
         return res;
     }
-    return {nullptr, std::move(res.lock)};
+    return {nullptr, std::move(res.getHBL())};
 }
 
 void VBucket::incExpirationStat(const ExpireBy source) {
@@ -1672,15 +1667,15 @@ ENGINE_ERROR_CODE VBucket::replace(
 
         cb::StoreIfStatus storeIfStatus = cb::StoreIfStatus::Continue;
         if (predicate &&
-            (storeIfStatus = callPredicate(predicate, htRes.committed)) ==
+            (storeIfStatus = callPredicate(predicate, htRes.getSV())) ==
                     cb::StoreIfStatus::Fail) {
             return ENGINE_PREDICATE_FAILED;
         }
 
-        if (htRes.committed) {
-            if (isLogicallyNonExistent(*htRes.committed, cHandle) ||
-                htRes.committed->isExpired(ep_real_time())) {
-                ht.cleanupIfTemporaryItem(hbl, *htRes.committed);
+        if (htRes.getSV()) {
+            if (isLogicallyNonExistent(*htRes.getSV(), cHandle) ||
+                htRes.getSV()->isExpired(ep_real_time())) {
+                ht.cleanupIfTemporaryItem(hbl, *htRes.getSV());
                 return ENGINE_KEY_ENOENT;
             }
 
@@ -1688,7 +1683,7 @@ ENGINE_ERROR_CODE VBucket::replace(
             MutationStatus mtype;
             boost::optional<VBNotifyCtx> notifyCtx;
             if (eviction == EvictionPolicy::Full &&
-                htRes.committed->isTempInitialItem()) {
+                htRes.getSV()->isTempInitialItem()) {
                 mtype = MutationStatus::NeedBgFetch;
             } else {
                 // If a pending SV was found and it's not yet complete, then we
@@ -1699,7 +1694,7 @@ ENGINE_ERROR_CODE VBucket::replace(
                 //  the set only /after/ having verified that the doc exists,
                 //  which is also the right time to check for any pending SW
                 //  (and to reject the operation if a prepare is in-flight).
-                if (htRes.pending && !htRes.pending->isCompleted()) {
+                if (htRes.getPending() && !htRes.getPending()->isCompleted()) {
                     return ENGINE_SYNC_WRITE_IN_PROGRESS;
                 }
 
@@ -1800,7 +1795,7 @@ ENGINE_ERROR_CODE VBucket::prepare(
         GenerateCas genCas,
         const Collections::VB::Manifest::CachingReadHandle& cHandle) {
     auto htRes = ht.findForUpdate(itm.getKey());
-    auto* v = htRes.pending.getSV();
+    auto* v = htRes.getPending();
     auto& hbl = htRes.getHBL();
     bool maybeKeyExists = true;
     MutationStatus status;
@@ -2054,19 +2049,20 @@ ENGINE_ERROR_CODE VBucket::deleteItem(
         auto htRes = ht.findForUpdate(cHandle.getKey());
         auto& hbl = htRes.getHBL();
 
-        if (htRes.pending && htRes.pending->isPending()) {
+        if (htRes.getPending() && htRes.getPending()->isPending()) {
             // Existing item is an in-flight SyncWrite
             return ENGINE_SYNC_WRITE_IN_PROGRESS;
         }
 
         // When deleting an item, always use the StoredValue which is committed
         // for the various logic checks.
-        if (!htRes.committed || htRes.committed->isTempInitialItem() ||
-            isLogicallyNonExistent(*htRes.committed, cHandle)) {
+        if (!htRes.getSV() || htRes.getSV()->isTempInitialItem() ||
+            isLogicallyNonExistent(*htRes.getSV(), cHandle)) {
             if (eviction == EvictionPolicy::Value) {
                 return ENGINE_KEY_ENOENT;
             } else { // Full eviction.
-                if (!htRes.committed) { // Item might be evicted from cache.
+                if (!htRes.getSV()) { // Item might be evicted from
+                                      // cache.
                     if (maybeKeyExistsInFilter(cHandle.getKey())) {
                         return addTempItemAndBGFetch(
                                 hbl, cHandle.getKey(), cookie, engine, true);
@@ -2075,31 +2071,31 @@ ENGINE_ERROR_CODE VBucket::deleteItem(
                         // exist on disk, return ENOENT for deleteItem().
                         return ENGINE_KEY_ENOENT;
                     }
-                } else if (htRes.committed->isTempInitialItem()) {
+                } else if (htRes.getSV()->isTempInitialItem()) {
                     hbl.getHTLock().unlock();
                     bgFetch(cHandle.getKey(), cookie, engine, true);
                     return ENGINE_EWOULDBLOCK;
                 } else { // Non-existent or deleted key.
-                    if (htRes.committed->isTempNonExistentItem() ||
-                        htRes.committed->isTempDeletedItem()) {
+                    if (htRes.getSV()->isTempNonExistentItem() ||
+                        htRes.getSV()->isTempDeletedItem()) {
                         // Delete a temp non-existent item to ensure that
                         // if a delete were issued over an item that doesn't
                         // exist, then we don't preserve a temp item.
-                        deleteStoredValue(hbl, *htRes.committed);
+                        deleteStoredValue(hbl, *htRes.getSV());
                     }
                     return ENGINE_KEY_ENOENT;
                 }
             }
         }
 
-        if (htRes.committed->isLocked(ep_current_time()) &&
+        if (htRes.getSV()->isLocked(ep_current_time()) &&
             (getState() == vbucket_state_replica ||
              getState() == vbucket_state_pending)) {
-            htRes.committed->unlock();
+            htRes.getSV()->unlock();
         }
 
         if (itemMeta != nullptr) {
-            itemMeta->cas = htRes.committed->getCas();
+            itemMeta->cas = htRes.getSV()->getCas();
         }
 
         MutationStatus delrv;
@@ -2108,11 +2104,11 @@ ENGINE_ERROR_CODE VBucket::deleteItem(
         // Determine which of committed / prepared SV to modify.
         auto* v = htRes.selectSVToModify(durability.is_initialized());
 
-        if (htRes.committed->isExpired(ep_real_time())) {
+        if (htRes.getSV()->isExpired(ep_real_time())) {
             std::tie(delrv, v, notifyCtx) = processExpiredItem(htRes, cHandle);
         } else {
             ItemMetaData metadata;
-            metadata.revSeqno = htRes.committed->getRevSeqno() + 1;
+            metadata.revSeqno = htRes.getSV()->getRevSeqno() + 1;
             VBQueueItemCtx queueItmCtx;
             if (durability) {
                 queueItmCtx.durability = DurabilityItemCtx{*durability, cookie};
@@ -2199,7 +2195,7 @@ ENGINE_ERROR_CODE VBucket::deleteWithMeta(
     const auto& key = cHandle.getKey();
     auto htRes = ht.findForUpdate(key);
     auto* v = htRes.selectSVToModify(false);
-    auto& hbl = htRes.pending.getHBL();
+    auto& hbl = htRes.getHBL();
 
     if (v && cHandle.isLogicallyDeleted(v->getBySeqno())) {
         return ENGINE_KEY_ENOENT;
@@ -2297,7 +2293,7 @@ ENGINE_ERROR_CODE VBucket::deleteWithMeta(
             // MB-36101: The result should always be a deleted item
             itm->setDeleted();
             std::tie(v, delrv, notifyCtx) =
-                    updateStoredValue(hbl, *v, *itm, queueItmCtx);
+                    updateStoredValue(htRes, *v, *itm, queueItmCtx);
         } else {
             // system xattrs must remain, however no need to prune xattrs if
             // this is a replication call (i.e. not to an active vbucket),
@@ -2432,9 +2428,10 @@ void VBucket::deleteExpiredItem(const Item& it,
                 v->setRevSeqno(it.getRevSeqno());
                 ht.unlocked_updateStoredValue(hbl, *v, it);
 
-                // processExpiredItem expires the StoredValue at htRes.committed
-                // so we must set it to our new StoredValue
-                htRes.committed = v;
+                // processExpiredItem expires the StoredValue at
+                // htRes.getSV() so we must set it to our new StoredValue
+                // htRes.getSV() = v;
+#warning "FIX THIS"
 
                 VBNotifyCtx notifyCtx;
                 std::tie(std::ignore, std::ignore, notifyCtx) =
@@ -2465,7 +2462,7 @@ ENGINE_ERROR_CODE VBucket::add(
         auto* v = htRes.selectSVToModify(itm);
         auto& hbl = htRes.getHBL();
 
-        if (htRes.pending && htRes.pending->isPending()) {
+        if (htRes.getPending() && htRes.getPending()->isPending()) {
             // If an existing item was found and it is prepared, then cannot
             // (yet) perform an Add (Add would only succeed if prepared
             // SyncWrite was subsequently aborted).
@@ -2577,12 +2574,13 @@ std::pair<MutationStatus, GetValue> VBucket::processGetAndUpdateTtl(
         if (exptime_mutated) {
             VBQueueItemCtx qItemCtx;
             VBNotifyCtx notifyCtx;
+            HashTable::FindResult htRes(v, std::move(hbl));
             std::tie(v, std::ignore, notifyCtx) =
-                    updateStoredValue(hbl, *v, *rv.item, qItemCtx, true);
+                    updateStoredValue(htRes, *v, *rv.item, qItemCtx, true);
             rv.item->setCas(v->getCas());
             // we unlock ht lock here because we want to avoid potential lock
             // inversions arising from notifyNewSeqno() call
-            hbl.getHTLock().unlock();
+            htRes.getHBL().getHTLock().unlock();
             notifyNewSeqno(notifyCtx);
             doCollectionsStats(cHandle, notifyCtx);
         }
@@ -2659,7 +2657,7 @@ GetValue VBucket::getInternal(
                                cHandle,
                                getReplicaItem);
 
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
     if (v) {
         // If the fetched value is a Prepared SyncWrite which may already have
         // been made visible to clients, then we cannot yet report _any_
@@ -2694,7 +2692,7 @@ GetValue VBucket::getInternal(
         // don't keep temp items in HT).
         if (v->isTempDeletedItem() || v->isTempNonExistentItem()) {
             if (options & DELETE_TEMP) {
-                deleteStoredValue(res.lock, *v);
+                deleteStoredValue(res.getHBL(), *v);
             }
             return GetValue();
         }
@@ -2739,7 +2737,7 @@ GetValue VBucket::getInternal(
         if (maybeKeyExistsInFilter(cHandle.getKey())) {
             ENGINE_ERROR_CODE ec = ENGINE_EWOULDBLOCK;
             if (bgFetchRequired) { // Full eviction and need a bg fetch.
-                ec = addTempItemAndBGFetch(res.lock,
+                ec = addTempItemAndBGFetch(res.getHBL(),
                                            cHandle.getKey(),
                                            cookie,
                                            engine,
@@ -2764,8 +2762,7 @@ ENGINE_ERROR_CODE VBucket::getMetaData(
     deleted = 0;
     auto htRes = ht.findForRead(
             cHandle.getKey(), TrackReference::Yes, WantsDeleted::Yes);
-    auto* v = htRes.storedValue;
-    auto& hbl = htRes.lock;
+    auto* v = htRes.getSV();
 
     if (v) {
         if (v->isPreparedMaybeVisible()) {
@@ -2811,7 +2808,7 @@ ENGINE_ERROR_CODE VBucket::getMetaData(
 
         if (maybeKeyExistsInFilter(cHandle.getKey())) {
             return addTempItemAndBGFetch(
-                    hbl, cHandle.getKey(), cookie, engine, true);
+                    htRes.getHBL(), cHandle.getKey(), cookie, engine, true);
         } else {
             stats.numOpsGetMeta++;
             return ENGINE_KEY_ENOENT;
@@ -2827,7 +2824,7 @@ ENGINE_ERROR_CODE VBucket::getKeyStats(
         const Collections::VB::Manifest::CachingReadHandle& cHandle) {
     auto res = fetchValidValue(
             WantsDeleted::Yes, TrackReference::Yes, QueueExpired::Yes, cHandle);
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
 
     if (v) {
         if (v->isPreparedMaybeVisible()) {
@@ -2839,11 +2836,11 @@ ENGINE_ERROR_CODE VBucket::getKeyStats(
         }
 
         if (v->isTempNonExistentItem() || v->isTempDeletedItem()) {
-            deleteStoredValue(res.lock, *v);
+            deleteStoredValue(res.getHBL(), *v);
             return ENGINE_KEY_ENOENT;
         }
         if (eviction == EvictionPolicy::Full && v->isTempInitialItem()) {
-            res.lock.getHTLock().unlock();
+            res.getHBL().getHTLock().unlock();
             bgFetch(cHandle.getKey(), cookie, engine, true);
             return ENGINE_EWOULDBLOCK;
         }
@@ -2863,7 +2860,7 @@ ENGINE_ERROR_CODE VBucket::getKeyStats(
         } else {
             if (maybeKeyExistsInFilter(cHandle.getKey())) {
                 return addTempItemAndBGFetch(
-                        res.lock, cHandle.getKey(), cookie, engine, true);
+                        res.getHBL(), cHandle.getKey(), cookie, engine, true);
             } else {
                 // If bgFetch were false, or bloomfilter predicted that
                 // item surely doesn't exist on disk, return ENOENT for
@@ -2937,19 +2934,19 @@ GetValue VBucket::getLocked(
 
 void VBucket::deletedOnDiskCbk(const Item& queuedItem, bool deleted) {
     auto res = ht.findItem(queuedItem);
-    auto* v = res.storedValue;
+    auto* v = res.getSV();
 
     // Delete the item in the hash table iff:
     //  1. Item is existent in hashtable, and deleted flag is true
     //  2. seqno of queued item matches seqno of hash table item
     if (v && v->isDeleted() && queuedItem.getBySeqno() == v->getBySeqno()) {
-        bool isDeleted = deleteStoredValue(res.lock, *v);
+        bool isDeleted = deleteStoredValue(res.getHBL(), *v);
         if (!isDeleted) {
             throw std::logic_error(
                     "deletedOnDiskCbk:callback: "
                     "Failed to delete key with seqno:" +
                     std::to_string(v->getBySeqno()) + "' from bucket " +
-                    std::to_string(res.lock.getBucketNum()));
+                    std::to_string(res.getHBL().getBucketNum()));
         }
 
         /**
@@ -2980,10 +2977,10 @@ void VBucket::deletedOnDiskCbk(const Item& queuedItem, bool deleted) {
 
 bool VBucket::removeItemFromMemory(const Item& item) {
     auto htRes = ht.findItem(item);
-    if (!htRes.storedValue) {
+    if (!htRes.getSV()) {
         return false;
     }
-    return deleteStoredValue(htRes.lock, *htRes.storedValue);
+    return deleteStoredValue(htRes.getHBL(), *htRes.getSV());
 }
 
 void VBucket::postProcessRollback(const RollbackResult& rollbackResult,
@@ -3196,11 +3193,11 @@ std::pair<MutationStatus, boost::optional<VBNotifyCtx>> VBucket::processSet(
                 v->getBySeqno() /* prepareSeqno */);
 
         // Deal with the already existing prepare
-        processImplicitlyCompletedPrepare(htRes.pending);
+        processImplicitlyCompletedPrepare(htRes);
 
         // Add a new or overwrite the existing mutation
         return processSetInner(htRes,
-                               htRes.committed,
+                               htRes.getSVRef(),
                                itm,
                                cas,
                                allowExisting,
@@ -3231,7 +3228,7 @@ VBucket::processSetInner(HashTable::FindUpdateResult& htRes,
                          const VBQueueItemCtx& queueItmCtx,
                          cb::StoreIfStatus storeIfStatus,
                          bool maybeKeyExists) {
-    if (!htRes.getHBL().getHTLock()) {
+    if (!htRes.isLocked()) {
         throw std::invalid_argument(
                 "VBucket::processSet: htLock not held for " +
                 getId().to_string());
@@ -3267,7 +3264,7 @@ VBucket::processSetInner(HashTable::FindUpdateResult& htRes,
     // need to test cas and locking against the committed value
     // explicitly, as v may be a completed prepare (to be modified)
     // with a cas, deleted status, expiry etc. different from the committed
-    auto* committed = htRes.committed;
+    auto* committed = htRes.getSV();
     if (committed && committed->isExpired(ep_real_time()) && !hasMetaData &&
         !itm.isDeleted()) {
         if (committed->isLocked(ep_current_time())) {
@@ -3339,18 +3336,18 @@ VBucket::processSetInner(HashTable::FindUpdateResult& htRes,
         // instead.
         if (v->isCommitted() && !v->isCompleted() && itm.isPending()) {
             std::tie(v, notifyCtx) = addNewStoredValue(
-                    htRes.getHBL(), itm, queueItmCtx, GenerateRevSeqno::No);
+                    htRes, itm, queueItmCtx, GenerateRevSeqno::No);
             // Add should always be clean
             status = MutationStatus::WasClean;
         } else {
             std::tie(v, status, notifyCtx) =
-                    updateStoredValue(htRes.getHBL(), *v, itm, queueItmCtx);
+                    updateStoredValue(htRes, *v, itm, queueItmCtx);
         }
     } else {
         auto genRevSeqno = hasMetaData ? GenerateRevSeqno::No :
                            GenerateRevSeqno::Yes;
-        std::tie(v, notifyCtx) = addNewStoredValue(
-                htRes.getHBL(), itm, queueItmCtx, genRevSeqno);
+        std::tie(v, notifyCtx) =
+                addNewStoredValue(htRes, itm, queueItmCtx, genRevSeqno);
         itm.setRevSeqno(v->getRevSeqno());
         status = MutationStatus::WasClean;
     }
@@ -3369,7 +3366,7 @@ std::pair<AddStatus, boost::optional<VBNotifyCtx>> VBucket::processAdd(
                 "VBucket::processAdd: htLock not held for " +
                 getId().to_string());
     }
-    auto* committed = htRes.committed;
+    auto* committed = htRes.getSV();
     // must specifically check the committed item here rather than v
     // as v may be a completed prepare (only in ephemeral).
     if (committed && !committed->isDeleted() &&
@@ -3391,7 +3388,7 @@ std::pair<AddStatus, boost::optional<VBNotifyCtx>> VBucket::processAdd(
     // prepare for the SyncWrite. Any get will see the unpersisted delete
     // and return KEYNOENT.
     auto replacingCommittedItemWithPending =
-            v && v == htRes.committed && itm.isPending();
+            v && v == htRes.getSV() && itm.isPending();
     if (v && !replacingCommittedItemWithPending) {
         if (v->isTempInitialItem() && eviction == EvictionPolicy::Full &&
             maybeKeyExists) {
@@ -3430,7 +3427,7 @@ std::pair<AddStatus, boost::optional<VBNotifyCtx>> VBucket::processAdd(
         }
 
         std::tie(v, std::ignore, rv.second) =
-                updateStoredValue(htRes.getHBL(), *v, itm, queueItmCtx);
+                updateStoredValue(htRes, *v, itm, queueItmCtx);
     } else {
         if (itm.getBySeqno() != StoredValue::state_temp_init &&
             !replacingCommittedItemWithPending) {
@@ -3446,7 +3443,7 @@ std::pair<AddStatus, boost::optional<VBNotifyCtx>> VBucket::processAdd(
             updateRevSeqNoOfNewStoredValue(*v);
         } else {
             std::tie(v, rv.second) = addNewStoredValue(
-                    htRes.getHBL(), itm, queueItmCtx, GenerateRevSeqno::Yes);
+                    htRes, itm, queueItmCtx, GenerateRevSeqno::Yes);
         }
 
         itm.setRevSeqno(v->getRevSeqno());
@@ -3493,22 +3490,22 @@ VBucket::processSoftDelete(HashTable::FindUpdateResult& htRes,
                 PassiveDurabilityMonitor::Resolution::Commit,
                 v.getBySeqno() /* prepareSeqno */);
 
-        if (htRes.committed) {
+        if (htRes.getSV()) {
             // A committed value exists:
             // Firstly deal with the existing prepare
-            processImplicitlyCompletedPrepare(htRes.pending);
+            processImplicitlyCompletedPrepare(htRes);
             // Secondly proceed to delete the committed value
-            deleteValue = htRes.committed;
+            deleteValue = htRes.getSV();
         } else if (isReceivingDiskSnapshot()) {
             // No committed value, but we are processing a disk-snapshot
             // Must continue to create a delete so that we create an accurate
             // replica. htRes must no longer own the pending pointer as it's
             // going to be deleted below
-            htRes.pending.release();
+            htRes.releasePending();
         }
     }
 
-    return processSoftDeleteInner(htRes.getHBL(),
+    return processSoftDeleteInner(htRes,
                                   *deleteValue,
                                   cas,
                                   metadata,
@@ -3519,7 +3516,7 @@ VBucket::processSoftDelete(HashTable::FindUpdateResult& htRes,
 }
 
 std::tuple<MutationStatus, StoredValue*, boost::optional<VBNotifyCtx>>
-VBucket::processSoftDeleteInner(const HashTable::HashBucketLock& hbl,
+VBucket::processSoftDeleteInner(HashTable::FindUpdateResult& htRes,
                                 StoredValue& v,
                                 uint64_t cas,
                                 const ItemMetaData& metadata,
@@ -3583,23 +3580,23 @@ VBucket::processSoftDeleteInner(const HashTable::HashBucketLock& hbl,
             itm->setPendingSyncWrite(requirements);
 
             std::tie(newSv, std::ignore, notifyCtx) =
-                    updateStoredValue(hbl, v, *itm, queueItmCtx);
+                    updateStoredValue(htRes, v, *itm, queueItmCtx);
             return std::make_tuple(rv, newSv, notifyCtx);
         }
 
-        auto deletedPrepare =
-                ht.unlocked_createSyncDeletePrepare(hbl, v, deleteSource);
+        auto deletedPrepare = ht.unlocked_createSyncDeletePrepare(
+                htRes.getHBL(), v, deleteSource);
         auto itm = deletedPrepare->toItem(getId(),
                                           StoredValue::HideLockedCas::No,
                                           StoredValue::IncludeValue::Yes,
                                           requirements);
-        std::tie(newSv, notifyCtx) =
-                addNewStoredValue(hbl, *itm, queueItmCtx, GenerateRevSeqno::No);
+        std::tie(newSv, notifyCtx) = addNewStoredValue(
+                htRes, *itm, queueItmCtx, GenerateRevSeqno::No);
         return std::make_tuple(rv, newSv, notifyCtx);
     }
 
     std::tie(newSv, delStatus, notifyCtx) =
-            softDeleteStoredValue(hbl,
+            softDeleteStoredValue(htRes,
                                   v,
                                   /*onlyMarkDeleted*/ false,
                                   queueItmCtx,
@@ -3621,21 +3618,21 @@ std::tuple<MutationStatus, StoredValue*, VBNotifyCtx>
 VBucket::processExpiredItem(
         HashTable::FindUpdateResult& htRes,
         const Collections::VB::Manifest::CachingReadHandle& cHandle) {
-    if (!htRes.getHBL().getHTLock()) {
+    if (!htRes.isLocked()) {
         throw std::invalid_argument(
                 "VBucket::processExpiredItem: htLock not held for " +
                 getId().to_string());
     }
 
-    if (htRes.pending && !htRes.pending->isCompleted()) {
+    if (htRes.getPending() && !htRes.getPending()->isCompleted()) {
         return std::make_tuple(MutationStatus::IsPendingSyncWrite,
-                               htRes.committed,
+                               htRes.getSV(),
                                VBNotifyCtx{});
     }
 
     // Callers should have ensured that v exists
-    Expects(htRes.committed);
-    auto& v = *htRes.committed;
+    Expects(htRes.getSV());
+    auto& v = *htRes.getSV();
 
     if (v.isTempInitialItem() && eviction == EvictionPolicy::Full) {
         return std::make_tuple(
@@ -3659,7 +3656,7 @@ VBucket::processExpiredItem(
     StoredValue* newSv;
     DeletionStatus delStatus;
     std::tie(newSv, delStatus, notifyCtx) =
-            softDeleteStoredValue(htRes.getHBL(),
+            softDeleteStoredValue(htRes,
                                   v,
                                   onlyMarkDeleted,
                                   VBQueueItemCtx{},
@@ -4017,8 +4014,8 @@ void VBucket::addSyncWriteForRollback(const Item& item) {
     // Search the HashTable for an existing prepare, it should not exist.
     Expects(item.isPending());
     auto htRes = ht.findItem(item);
-    Expects(!htRes.storedValue);
-    ht.unlocked_addNewStoredValue(htRes.lock, item);
+    Expects(!htRes.getSV());
+    ht.unlocked_addNewStoredValue(htRes.getHBL(), item);
 }
 
 bool VBucket::isReceivingDiskSnapshot() const {

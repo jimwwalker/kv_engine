@@ -42,7 +42,7 @@ void PersistenceCallback::operator()(TransactionContext& txCtx,
         // and Seqno (MB-39280) as the persisted item.
         {
             auto res = vbucket.ht.findItem(*queuedItem);
-            auto* v = res.storedValue;
+            auto* v = res.getSV();
             if (v && (v->getBySeqno() == queuedItem->getBySeqno())) {
                 Expects(v->isDirty());
                 v->markClean();
