@@ -1856,6 +1856,60 @@ scan_error_t MagmaKVStore::scan(BySeqnoScanContext& ctx) const {
     return scan_success;
 }
 
+scan_error_t MagmaKVStore::scanAllVersions(BySeqnoScanContext& ctx) const {
+    if (ctx.lastReadSeqno == ctx.maxSeqno) {
+        logger->TRACE(
+                "MagmaKVStore::scanAllVersions {} lastReadSeqno:{} == "
+                "maxSeqno:{}",
+                ctx.vbid,
+                ctx.lastReadSeqno,
+                ctx.maxSeqno);
+        return scan_success;
+    }
+    auto startSeqno = ctx.startSeqno;
+    if (ctx.lastReadSeqno != 0) {
+        startSeqno = ctx.lastReadSeqno + 1;
+    }
+    auto& mctx = dynamic_cast<MagmaScanContext&>(ctx);
+    for (mctx.itr->SeekAllVersions(startSeqno, ctx.maxSeqno); mctx.itr->Valid();
+         mctx.itr->Next()) {
+        Slice keySlice, metaSlice, valSlice;
+        uint64_t seqno;
+        mctx.itr->GetRecord(keySlice, metaSlice, valSlice, seqno);
+        const auto result = scanOne(
+                ctx,
+                keySlice,
+                seqno,
+                metaSlice,
+                valSlice,
+                [](Slice&) -> Status {
+                    throw std::runtime_error(
+                            "scanAllVersions(BySeqno) tried to read the value");
+                });
+
+        switch (result.code) {
+        case MagmaScanResult::Status::Success:
+        case MagmaScanResult::Status::Again:
+        case MagmaScanResult::Status::Failed:
+            return scan_error_t(result.code);
+        case MagmaScanResult::Status::Next:
+            // Update the lastReadSeqno as this is the 'resume' point
+            ctx.lastReadSeqno = seqno;
+            continue;
+        }
+    }
+
+    if (!mctx.itr->GetStatus().IsOK()) {
+        logger->warn(
+                "MagmaKVStore::scanAllVersions(BySeq) scan failed {} error:{}",
+                ctx.vbid,
+                mctx.itr->GetStatus().String());
+
+        return scan_failed;
+    }
+    return scan_success;
+}
+
 scan_error_t MagmaKVStore::scan(ByIdScanContext& ctx) const {
     // Process each range until it's completed
     for (auto& range : ctx.ranges) {

@@ -57,6 +57,9 @@ public:
                    magma::Slice& meta,
                    magma::Slice& value,
                    magma::Magma::SeqNo& seqno) override;
+
+    magma::Status SeekAllVersions(const magma::Magma::SeqNo startSeqno,
+                                  const magma::Magma::SeqNo endSeqno);
     std::string to_string() const;
 
 private:

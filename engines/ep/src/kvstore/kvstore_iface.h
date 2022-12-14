@@ -522,6 +522,15 @@ public:
     virtual scan_error_t scan(BySeqnoScanContext& sctx) const = 0;
 
     /**
+     * Run a BySeqno scan that retrieves all versions of a document from the
+     * configured "window of history".
+     *
+     * @param sctx non-const reference to the context, internal callbacks may
+     *        write to the object as progress is made through the scan
+     */
+    virtual scan_error_t scanAllVersions(BySeqnoScanContext& sctx) const = 0;
+
+    /**
      * Run a ById scan
      * @param sctx non-const reference to the context, internal callbacks may
      *        write to the object as progress is made through the scan

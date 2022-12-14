@@ -60,6 +60,14 @@ void DomainAwareSeqIterator::Seek(const magma::Magma::SeqNo startSeqno,
     return itr->Seek(startSeqno, endSeqno);
 }
 
+magma::Status DomainAwareSeqIterator::SeekAllVersions(
+        const magma::Magma::SeqNo startSeqno,
+        const magma::Magma::SeqNo endSeqno) {
+    cb::UseArenaMallocSecondaryDomain domainGuard;
+    // @todo: Change to use SeekAllVersions when available
+    return itr->Seek(startSeqno, endSeqno);
+}
+
 std::string DomainAwareSeqIterator::to_string() const {
     return fmt::format("{:p}", fmt::ptr(itr.get()));
 }
