@@ -62,6 +62,7 @@ ScanContext::ScanContext(
       logger(getGlobalBucketLogger().get()),
       collectionsContext(droppedCollections),
       maxSeqno(maxSeqno),
+      historyStartSeqno(maxSeqno / 2), // temp: pretend history is 1/2 of index
       callback(std::move(cb)),
       lookup(std::move(cl)) {
     Expects(callback != nullptr);

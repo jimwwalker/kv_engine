@@ -85,6 +85,7 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
         transitionState(backfill_state_done);
         return backfill_finished;
     }
+
     // Set the persistedCompletedSeqno of DiskCallback taken from the
     // persistedCompletedSeqno of the scan context so it's consistent with
     // the file handle
@@ -141,6 +142,13 @@ backfill_status_t DCPBackfillBySeqnoDisk::create() {
 
         stream->setDead(cb::mcbp::DcpStreamEndStatus::Rollback);
         transitionState(backfill_state_done);
+        return backfill_success;
+    }
+
+    // Check if a history scan is required or if only a history scan is required
+    if (setupForHistoryScan(*stream, *scanCtx, startSeqno)) {
+        // The scan is completely inside the history window
+        transitionState(backfill_state_scanning_history_snapshot);
     } else {
         bool markerSent = markDiskSnapshot(*stream, *scanCtx, *kvstore);
 
@@ -177,8 +185,12 @@ backfill_status_t DCPBackfillBySeqnoDisk::scan() {
     auto& bySeqnoCtx = dynamic_cast<BySeqnoScanContext&>(*scanCtx);
     switch (kvstore->scan(bySeqnoCtx)) {
     case scan_success:
-        stream->setBackfillScanLastRead(scanCtx->lastReadSeqno);
-        transitionState(backfill_state_completing);
+        if (historyScan) {
+            transitionState(backfill_state_scanning_history_snapshot);
+        } else {
+            stream->setBackfillScanLastRead(scanCtx->lastReadSeqno);
+            transitionState(backfill_state_completing);
+        }
         return backfill_success;
     case scan_again:
         // Scan should run again (e.g. was paused by callback)
@@ -273,7 +285,8 @@ bool DCPBackfillBySeqnoDisk::markDiskSnapshot(ActiveStream& stream,
                                    scanCtx.maxSeqno,
                                    scanCtx.persistedCompletedSeqno,
                                    scanCtx.maxVisibleSeqno,
-                                   scanCtx.timestamp);
+                                   scanCtx.timestamp,
+                                   ActiveStream::SnapshotType::NoHistory);
 }
 
 // This function is used for backfills where the stream is configured as a
@@ -348,7 +361,8 @@ bool DCPBackfillBySeqnoDisk::markLegacyDiskSnapshot(ActiveStream& stream,
                                        scanCtx.maxSeqno,
                                        scanCtx.persistedCompletedSeqno,
                                        scanCtx.maxVisibleSeqno,
-                                       scanCtx.timestamp);
+                                       scanCtx.timestamp,
+                                       ActiveStream::SnapshotType::NoHistory);
     }
 
     // Need to figure out the maxSeqno/maxVisibleSeqno for calling
@@ -433,7 +447,12 @@ bool DCPBackfillBySeqnoDisk::markLegacyDiskSnapshot(ActiveStream& stream,
         if (gv.item->isCommitted()) {
             // Step 3. If this is a committed item, done.
             return stream.markDiskSnapshot(
-                    startSeqno, stats.highSeqno, {}, stats.highSeqno, {});
+                    startSeqno,
+                    stats.highSeqno,
+                    {},
+                    stats.highSeqno,
+                    {},
+                    ActiveStream::SnapshotType::NoHistory);
         }
     } else if (gv.getStatus() != cb::engine_errc::no_such_key) {
         stream.log(spdlog::level::level_enum::warn,
@@ -546,8 +565,12 @@ bool DCPBackfillBySeqnoDisk::markLegacyDiskSnapshot(ActiveStream& stream,
             cb.maxVisibleSeqno < backfillRangeEndSeqno) {
             stream.setEndSeqno(cb.maxVisibleSeqno);
         }
-        return stream.markDiskSnapshot(
-                startSeqno, cb.maxVisibleSeqno, {}, cb.maxVisibleSeqno, {});
+        return stream.markDiskSnapshot(startSeqno,
+                                       cb.maxVisibleSeqno,
+                                       {},
+                                       cb.maxVisibleSeqno,
+                                       {},
+                                       ActiveStream::SnapshotType::NoHistory);
     } else {
         endStreamIfNeeded();
         // Found nothing committed at all

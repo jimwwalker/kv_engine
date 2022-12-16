@@ -18,6 +18,7 @@
 
 class ActiveStream;
 class KVBucket;
+class KVStoreIface;
 class VBucket;
 enum class ValueFilter;
 
@@ -25,6 +26,7 @@ enum class ValueFilter;
 enum backfill_state_t {
     backfill_state_init,
     backfill_state_scanning,
+    backfill_state_scanning_history_snapshot,
     backfill_state_completing,
     backfill_state_done
 };
@@ -87,6 +89,10 @@ public:
 
     ~DCPBackfillDisk() override;
 
+    backfill_state_t getState() const {
+        return state;
+    }
+
 protected:
     backfill_status_t run() override;
     void cancel() override;
@@ -111,10 +117,51 @@ protected:
      */
     virtual void complete(bool cancelled) = 0;
 
+    bool scanHistoryCreate(ActiveStream& stream);
+
+    /**
+     * Run the scan but scan only the "history section"
+     */
+    backfill_status_t scanHistory();
+
+    /**
+     * To be called from ByID or BySeq setup paths to check if a history scan
+     * must follow the initial scan or if the initial scan is to be skipped
+     * when the scan range is wholly inside the history window.
+     *
+     * @param stream the ActiveStream associated with the backfill
+     * @param scanCtx the context created for the first stage of the scan
+     * @param startSeqno the startSeqno of the scan
+     */
+    bool setupForHistoryScan(ActiveStream& stream,
+                             ScanContext& scanCtx,
+                             uint64_t startSeqno);
+
+    bool createHistoryScanContext();
+
     std::mutex lock;
     backfill_state_t state = backfill_state_init;
 
     KVBucket& bucket;
 
     std::unique_ptr<ScanContext> scanCtx;
+
+    uint64_t finalSeqno{0};
+
+    // When ChangeStreams are enabled backfill may generate two snapshots
+    // deduplicated and non-deduplicated (e.g. last 1 hour of updates).
+    struct HistoryScanCtx {
+        bool createScanContext(uint64_t startSeqno,
+                               const KVStoreIface&,
+                               ScanContext&);
+
+        // Record the snapshotMaxSeqno (which the history scan will reach)
+        uint64_t snapshotMaxSeqno;
+
+        // A ScanContext which "drives" the history scan
+        std::unique_ptr<ScanContext> scanCtx;
+    };
+
+    // If a history scan is required this optional will be initialised.
+    std::optional<HistoryScanCtx> historyScan;
 };

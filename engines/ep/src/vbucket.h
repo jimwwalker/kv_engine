@@ -1502,6 +1502,8 @@ public:
      * @param stream Shared ptr to the stream for which this backfill obj is
      *               created
      * @param cid CollectionID to scan for
+     * @param enableHistorySnapshot true if the backfill should provide a
+     *        history snapshot when possible.
      *
      * @return pointer to the backfill object created. Caller to own this
      *         object and hence must handle deletion.

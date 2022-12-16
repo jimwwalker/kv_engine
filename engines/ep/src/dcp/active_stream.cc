@@ -279,7 +279,8 @@ bool ActiveStream::markDiskSnapshot(uint64_t startSeqno,
                                     uint64_t endSeqno,
                                     std::optional<uint64_t> highCompletedSeqno,
                                     uint64_t maxVisibleSeqno,
-                                    std::optional<uint64_t> timestamp) {
+                                    std::optional<uint64_t> timestamp,
+                                    SnapshotType type) {
     {
         std::unique_lock<std::mutex> lh(streamMutex);
 
@@ -361,24 +362,32 @@ bool ActiveStream::markDiskSnapshot(uint64_t startSeqno,
         auto mvsToSend = supportSyncReplication()
                                  ? std::make_optional(maxVisibleSeqno)
                                  : std::nullopt;
+
+        auto flags = MARKER_FLAG_DISK | MARKER_FLAG_CHK;
+
+        if (type == SnapshotType::History) {
+            flags |= (MARKER_FLAG_HISTORY |
+                      MARKER_FLAG_MAY_CONTAIN_DUPLICATE_KEYS);
+        }
+
         log(spdlog::level::level_enum::info,
             "{} ActiveStream::markDiskSnapshot: Sending disk snapshot with "
-            "start {}, end {}, and high completed {}, max visible {}",
+            "start:{}, end:{}, flags:{:x}, hcs:{}, mvs:{}",
             logPrefix,
             startSeqno,
             endSeqno,
+            flags,
             to_string_or_none(hcsToSend),
             to_string_or_none(mvsToSend));
-        pushToReadyQ(std::make_unique<SnapshotMarker>(
-                opaque_,
-                vb_,
-                startSeqno,
-                endSeqno,
-                MARKER_FLAG_DISK | MARKER_FLAG_CHK,
-                hcsToSend,
-                mvsToSend,
-                timestamp,
-                sid));
+        pushToReadyQ(std::make_unique<SnapshotMarker>(opaque_,
+                                                      vb_,
+                                                      startSeqno,
+                                                      endSeqno,
+                                                      flags,
+                                                      hcsToSend,
+                                                      mvsToSend,
+                                                      timestamp,
+                                                      sid));
         lastSentSnapEndSeqno.store(endSeqno, std::memory_order_relaxed);
 
         if (!isDiskOnly()) {

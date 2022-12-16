@@ -420,6 +420,9 @@ public:
     BucketLogger* logger;
     const Collections::VB::ScanContext collectionsContext;
     uint64_t maxSeqno;
+    // undecided if this will be here or via a second call - convenient to have
+    // here
+    uint64_t historyStartSeqno;
 
     /**
      * Cumulative count of bytes read from disk during this scan. Counts
@@ -433,7 +436,6 @@ public:
      */
     size_t diskBytesRead{0};
 
-protected:
     std::unique_ptr<StatusCallback<GetValue>> callback;
     std::unique_ptr<StatusCallback<CacheLookup>> lookup;
 };
@@ -521,6 +523,12 @@ public:
     // Key should be set by KVStore when a scan must be paused, this is where
     // a scan can resume from
     DiskDocKey lastReadKey;
+};
+
+class ByIdHistoryScanContext : public ScanContext {
+public:
+    // Constructed from an existing scan context and steals some required data
+    ByIdHistoryScanContext(ScanContext&);
 };
 
 struct FileStats {

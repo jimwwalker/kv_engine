@@ -190,6 +190,8 @@ public:
 
     void setBackfillRemaining_UNLOCKED(size_t value);
 
+    enum SnapshotType { History, NoHistory };
+
     /**
      * Queues a snapshot marker to be sent - only if there are items in
      * the backfill range which will be sent.
@@ -206,6 +208,7 @@ public:
      * @param maxVisibleSeqno seqno of last visible (commit/mutation/system
      * event) item
      * @param timestamp of the disk snapshot (if available)
+     * @param type if the snapshot is a history or non-history snapshot
      * @return If the stream has queued a snapshot marker. If this is false, the
      *         stream determined none of the items in the backfill would be sent
      */
@@ -213,7 +216,8 @@ public:
                           uint64_t endSeqno,
                           std::optional<uint64_t> highCompletedSeqno,
                           uint64_t maxVisibleSeqno,
-                          std::optional<uint64_t> timestamp);
+                          std::optional<uint64_t> timestamp,
+                          SnapshotType source);
 
     /**
      * Queues a single "Out of Seqno Order" marker with the 'start' flag
