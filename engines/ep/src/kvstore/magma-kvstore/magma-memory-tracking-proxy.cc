@@ -510,7 +510,9 @@ magma::Status MagmaMemoryTrackingProxy::WriteDocs(
                             docOperations,
                             kvsRev,
                             wrappedDocCallback,
-                            wrappedPostCallback);
+                            wrappedPostCallback,
+                            // @todo: don't force this - must be passed down
+                            magma::Magma::HistoryMode::Enabled);
 }
 
 magma::Status MagmaMemoryTrackingProxy::NewCheckpoint(

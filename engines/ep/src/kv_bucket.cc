@@ -3098,6 +3098,11 @@ std::chrono::seconds KVBucket::getHistoryRetentionSeconds() const {
 
 void KVBucket::setHistoryRetentionBytes(size_t bytes) {
     historyRetentionBytes = bytes;
+    for (auto& i : vbMap.shards) {
+        KVShard* shard = i.get();
+        shard->getRWUnderlying()->setHistoryRetentionBytes(bytes);
+    }
+
 }
 
 size_t KVBucket::getHistoryRetentionBytes() const {

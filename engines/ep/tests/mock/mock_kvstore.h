@@ -225,6 +225,7 @@ public:
                 prepareToRollback,
                 (Vbid vbid),
                 (override));
+    MOCK_METHOD(void, setHistoryRetentionBytes, (size_t size), (override));
 
     /**
      * Helper function to replace the existing read-write KVStore in the given

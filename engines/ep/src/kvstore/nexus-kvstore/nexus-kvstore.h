@@ -143,6 +143,7 @@ public:
     void delSystemEvent(TransactionContext& txnCtx,
                         const queued_item item) override;
     void endTransaction(Vbid vbid) override;
+    void setHistoryRetentionBytes(size_t size) override;
 
     /**
      * Unit test only hook called before we compact the first KVStore. Public as

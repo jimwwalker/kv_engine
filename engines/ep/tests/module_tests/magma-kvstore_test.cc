@@ -19,6 +19,7 @@
 #include "test_helpers.h"
 #include "thread_gate.h"
 #include <executor/workload.h>
+#include <spdlog/fmt/fmt.h>
 
 using namespace std::string_literals;
 using namespace testing;
@@ -93,7 +94,8 @@ TEST_F(MagmaKVStoreRollbackTest, Rollback) {
         auto ctx =
                 kvstore->begin(vbid, std::make_unique<PersistenceCallback>());
         for (int j = 0; j < 5; j++) {
-            auto key = makeStoredDocKey("key" + std::to_string(seqno));
+            // pad the key so key09 < key10
+            auto key = makeStoredDocKey(fmt::format("key_{:02}", seqno));
             auto qi = makeCommittedItem(key, "value");
             flush.proposedVBState.lastSnapStart = seqno;
             flush.proposedVBState.lastSnapEnd = seqno;
@@ -103,22 +105,22 @@ TEST_F(MagmaKVStoreRollbackTest, Rollback) {
         kvstore->commit(std::move(ctx), flush);
     }
 
-    auto rv = kvstore->get(makeDiskDocKey("key5"), Vbid(0));
+    auto rv = kvstore->get(makeDiskDocKey("key_05"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), cb::engine_errc::success);
-    rv = kvstore->get(makeDiskDocKey("key6"), Vbid(0));
+    rv = kvstore->get(makeDiskDocKey("key_06"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), cb::engine_errc::success);
 
     auto rollbackResult =
             kvstore->rollback(Vbid(0), 5, std::make_unique<CustomRBCallback>());
     ASSERT_TRUE(rollbackResult.success);
 
-    rv = kvstore->get(makeDiskDocKey("key1"), Vbid(0));
+    rv = kvstore->get(makeDiskDocKey("key_01"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), cb::engine_errc::success);
-    rv = kvstore->get(makeDiskDocKey("key5"), Vbid(0));
+    rv = kvstore->get(makeDiskDocKey("key_05"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), cb::engine_errc::success);
-    rv = kvstore->get(makeDiskDocKey("key6"), Vbid(0));
+    rv = kvstore->get(makeDiskDocKey("key_06"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), cb::engine_errc::no_such_key);
-    rv = kvstore->get(makeDiskDocKey("key10"), Vbid(0));
+    rv = kvstore->get(makeDiskDocKey("key_10"), Vbid(0));
     EXPECT_EQ(rv.getStatus(), cb::engine_errc::no_such_key);
 
     auto vbs = kvstore->getCachedVBucketState(Vbid(0));
@@ -138,7 +140,8 @@ TEST_F(MagmaKVStoreRollbackTest, RollbackNoValidCheckpoint) {
         auto ctx =
                 kvstore->begin(vbid, std::make_unique<PersistenceCallback>());
         for (int j = 0; j < 5; j++) {
-            auto key = makeStoredDocKey("key" + std::to_string(seqno));
+            // pad the key so key09 < key10
+            auto key = makeStoredDocKey(fmt::format("key_{:02}", seqno));
             auto qi = makeCommittedItem(key, "value");
             qi->setBySeqno(seqno++);
             kvstore->set(*ctx, qi);
@@ -618,17 +621,6 @@ public:
 TEST_F(MagmaKVStoreTest, readOnlyMode) {
     initialize_kv_store(kvstore.get(), vbid);
 
-    auto doWrite = [this](uint64_t seqno, bool expected) {
-        auto ctx =
-                kvstore->begin(vbid, std::make_unique<PersistenceCallback>());
-        auto qi = makeCommittedItem(makeStoredDocKey("key"), "value");
-        qi->setBySeqno(seqno);
-        flush.proposedVBState.lastSnapStart = seqno;
-        flush.proposedVBState.lastSnapEnd = seqno;
-        kvstore->set(*ctx, qi);
-        EXPECT_EQ(expected, kvstore->commit(std::move(ctx), flush));
-    };
-
     // Add an item to test that we can read it
     doWrite(1, true /*success*/);
 
@@ -714,10 +706,11 @@ TEST_F(MagmaKVStoreTest, makeFileHandleSyncFailed) {
     EXPECT_FALSE(fileHandle);
 }
 
-// @todo: This is a basic test that will be expanded to cover scanning history
-// at the moment this test is equivalent to "scan"
-TEST_F(MagmaKVStoreTest, scanAllVersions) {
+// Test scanAllVersions returns the expected number of keys and the expected
+// history start seqno.
+TEST_F(MagmaKVStoreTest, scanAllVersions1) {
     initialize_kv_store(kvstore.get(), vbid);
+    kvstore->setHistoryRetentionBytes(1024 * 1024);
     std::vector<queued_item> expectedItems;
     expectedItems.push_back(doWrite(1, true, "k1"));
     expectedItems.push_back(doWrite(2, true, "k2"));
@@ -735,11 +728,82 @@ TEST_F(MagmaKVStoreTest, scanAllVersions) {
             ValueFilter::VALUES_COMPRESSED,
             SnapshotSource::Head);
     ASSERT_TRUE(bySeq);
-    // @todo: This must be the expected seqno where history begins
-    EXPECT_EQ(0, bySeq->historyStartSeqno);
+    EXPECT_EQ(1, bySeq->historyStartSeqno);
     EXPECT_EQ(scan_success, kvstore->scanAllVersions(*bySeq));
 
     auto& cb =
             static_cast<CustomCallback<GetValue>&>(bySeq->getValueCallback());
     EXPECT_EQ(2, cb.getProcessedCount());
+}
+
+// Test scanAllVersions returns the expected number of keys and the expected
+// history start seqno. This test uses the same key for all mutations.
+TEST_F(MagmaKVStoreTest, scanAllVersions2) {
+    initialize_kv_store(kvstore.get(), vbid);
+    kvstore->setHistoryRetentionBytes(1024 * 1024);
+    std::vector<queued_item> expectedItems;
+    // doWrite writes the same key
+    expectedItems.push_back(doWrite(1, true));
+    expectedItems.push_back(doWrite(2, true));
+    auto validate = [&expectedItems](GetValue gv) {
+        ASSERT_TRUE(gv.item);
+        ASSERT_GE(expectedItems.size(), size_t(gv.item->getBySeqno()));
+        EXPECT_EQ(*expectedItems[gv.item->getBySeqno() - 1], *gv.item);
+    };
+    auto bySeq = kvstore->initBySeqnoScanContext(
+            std::make_unique<CustomCallback<GetValue>>(validate),
+            std::make_unique<CustomCallback<CacheLookup>>(),
+            vbid,
+            1,
+            DocumentFilter::ALL_ITEMS,
+            ValueFilter::VALUES_COMPRESSED,
+            SnapshotSource::Head);
+    ASSERT_TRUE(bySeq);
+    EXPECT_EQ(1, bySeq->historyStartSeqno);
+    EXPECT_EQ(scan_success, kvstore->scanAllVersions(*bySeq));
+
+    auto& cb =
+            static_cast<CustomCallback<GetValue>&>(bySeq->getValueCallback());
+    EXPECT_EQ(2, cb.getProcessedCount());
+}
+
+// ScanContext now exposes historyStartSeqno which is tracked by magma provided
+// it is retaining history.
+TEST_F(MagmaKVStoreTest, historyStartSeqno) {
+    initialize_kv_store(kvstore.get(), vbid);
+
+    auto validate = [this](uint64_t expectedSeqno) {
+        auto bySeq = kvstore->initBySeqnoScanContext(
+                std::make_unique<GetCallback>(true /*expectcompressed*/),
+                std::make_unique<KVStoreTestCacheCallback>(1, 5, Vbid(0)),
+                vbid,
+                1,
+                DocumentFilter::ALL_ITEMS,
+                ValueFilter::VALUES_COMPRESSED,
+                SnapshotSource::Head);
+        auto byId = kvstore->initByIdScanContext(
+                std::make_unique<GetCallback>(true /*expectcompressed*/),
+                std::make_unique<KVStoreTestCacheCallback>(1, 5, Vbid(0)),
+                vbid,
+                {},
+                DocumentFilter::ALL_ITEMS,
+                ValueFilter::VALUES_COMPRESSED);
+        ASSERT_TRUE(bySeq);
+        ASSERT_TRUE(byId);
+
+        EXPECT_EQ(expectedSeqno, bySeq->historyStartSeqno);
+        EXPECT_EQ(bySeq->historyStartSeqno, byId->historyStartSeqno);
+    };
+
+    kvstore->setHistoryRetentionBytes(0);
+    validate(0);
+    doWrite(2, true); // write seqno 2
+    validate(0);
+    kvstore->setHistoryRetentionBytes(1024 * 1024);
+    doWrite(3, true); // write seqno 3
+    validate(3);
+    doWrite(4, true); // write seqno 4
+    validate(3); // history still starts at 3
+    kvstore->setHistoryRetentionBytes(0);
+    validate(0); // back to no history
 }

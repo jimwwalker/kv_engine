@@ -4542,3 +4542,10 @@ std::unique_ptr<TransactionContext> CouchKVStore::begin(
     return std::make_unique<CouchKVStoreTransactionContext>(
             *this, vbid, std::move(pcb));
 }
+
+void CouchKVStore::setHistoryRetentionBytes(size_t size) {
+    // no-op.
+    // Note: StorageProperties reports that history scan is not supported, so
+    // we accept this attempt to set size, but will fail if a scanAllVersions
+    // is attempted.
+}

@@ -3299,3 +3299,10 @@ Vbid::id_type NexusKVStore::getCacheSlot(Vbid vbid) const {
 uint64_t NexusKVStore::getPurgeSeqno(Vbid vbid) const {
     return purgeSeqno.at(getCacheSlot(vbid));
 }
+
+void NexusKVStore::setHistoryRetentionBytes(size_t size) {
+    // no-op.
+    // Note: StorageProperties reports that history scan is not supported, so
+    // we accept this attempt to set size, but will fail if a scanAllVersions
+    // is attempted.
+}

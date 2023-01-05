@@ -88,7 +88,8 @@ public:
 
     void applyEvents(TransactionContext& txnCtx,
                      VB::Commit& commitData,
-                     const CollectionsManifest& cm) {
+                     const CollectionsManifest& cm,
+                     bool writeEventNow = true) {
         manifest.update(*vbucket, makeManifest(cm));
 
         std::vector<queued_item> events;
@@ -96,17 +97,44 @@ public:
 
         for (auto& ev : events) {
             commitData.collections.recordSystemEvent(*ev);
+            if (writeEventNow) {
+                if (ev->isDeleted()) {
+                    kvstore->delSystemEvent(txnCtx, ev);
+                } else {
+                    kvstore->setSystemEvent(txnCtx, ev);
+                }
+            }
+        }
+        if (!writeEventNow) {
+            std::move(events.begin(),
+                      events.end(),
+                      std::back_inserter(allEvents));
+        }
+    }
+
+    void applyEvents(TransactionContext& txnCtx,
+                     const CollectionsManifest& cm,
+                     bool writeEventNow = true) {
+        return applyEvents(txnCtx, flush, cm, writeEventNow);
+    }
+
+    // This function is to be used in conjunction with applyEvents when
+    // writeEventNow=false allowing a test to better emulate the flusher and
+    // write keys in a sorted batch. Tests can applyEvents so that collection
+    // metadata management does updates, but defer the system event writing
+    // until ready to commit
+    void sortAndWriteAllEvents(TransactionContext& txnCtx) {
+        std::sort(allEvents.begin(),
+                  allEvents.end(),
+                  OrderItemsForDeDuplication{});
+        for (auto& ev : allEvents) {
             if (ev->isDeleted()) {
                 kvstore->delSystemEvent(txnCtx, ev);
             } else {
                 kvstore->setSystemEvent(txnCtx, ev);
             }
         }
-    }
-
-    void applyEvents(TransactionContext& txnCtx,
-                     const CollectionsManifest& cm) {
-        applyEvents(txnCtx, flush, cm);
+        allEvents.clear();
     }
 
     void checkUid(const Collections::KVStore::Manifest& md,
@@ -219,7 +247,8 @@ public:
         VB::Commit commitData(manifest);
         auto ctx = kvstore->begin(vbucket->getId(),
                                   std::make_unique<PersistenceCallback>());
-        applyEvents(*ctx, commitData, cm);
+        applyEvents(*ctx, commitData, cm, false);
+        sortAndWriteAllEvents(*ctx);
         kvstore->commit(std::move(ctx), commitData);
         auto [status, md] = kvstore->getCollectionsManifest(Vbid(0));
         EXPECT_TRUE(status);
@@ -235,6 +264,7 @@ protected:
     VBucketPtr vbucket;
     WriteCallback wc;
     DeleteCallback dc;
+    std::vector<queued_item> allEvents;
 };
 
 class CollectionsKVStoreTest
@@ -578,19 +608,21 @@ public:
         auto ctx = kvstore->begin(vbucket->getId(),
                                   std::make_unique<PersistenceCallback>());
         cm.add(targetScope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
         cm.add(target, targetScope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
+        sortAndWriteAllEvents(*ctx);
         kvstore->commit(std::move(ctx), flush);
     }
 
     // runs a flush batch that will leave the target collection in dropped state
     void dropScope() {
         openScopeOpenCollection();
-        cm.remove(targetScope);
         auto ctx = kvstore->begin(vbucket->getId(),
                                   std::make_unique<PersistenceCallback>());
-        applyEvents(*ctx, cm);
+        cm.remove(targetScope);
+        applyEvents(*ctx, cm, false);
+        sortAndWriteAllEvents(*ctx);
         kvstore->commit(std::move(ctx), flush);
     }
 
@@ -704,9 +736,9 @@ void CollectionRessurectionKVStoreTest::resurectionScopesTest() {
                               std::make_unique<PersistenceCallback>());
     if (!cm.exists(targetScope)) {
         cm.add(targetScope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
         cm.add(target, targetScope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
     }
 
     std::string expectedName = target.name;
@@ -715,22 +747,23 @@ void CollectionRessurectionKVStoreTest::resurectionScopesTest() {
     // iterate cycles of remove/add
     for (int ii = 0; ii < getCycles(); ii++) {
         cm.remove(scope);
-        applyEvents(*ctx, cm);
-
+        applyEvents(*ctx, cm, false);
         if (resurectWithNewName()) {
             expectedName = target.name + "_" + std::to_string(ii);
             scope.name = targetScope.name + "_" + std::to_string(ii);
         }
         cm.add(scope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
         cm.add({expectedName, target.uid}, scope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
     }
 
     if (dropCollectionAtEnd()) {
         cm.remove(scope);
-        applyEvents(*ctx, cm);
+        applyEvents(*ctx, cm, false);
     }
+
+    sortAndWriteAllEvents(*ctx);
     kvstore->commit(std::move(ctx), flush);
 
     // Now validate

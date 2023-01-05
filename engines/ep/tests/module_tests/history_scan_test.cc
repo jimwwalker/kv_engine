@@ -34,7 +34,11 @@ public:
         CollectionsDcpParameterizedTest::SetUp();
         // To allow tests to set where history begins, use MockMagmaKVStore
         replaceMagmaKVStore();
-        // @todo: Setup to retain history using setHistoryRetentionBytes
+        // For all tests, use big history window - all tests here will use a
+        // combination of magma's history retention + setHistoryStartSeqno to
+        // configure the test.
+        store->getRWUnderlying(vbid)->setHistoryRetentionBytes(100 * 1024 *
+                                                               1024);
     }
 
     void setHistoryStartSeqno(uint64_t seqno) {
@@ -109,9 +113,6 @@ void HistoryScanTest::validateSnapshot(
 // Validate that 1 disk snapshot is produced and that it is marked as history
 // and duplicates
 TEST_P(HistoryScanTest, basic_unique) {
-    // The entire disk is "history", from seqno 1
-    setHistoryStartSeqno(1);
-
     std::vector<Item> items;
     items.emplace_back(store_item(
             vbid, makeStoredDocKey("a", CollectionID::Default), "val-a"));
@@ -143,23 +144,22 @@ TEST_P(HistoryScanTest, basic_unique) {
                      items);
 }
 
-// Following test cannot be enabled until magma history support exists
-TEST_P(HistoryScanTest, DISABLED_basic_duplicates) {
+TEST_P(HistoryScanTest, basic_duplicates) {
     CollectionsManifest cm;
     setCollections(cookie, cm.add(CollectionEntry::vegetable, {}, true));
     std::vector<Item> items;
     // Create a "dummy" Item that marks where the system-event is expected
-    items.emplace_back(makeStoredDocKey("a", CollectionEntry::vegetable),
+    items.emplace_back(makeStoredDocKey("ignored", CollectionEntry::vegetable),
                        vbid,
                        queue_op::system_event,
                        0,
                        1);
     items.emplace_back(store_item(
-            vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v0"));
+            vbid, makeStoredDocKey("k0", CollectionEntry::vegetable), "v0"));
     // temp flush in two batches as dedup is still on in the flusher
     flush_vbucket_to_disk(vbid, 1 + 1);
     items.emplace_back(store_item(
-            vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v1"));
+            vbid, makeStoredDocKey("k0", CollectionEntry::vegetable), "v1"));
     flush_vbucket_to_disk(vbid, 1);
     ensureDcpWillBackfill();
 
@@ -196,26 +196,26 @@ TEST_P(HistoryScanTest, TwoSnapshots) {
     std::vector<Item> items1, items2;
 
     // items1 represents the first snapshot, only the crate of vegetable will
-    // exist in this snapshot. The second history snapshot will have the 'a'
+    // exist in this snapshot. The second history snapshot will have the 'k0'
     // keys (both versions).
     items1.emplace_back(makeStoredDocKey("", CollectionEntry::vegetable),
                         vbid,
                         queue_op::system_event,
                         0,
                         1);
-    store_item(vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v0");
+    store_item(vbid, makeStoredDocKey("k0", CollectionEntry::vegetable), "v0");
     flush_vbucket_to_disk(vbid, 1 + 1);
-    store_item(vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v1");
+    store_item(vbid, makeStoredDocKey("k0", CollectionEntry::vegetable), "v1");
     flush_vbucket_to_disk(vbid, 1);
 
     // Now we must force history to begin from the next flush
     items2.emplace_back(store_item(
-            vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v2"));
+            vbid, makeStoredDocKey("k0", CollectionEntry::vegetable), "v2"));
     flush_vbucket_to_disk(vbid, 1);
     // @todo: switch to a using key 'a' when magma history support is available
     // then we can verify two versions of 'a' are returned
     items2.emplace_back(store_item(
-            vbid, makeStoredDocKey("b", CollectionEntry::vegetable), "v3"));
+            vbid, makeStoredDocKey("k0", CollectionEntry::vegetable), "v3"));
     flush_vbucket_to_disk(vbid, 1);
 
     ensureDcpWillBackfill();
@@ -272,10 +272,10 @@ TEST_P(HistoryScanTest, TwoSnapshots) {
 
 // Test OSO switches to history
 TEST_P(HistoryScanTest, OSOThenHistory) {
-    setHistoryStartSeqno(1);
-
-    // This writes to fruit and vegetable
-    auto highSeqno = setupTwoCollections().second;
+    // Setup (which calls writeTwoCollections), then call writeTwoCollectios
+    // to generate some duplicates (history)
+    setupTwoCollections();
+    auto highSeqno = writeTwoCollectios(true);
 
     ensureDcpWillBackfill();
 
@@ -304,7 +304,6 @@ TEST_P(HistoryScanTest, OSOThenHistory) {
     EXPECT_EQ(mcbp::systemevent::id::CreateCollection,
               producers->last_system_event);
 
-    uint64_t txHighSeqno = 0;
     std::array<std::string, 4> keys = {{"a", "b", "c", "d"}};
 
     for (auto& k : keys) {
@@ -314,7 +313,6 @@ TEST_P(HistoryScanTest, OSOThenHistory) {
         EXPECT_EQ(ClientOpcode::DcpMutation, producers->last_op);
         EXPECT_EQ(k, producers->last_key) << producers->last_byseqno;
         EXPECT_EQ(CollectionUid::vegetable, producers->last_collection_id);
-        txHighSeqno = std::max(txHighSeqno, producers->last_byseqno.load());
     }
 
     // Now we get the end message
@@ -323,19 +321,30 @@ TEST_P(HistoryScanTest, OSOThenHistory) {
     EXPECT_EQ(uint32_t(DcpOsoSnapshotFlags::End),
               producers->last_oso_snapshot_flags);
 
-    // Now we get the second snapshot
+    auto vb = store->getVBucket(vbid);
+    // Now we get the second snapshot, which is history
     stepAndExpect(ClientOpcode::DcpSnapshotMarker);
-
+    EXPECT_EQ(vbid, producers->last_vbucket);
+    EXPECT_EQ(0, producers->last_snap_start_seqno);
+    EXPECT_EQ(vb->getPersistenceSeqno(), producers->last_snap_end_seqno);
     EXPECT_EQ(MARKER_FLAG_DISK | MARKER_FLAG_CHK | MARKER_FLAG_HISTORY |
                       MARKER_FLAG_MAY_CONTAIN_DUPLICATE_KEYS,
               producers->last_flags);
-    stepAndExpect(ClientOpcode::DcpSystemEvent);
 
-    // And all keys in seq order. Setup created in order b, d, a, c
+    stepAndExpect(ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(mcbp::systemevent::id::CreateCollection,
+              producers->last_system_event);
+    EXPECT_EQ(CollectionUid::vegetable, producers->last_collection_id);
+
+    // And all keys in seq order. writeTwoCollectios created in order b, d, a, c
     std::array<std::string, 4> keySeqnoOrder = {{"b", "d", "a", "c"}};
     for (auto& k : keySeqnoOrder) {
-        // Now we get the mutations, they aren't guaranteed to be in seqno
-        // order, but we know that for now they will be in key order.
+        stepAndExpect(ClientOpcode::DcpMutation);
+        EXPECT_EQ(k, producers->last_key);
+        EXPECT_EQ(CollectionUid::vegetable, producers->last_collection_id);
+    }
+    // twice.. as we wrote them twice
+    for (auto& k : keySeqnoOrder) {
         stepAndExpect(ClientOpcode::DcpMutation);
         EXPECT_EQ(k, producers->last_key);
         EXPECT_EQ(CollectionUid::vegetable, producers->last_collection_id);

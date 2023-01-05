@@ -410,6 +410,8 @@ public:
     std::unique_ptr<TransactionContext> begin(
             Vbid vbid, std::unique_ptr<PersistenceCallback> pcb) override;
 
+    void setHistoryRetentionBytes(size_t size) override;
+
 protected:
     /**
      * RAII holder for a couchstore LocalDoc object

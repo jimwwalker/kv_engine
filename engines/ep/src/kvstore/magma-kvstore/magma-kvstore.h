@@ -567,6 +567,8 @@ public:
     std::unique_ptr<TransactionContext> begin(
             Vbid vbid, std::unique_ptr<PersistenceCallback> pcb) override;
 
+    void setHistoryRetentionBytes(size_t size) override;
+
     // Magma uses a unique logger with a prefix of magma so that all logging
     // calls from the wrapper thru magma will be prefixed with magma.
     std::shared_ptr<BucketLogger> logger;
@@ -767,6 +769,9 @@ protected:
             const magma::Slice& metaSlice,
             const magma::Slice& valSlice,
             std::function<magma::Status(magma::Slice&)> valueRead) const;
+
+    scan_error_t scan(BySeqnoScanContext& ctx,
+                      magma::Magma::SeqIterator::Mode mode) const;
 
     MagmaKVStoreConfig& configuration;
 
