@@ -14,14 +14,16 @@
  */
 
 #include "dcp/backfill-manager.h"
+#include "dcp/backfill_by_seqno_disk.h"
 #include "dcp/response.h"
 #include "evp_store_single_threaded_test.h"
+#include "kv_bucket.h"
 #include "test_helpers.h"
 #include "tests/mock/mock_dcp_producer.h"
 #include "tests/mock/mock_kvstore.h"
 #include "tests/mock/mock_stream.h"
 #include "tests/mock/mock_synchronous_ep_engine.h"
-#include <kv_bucket.h>
+#include "vbucket.h"
 
 using namespace ::testing;
 
@@ -95,4 +97,55 @@ TEST_F(DCPBackfillDiskTest, ScanDiskError) {
 
     // Replace the MockKVStore with the real one so we can tidy up correctly
     MockKVStore::restoreOriginalRWKVStore(*store);
+}
+
+// Test covers state machine transitions when a history scanHistory gets false
+// from markDiskSnapshot
+TEST_F(DCPBackfillDiskTest, HistoryScanFailMarkDiskSnapshot) {
+    if (!isMagma()) {
+        // no change stream support.
+        GTEST_SKIP();
+    }
+    // Store an items, create new checkpoint and flush so we have something to
+    // backfill from disk
+    setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
+    store_item(vbid, makeStoredDocKey("key1"), "value");
+    flushAndRemoveCheckpoints(vbid);
+
+    // Create producer now we have items only on disk.
+    auto producer = std::make_shared<MockDcpProducer>(
+            *engine, cookie, "test-producer", 0 /*flags*/, false /*startTask*/);
+    ASSERT_EQ(cb::engine_errc::success,
+              producer->control(0, DcpControlKeys::ChangeStreams, "true"));
+
+    auto vb = engine->getVBucket(vbid);
+    ASSERT_TRUE(vb);
+    auto stream =
+            std::make_shared<MockActiveStream>(engine.get(),
+                                               producer,
+                                               DCP_ADD_STREAM_FLAG_DISKONLY,
+                                               0,
+                                               *vb,
+                                               0,
+                                               1,
+                                               0,
+                                               0,
+                                               0,
+                                               IncludeValue::Yes,
+                                               IncludeXattrs::Yes,
+                                               IncludeDeletedUserXattrs::No,
+                                               std::string{});
+
+    ASSERT_TRUE(stream->areChangeStreamsEnabled());
+    stream->setActive();
+
+    // Create our own backfill to test
+    auto backfill = std::make_unique<DCPBackfillBySeqnoDisk>(
+            *engine->getKVBucket(), stream, 1, vb->getPersistenceSeqno());
+    EXPECT_EQ(backfill_state_init, backfill->getState());
+    EXPECT_EQ(backfill_success, backfill->run());
+    EXPECT_EQ(backfill_state_scanning_history_snapshot, backfill->getState());
+    // stream will error markDiskSnapshot
+    stream->setDead(cb::mcbp::DcpStreamEndStatus::Ok);
+    EXPECT_EQ(backfill_finished, backfill->run());
 }
