@@ -173,6 +173,21 @@ static bool isAbort(const Slice& keySlice, const Slice& metaSlice) {
            getDocMeta(metaSlice).isDeleted();
 }
 
+static uint64_t getCas(const Slice& metaSlice) {
+    // std::cerr << "getCas called for " << getSeqNum(metaSlice) << std::endl;
+    return getDocMeta(metaSlice).getCas();
+}
+
+static uint64_t getHistoryTimeNow() {
+    // @todo: we should probably use vbucket.peekCas() - but we don't know
+    // the vbucket
+    // std::cerr << "getHistoryTimeNow\n";
+    auto now = std::chrono::system_clock::now();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   now.time_since_epoch())
+            .count();
+}
+
 } // namespace magmakv
 
 MagmaRequest::MagmaRequest(queued_item it)
@@ -580,6 +595,8 @@ MagmaKVStore::MagmaKVStore(MagmaKVStoreConfig& configuration)
     };
     configuration.magmaCfg.GetValueSize = magmakv::getValueSize;
     configuration.magmaCfg.IsTombstone = magmakv::isDeleted;
+    configuration.magmaCfg.GetHistoryTimestamp = magmakv::getCas;
+    configuration.magmaCfg.GetHistoryTimeNow = magmakv::getHistoryTimeNow;
     configuration.magmaCfg.EnableDirectIO =
             configuration.getMagmaEnableDirectIo();
     configuration.magmaCfg.EnableBlockCache =
@@ -701,7 +718,7 @@ MagmaKVStore::MagmaKVStore(MagmaKVStoreConfig& configuration)
         logger->critical(err);
         throw std::logic_error(err);
     }
-
+    magma->SetHistoryRetentionTime(120);
     magma->executeOnKVStoreList(
             [this](const std::vector<magma::Magma::KVStoreID>& kvstores) {
                 cb::UseArenaMallocPrimaryDomain domainGuard;
@@ -3720,3 +3737,7 @@ std::pair<Status, uint64_t> MagmaKVStore::getOldestRollbackableHighSeqno(
 void MagmaKVStore::setHistoryRetentionBytes(size_t size) {
     magma->SetHistoryRetentionSize(size);
 }
+
+// void MagmaKVStore::setHistoryRetentionTime(uint64_t time) {
+//   magma->SetHistoryRetentionTime(time);
+//}
