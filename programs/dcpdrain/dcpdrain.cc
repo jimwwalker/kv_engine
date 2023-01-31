@@ -145,6 +145,9 @@ public:
                   std::vector<uint16_t> v,
                   std::shared_ptr<folly::EventBase> eb)
         : vbuckets(std::move(v)) {
+        for (auto vb : vbuckets) {
+            history[vb] = false;
+        }
         auto [host, port, family] = cb::inet::parse_hostname(hostname, {});
         connection = std::make_unique<MemcachedConnection>(
                 host, port, family, tls, eb);
@@ -225,6 +228,7 @@ public:
                     }
                     if (header.isRequest()) {
                         handleRequest(header.getRequest());
+                        traceRequest(header.getRequest());
                     } else {
                         handleResponse(header.getResponse());
                     }
@@ -261,6 +265,7 @@ public:
 protected:
     std::unique_ptr<MemcachedConnection> connection;
     std::vector<uint16_t> vbuckets;
+    std::map<uint16_t, bool> history;
     std::chrono::steady_clock::time_point start;
     std::chrono::steady_clock::time_point stop;
 
@@ -319,6 +324,57 @@ protected:
             if (current_buffer_window > (buffersize / 2)) {
                 sendBufferAck();
             }
+        }
+    }
+
+    void traceRequest(const cb::mcbp::Request& req) {
+        switch (req.getClientOpcode()) {
+        case cb::mcbp::ClientOpcode::DcpStreamEnd:
+        case cb::mcbp::ClientOpcode::DcpNoop:
+        case cb::mcbp::ClientOpcode::DcpMutation:
+        case cb::mcbp::ClientOpcode::DcpAddStream:
+        case cb::mcbp::ClientOpcode::DcpCloseStream:
+        case cb::mcbp::ClientOpcode::DcpStreamReq:
+        case cb::mcbp::ClientOpcode::DcpGetFailoverLog:
+            break;
+        case cb::mcbp::ClientOpcode::DcpSnapshotMarker: {
+            const auto& extras = req.getCommandSpecifics<
+                    cb::mcbp::request::DcpSnapshotMarkerV1Payload>();
+            if (extras.getFlags() &
+                uint32_t(cb::mcbp::request::DcpSnapshotMarkerFlag::History)) {
+                if (!history[req.getVBucket().get()]) {
+                    std::cout << "History tracking from "
+                              << extras.getStartSeqno() << std::endl;
+                }
+                history[req.getVBucket().get()] = true;
+            } else {
+                if (history[req.getVBucket().get()]) {
+                    std::cout << "History lost from " << extras.getStartSeqno()
+                              << " flags:" << extras.getFlags() << std::endl;
+                }
+                history[req.getVBucket().get()] = false;
+            }
+
+            break;
+        }
+        case cb::mcbp::ClientOpcode::DcpDeletion:
+        case cb::mcbp::ClientOpcode::DcpExpiration:
+        case cb::mcbp::ClientOpcode::DcpFlush_Unsupported:
+        case cb::mcbp::ClientOpcode::DcpSetVbucketState:
+        case cb::mcbp::ClientOpcode::DcpBufferAcknowledgement:
+        case cb::mcbp::ClientOpcode::DcpControl:
+        case cb::mcbp::ClientOpcode::DcpSystemEvent:
+        case cb::mcbp::ClientOpcode::DcpPrepare:
+        case cb::mcbp::ClientOpcode::DcpSeqnoAcknowledged:
+        case cb::mcbp::ClientOpcode::DcpCommit:
+        case cb::mcbp::ClientOpcode::DcpAbort:
+        case cb::mcbp::ClientOpcode::DcpSeqnoAdvanced:
+        case cb::mcbp::ClientOpcode::DcpOsoSnapshot:
+            break;
+
+        default:
+            std::cerr << "Received unexpected message: " << req.toJSON(false)
+                      << std::endl;
         }
     }
 
