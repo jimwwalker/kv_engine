@@ -136,6 +136,10 @@ public:
         return manifest->getDefaultCollectionMaxVisibleSeqno();
     }
 
+    uint64_t getDefaultCollectionMaxLegacyDCPSeqno() const {
+        return manifest->getDefaultCollectionMaxLegacyDCPSeqno();
+    }
+
     /**
      * Set the persisted high seqno of the given colletion to the given
      * value
@@ -160,8 +164,8 @@ public:
      */
     void setHighSeqno(CollectionID collection,
                       uint64_t value,
-                      bool visible) const {
-        manifest->setHighSeqno(collection, value, visible);
+                      HighSeqnoType type) const {
+        manifest->setHighSeqno(collection, value, type);
     }
 
     void incrementItemCount(CollectionID collection) const {
@@ -415,13 +419,13 @@ public:
      * @param visible true if the value represents a committed item. This is
      *        only used if collection == CollectionID::Default
      */
-    void setHighSeqno(uint64_t value, bool visible) const {
+    void setHighSeqno(uint64_t value, HighSeqnoType type) const {
         // We may be flushing keys written to a dropped collection so can
         // have an invalid iterator or the id is not mapped (system)
         if (!valid()) {
             return;
         }
-        manifest->setHighSeqno(itr, value, visible);
+        manifest->setHighSeqno(itr, value, type);
     }
 
     /**
@@ -763,8 +767,8 @@ public:
      */
     void setHighSeqno(CollectionID collection,
                       uint64_t value,
-                      bool visible) const {
-        manifest.setHighSeqno(collection, value, visible);
+                      HighSeqnoType type) const {
+        manifest.setHighSeqno(collection, value, type);
     }
 
     /**

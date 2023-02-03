@@ -4674,6 +4674,57 @@ TEST_P(CollectionsPersistentParameterizedTest,
     validate(0, 1); // We've hit the case where we trigger a reset to 1
 }
 
+// Test the high-seqno counters for the default collection, this covers all
+// bucket types and does not test warmup
+TEST_P(CollectionsParameterizedTest, DefaultCollectionModify) {
+    // required preamble to push a prepare
+    setVBucketStateAndRunPersistTask(
+            vbid,
+            vbucket_state_active,
+            {{"topology", nlohmann::json::array({{"active", "replica"}})}});
+
+    auto validate = [this](uint64_t mvs,
+                           uint64_t maxDcpSeqno,
+                           uint64_t highSeqno) {
+        auto vb = store->getVBucket(vbid);
+        ASSERT_TRUE(vb);
+        auto handle = vb->lockCollections();
+        EXPECT_EQ(mvs, handle.getDefaultCollectionMaxVisibleSeqno());
+        EXPECT_EQ(maxDcpSeqno, handle.getDefaultCollectionMaxLegacyDCPSeqno());
+        EXPECT_EQ(highSeqno, handle.getHighSeqno(CollectionID::Default));
+    };
+
+    validate(0, 0, 0);
+    CollectionsManifest cm;
+    cm.update(CollectionEntry::defaultC, cb::NoExpiryLimit, true /*history*/);
+    setCollections(cookie, cm);
+    validate(0, 0, 1);
+
+    EXPECT_EQ(cb::engine_errc::sync_write_pending,
+              store->set(*makePendingItem(
+                                 StoredDocKey{"k1", CollectionID::Default},
+                                 "value"),
+                         cookie));
+
+    validate(0, 2, 2);
+
+    cm.update(CollectionEntry::defaultC, cb::NoExpiryLimit, {});
+    setCollections(cookie, cm);
+    validate(0, 2, 3);
+
+    if (!persistent()) {
+        return;
+    }
+
+    flushVBucketToDiskIfPersistent(vbid, 2);
+
+    // Demonstrate that warmup currently loses the new seqno
+    // this also fails because we need to use the new seqno in warmup to figure
+    // the correct value of the mvs
+    resetEngineAndWarmup();
+    validate(0, 0, 3);
+}
+
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
                          CollectionsExpiryLimitTest,
                          ::testing::Bool(),

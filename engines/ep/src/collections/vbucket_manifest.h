@@ -718,7 +718,7 @@ protected:
      */
     void setHighSeqno(const container::const_iterator entry,
                       uint64_t value,
-                      bool visible) const {
+                      HighSeqnoType type) const {
         if (entry == map.end()) {
             throwException<std::invalid_argument>(__FUNCTION__,
                                                   "iterator is invalid");
@@ -726,8 +726,28 @@ protected:
 
         entry->second.setHighSeqno(value);
 
-        if (entry->first == CollectionID::Default && visible) {
-            defaultCollectionMaxVisibleSeqno = value;
+        if (entry->first.isDefaultCollection()) {
+            // 1) defaultCollectionMaxVisibleSeqno: The maximum seqno a pre 7.0
+            //    DCP client can support when they don't enable sync-writes.
+            //    This only updates for committed items which can be transmitted
+            //    as DCP mutations/deletions.
+            // 2) defaultCollectionMaxLegacyDCPSeqno : The maximum seqno a pre
+            //    7.0 DCP client can support. This updates for everything which
+            //    can be sent by DCP before 7.0. commit/prepare/abort
+            switch (type) {
+            case HighSeqnoType::Committed:
+                defaultCollectionMaxVisibleSeqno = value;
+                defaultCollectionMaxLegacyDCPSeqno = value;
+                break;
+            case HighSeqnoType::PrepareAbort:
+                defaultCollectionMaxLegacyDCPSeqno = value;
+                break;
+            case HighSeqnoType::SystemEvent:
+                // no special tracking of this - entry->second.setHighSeqno
+                // updates for all types, they can all be sent by DCP by seqno
+                // advance or the correct message itself
+                break;
+            }
         }
     }
 
@@ -816,11 +836,11 @@ protected:
      *
      * @param collection ID of the collection to update
      * @param value The new value
-     * @param visible true if this seqno represents a committed/visible item
+     * @param type ...
      */
     void setHighSeqno(CollectionID collection,
                       uint64_t value,
-                      bool visible) const;
+                      HighSeqnoType type) const;
 
     /**
      * @return the highest seqno that has been persisted for this collection
@@ -1069,6 +1089,16 @@ protected:
     uint64_t getDefaultCollectionMaxVisibleSeqno() const;
 
     /**
+     * Gets the default collections max "legacy DCP". The default collection is
+     * the only collection to track this value to support non-collection aware
+     * DCP clients. This value represents the highest possible seqno a legacy
+     * DCP stream could reach, i.e. it would replicate mutation/prepare/abort
+     *
+     * Note: Caller must check for existence of the collection before calling
+     */
+    uint64_t getDefaultCollectionMaxLegacyDCPSeqno() const;
+
+    /**
      * @return the CanDeduplicate setting for the collection
      */
     CanDeduplicate getCanDeduplicate(CollectionID cid) const;
@@ -1210,6 +1240,9 @@ protected:
      */
     mutable AtomicMonotonic<uint64_t, IgnorePolicy>
             defaultCollectionMaxVisibleSeqno;
+
+    mutable AtomicMonotonic<uint64_t, IgnorePolicy>
+            defaultCollectionMaxLegacyDCPSeqno;
 
     /**
      * Flag to help avoid limit checking when there are no limits to check.

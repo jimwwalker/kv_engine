@@ -363,6 +363,8 @@ public:
 };
 std::ostream& operator<<(std::ostream& os, const ScopeSharedMetaData& meta);
 
+enum class HighSeqnoType { Committed, PrepareAbort, SystemEvent };
+
 } // namespace VB
 
 } // end namespace Collections
