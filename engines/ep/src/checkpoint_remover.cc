@@ -173,7 +173,7 @@ CheckpointMemRecoveryTask::attemptCursorDropping() {
                 // 'memReleased' is an estimation of what is being released, not
                 // what has been already released.
                 const auto res = manager.removeClosedUnrefCheckpoints();
-                EP_LOG_DEBUG(
+                EP_LOG_WARN(
                         "{} Dropping cursor made {} bytes eligible for "
                         "deallocation",
                         vb->getId(),
@@ -224,7 +224,7 @@ bool CheckpointMemRecoveryTask::runInner() {
 
     const auto bytesToFree = bucket.getRequiredCheckpointMemoryReduction();
 
-    EP_LOG_DEBUG(
+    EP_LOG_WARN(
             "{} Triggering checkpoint memory recovery - attempting to free {} "
             "MB",
             getDescription(),

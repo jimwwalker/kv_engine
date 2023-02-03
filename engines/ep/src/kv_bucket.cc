@@ -3017,7 +3017,7 @@ size_t KVBucket::getRequiredCheckpointMemoryReduction() const {
     const size_t amountOfMemoryToClear = usage - recoveryTarget;
 
     const auto toMB = [](size_t bytes) { return bytes / (1024 * 1024); };
-    EP_LOG_DEBUG(
+    EP_LOG_WARN(
             "Triggering memory recovery as checkpoint memory usage ({} MB) "
             "exceeds the upper_mark ({}, "
             "{} MB) - total checkpoint quota {}, {} MB . Attempting to free {} "

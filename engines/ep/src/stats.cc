@@ -338,6 +338,9 @@ void EPStats::reset() {
     persistenceCursorGetItemsHisto.reset();
     dcpCursorsGetItemsHisto.reset();
 
+    totalEnqueued.reset();
+    totalDeduplicated.reset();
+
     activeOrPendingFrequencyValuesEvictedHisto.reset();
     replicaFrequencyValuesEvictedHisto.reset();
     activeOrPendingFrequencyValuesSnapshotHisto.reset();
