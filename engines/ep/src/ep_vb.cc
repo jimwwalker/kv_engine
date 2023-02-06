@@ -1050,7 +1050,7 @@ uint64_t EPVBucket::addSystemEventItem(
     notifyCtx.notifyFlusher = true;
     notifyCtx.bySeqno = qi->getBySeqno();
     notifyNewSeqno(notifyCtx);
-
+    std::cerr << "FLUSHING " << *qi << std::endl;
     // We don't record anything interesting for scopes
     if (cid) {
         wHandle.setHighSeqno(cid.value(),

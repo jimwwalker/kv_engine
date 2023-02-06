@@ -43,6 +43,7 @@
 #include "tests/module_tests/collections/collections_dcp_test.h"
 #include "tests/module_tests/collections/collections_test_helpers.h"
 #include "tests/module_tests/dcp_producer_config.h"
+#include "tests/module_tests/dcp_stream_request_config.h"
 #include "tests/module_tests/dcp_utils.h"
 #include "tests/module_tests/evp_store_test.h"
 #include "tests/module_tests/test_helpers.h"
@@ -4268,7 +4269,25 @@ TEST_P(CollectionsDcpPersistentOnly, ModifyCollection) {
     // Switch the configuration (two collection modifications)
     cm.update(fruit, cb::NoExpiryLimit, true /*history*/);
     cm.update(vegetable, cb::NoExpiryLimit);
+    cm.update(defaultC, cb::NoExpiryLimit, true /*history*/);
+
     setCollections(cookie, cm);
+
+    // in-memory on active updates
+    EXPECT_EQ(CanDeduplicate::No,
+              vb0->lockCollections().getCanDeduplicate(fruit));
+    EXPECT_EQ(CanDeduplicate::No,
+              vb0->lockCollections().getCanDeduplicate(defaultC));
+    EXPECT_EQ(CanDeduplicate::Yes,
+              vb0->lockCollections().getCanDeduplicate(vegetable));
+
+    std::cerr
+            << "vb0->lockCollections().getDefaultCollectionMaxVisibleSeqno();:"
+            << vb0->lockCollections().getDefaultCollectionMaxVisibleSeqno()
+            << std::endl;
+    std::cerr << "vb0->lockCollections().getHighSeqno(CollectionID::Default);:"
+              << vb0->lockCollections().getHighSeqno(CollectionID::Default)
+              << std::endl;
 
     // Wake and step DCP
     // Expect snap1, modify fruit, snap2, modify vegetable
@@ -4315,7 +4334,7 @@ TEST_P(CollectionsDcpPersistentOnly, ModifyCollection) {
     // Flush the active vbucket as the next phase of the test is to check
     // warmup/backfill. No flush of the replica as the test needs the replica to
     // remain empty ready for backfill phase
-    flush_vbucket_to_disk(vbid, 4);
+    flush_vbucket_to_disk(vbid, 5);
 
     {
         auto vb0Handle = vb0->lockCollections();
@@ -4333,6 +4352,15 @@ TEST_P(CollectionsDcpPersistentOnly, ModifyCollection) {
     resetEngineAndWarmup();
 
     vb0 = store->getVBucket(vbid);
+
+    std::cerr
+            << "vb0->lockCollections().getDefaultCollectionMaxVisibleSeqno();:"
+            << vb0->lockCollections().getDefaultCollectionMaxVisibleSeqno()
+            << std::endl;
+    std::cerr << "vb0->lockCollections().getHighSeqno(CollectionID::Default);:"
+              << vb0->lockCollections().getHighSeqno(CollectionID::Default)
+              << std::endl;
+
     // Check state after warmup. The collections on active have the same state
     // as before the shutdown as they get their state back from KVStore metadata
     // Expect: fruit==No, vegetable=Yes
@@ -4590,6 +4618,126 @@ TEST_P(CollectionsDcpPersistentOnly, ModifyCollectionTwoVbuckets) {
     producer2->closeAllStreams();
     mockConnMap.removeConn(cookieP2);
     destroy_mock_cookie(cookieP2);
+}
+
+TEST_P(CollectionsDcpPersistentOnly, HistoryDefaultCollection) {
+    using namespace cb::mcbp;
+    using namespace mcbp::systemevent;
+    using namespace CollectionEntry;
+
+    setVBucketStateAndRunPersistTask(
+            vbid,
+            vbucket_state_active,
+            {{"topology", nlohmann::json::array({{"active", "replica"}})}});
+
+    auto validateSeqnos = [this](Vbid vb,
+                                 uint64_t mvs,
+                                 uint64_t legacyHighSeqno,
+                                 uint64_t highSeqno) {
+        auto handle = store->getVBucket(vb)->lockCollections();
+        EXPECT_EQ(mvs, handle.getDefaultCollectionMaxVisibleSeqno()) << vb;
+        EXPECT_EQ(legacyHighSeqno,
+                  handle.getDefaultCollectionMaxLegacyDCPSeqno());
+        EXPECT_EQ(highSeqno, handle.getHighSeqno(CollectionID::Default)) << vb;
+    };
+
+    auto validate = [validateSeqnos, this](uint64_t mvs,
+                                           uint64_t legacyHighSeqno,
+                                           uint64_t highSeqno) {
+        validateSeqnos(vbid, mvs, legacyHighSeqno, highSeqno);
+        if (highSeqno) {
+            flush_vbucket_to_disk(vbid, 1);
+            SCOPED_TRACE("post flush");
+            validateSeqnos(vbid, mvs, legacyHighSeqno, highSeqno);
+        }
+        resetEngineAndWarmup();
+        SCOPED_TRACE("post warmup");
+        validateSeqnos(vbid, mvs, legacyHighSeqno, highSeqno);
+    };
+
+    {
+        SCOPED_TRACE("Initial state");
+        validate(0, 0, 0);
+    }
+    // Pending item so mvs doesn't move
+    auto item = makePendingItem(makeStoredDocKey("prepare"), "value");
+    EXPECT_EQ(cb::engine_errc::sync_write_pending, store->set(*item, cookie));
+    {
+        SCOPED_TRACE("Pending operation @ seqno 1");
+        validate(0, 1, 1);
+    }
+    // Committed item, so all counters move
+    store_item(vbid, makeStoredDocKey("k0"), "v0");
+    {
+        SCOPED_TRACE("Mutation @ seqno 2");
+        validate(2, 2, 2);
+    }
+
+    // Modify default collection, so only high-seqno moves
+    CollectionsManifest cm;
+    cm.update(defaultC, cb::NoExpiryLimit, true /*history*/);
+    setCollections(cookie, cm);
+    {
+        SCOPED_TRACE("Modify collection @ seqno 3");
+        validate(2, 2, 3);
+    }
+
+    // Test backfill and replicate the state. Note this test does not request
+    // ChangeStream so we can get couchstore coverage
+    createDcpObjects(DcpProducerConfig{"test_producer",
+                                       OutOfOrderSnapshots::No,
+                                       SyncReplication::SyncReplication,
+                                       ChangeStreams::No,
+                                       IncludeXattrs::Yes,
+                                       IncludeDeleteTime::Yes,
+                                       FlatBuffersEvents::Yes},
+                     DcpStreamRequestConfig{vbid,
+                                            0, // flags
+                                            1, // opaque
+                                            0, // from 0
+                                            ~0ull, // no end
+                                            0, // snap start 0
+                                            0, // snap end 0
+                                            0, // no uuid (so 0)
+                                            std::string_view{},
+                                            cb::engine_errc::success});
+
+    {
+        SCOPED_TRACE("Initial replica state");
+        validateSeqnos(replicaVB, 0, 0, 0);
+    }
+
+    notifyAndStepToCheckpoint(ClientOpcode::DcpSnapshotMarker,
+                              false /*in-memory = false*/);
+
+    producer->stepAndExpect(*producers, ClientOpcode::DcpPrepare);
+    EXPECT_EQ(producers->last_byseqno, 1);
+    {
+        SCOPED_TRACE("Prepare replicated @ seqno 1");
+        validateSeqnos(replicaVB, 0, 1, 1);
+    }
+
+    producer->stepAndExpect(*producers, ClientOpcode::DcpMutation);
+    EXPECT_EQ(producers->last_byseqno, 2);
+    {
+        SCOPED_TRACE("Mutation replicated @ seqno 2");
+        validateSeqnos(replicaVB, 2, 2, 2);
+    }
+    producer->stepAndExpect(*producers, ClientOpcode::DcpSystemEvent);
+    EXPECT_EQ(producers->last_system_event, id::ModifyCollection);
+    EXPECT_EQ(producers->last_collection_id, CollectionID::Default);
+    EXPECT_EQ(producers->last_byseqno, 3);
+    {
+        SCOPED_TRACE("Modify event replicated @ seqno 3");
+        validateSeqnos(replicaVB, 2, 2, 3);
+    }
+    flush_vbucket_to_disk(replicaVB, 3);
+
+    resetEngineAndWarmup();
+    {
+        SCOPED_TRACE("Replica warmup");
+        validateSeqnos(replicaVB, 2, 2, 3);
+    }
 }
 
 // Test cases which run for persistent and ephemeral buckets

@@ -1634,8 +1634,8 @@ void Warmup::loadPreparedSyncWrites(uint16_t shardId) {
         auto& epStats = store.getEPEngine().getEpStats();
         epStats.warmupItemsVisitedWhilstLoadingPrepares += result->itemsVisited;
         epStats.warmedUpPrepares += result->preparesLoaded;
-        vb.getManifest().wlock().setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-                *result);
+        vb.getManifest().setDefaultCollectionLegacySeqnos(
+                *result, vbid, *store.getRWUnderlyingByShard(shardId));
     }
 
     if (++threadtask_count == store.vbMap.getNumShards()) {

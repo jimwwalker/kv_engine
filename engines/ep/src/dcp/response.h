@@ -1002,7 +1002,8 @@ public:
     }
 
     std::string_view getEventData() const override {
-        return item->getValueView();
+        // xattrs (if any) don't replicate
+        return item->getValueViewWithoutXattrs();
     }
 
     mcbp::systemevent::version getVersion() const override {

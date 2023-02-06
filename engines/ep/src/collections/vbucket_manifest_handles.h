@@ -771,20 +771,6 @@ public:
         manifest.setHighSeqno(collection, value, type);
     }
 
-    /**
-     * Set the default collection max-visible seqno from a value determined
-     * by warmup's loadPreparedSyncWrites.
-     *
-     * After calling this function, the VB::Manifest will have set the
-     * max-visible seqno of the default collection
-     *
-     * @param seqno the highest committed seqno found
-     * @param persistedPreparedSeqno the persistedPreparedSeqno used in the
-     *        warmup loadPreparedSyncWrites scan
-     */
-    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-            const LoadPreparedSyncWritesResult& lps);
-
     /// @return iterator to the beginning of the underlying collection map
     Manifest::container::iterator begin() {
         return manifest.begin();

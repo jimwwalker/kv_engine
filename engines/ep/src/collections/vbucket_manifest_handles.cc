@@ -95,11 +95,6 @@ void StatsReadHandle::dump() {
     std::cerr << *manifest << std::endl;
 }
 
-void WriteHandle::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-        const LoadPreparedSyncWritesResult& lps) {
-    manifest.setDefaultCollectionMaxVisibleSeqnoFromWarmup(lps);
-}
-
 void WriteHandle::dump() {
     std::cerr << manifest << std::endl;
 }

@@ -28,6 +28,7 @@
 #include <unordered_map>
 
 class Item;
+class KVStoreIface;
 class VBucket;
 class StatCollector;
 
@@ -249,14 +250,16 @@ public:
         dropInProgress.store(value);
     }
 
+    /// commememement me!
+    void setDefaultCollectionLegacySeqnos(
+            const LoadPreparedSyncWritesResult& lps,
+            Vbid vb,
+            KVStoreIface& kvs);
+
     /**
-     * Sets the default collection max-visible to seqno (if the collection
-     * exists). This does not just set the value. The seqno passed is the seqno
-     * of the highest committed default collection item between 1 to
-     * high-prepare-seqno. If no committed items were in that window, 0 is used.
+     * @return Collection (system event) flatbuffer object from the given Item
      */
-    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-            const LoadPreparedSyncWritesResult& lps);
+    static const Collection* getCollectionFlatbuffer(const Item& item);
 
     /**
      * @return Collection (system event) flatbuffer object from the given view
@@ -281,13 +284,13 @@ public:
 
     /**
      * Get the system event collection create data from a SystemEvent
-     * Item's value.
+     * Item's value. Requires decompressed input and will skip xattrs
      *
-     * @param flatbufferData buffer storing flatbuffer Collections.VB.Collection
+     * @param item
      * @returns CreateEventData which carries all of the data which needs to be
      *          marshalled into a DCP system event message.
      */
-    static CreateEventData getCreateEventData(std::string_view flatbufferData);
+    static CreateEventData getCreateEventData(const Item& item);
 
     /**
      * Get the system event collection drop data from a SystemEvent
@@ -333,6 +336,8 @@ public:
             const ManifestEntry& entry,
             SystemEventType type,
             OptionalSeqno seq);
+
+    static std::optional<uint64_t> getJWW(Vbid vb, KVStoreIface& kvs);
 
     bool operator==(const Manifest& rhs) const;
 
@@ -1082,11 +1087,22 @@ protected:
                                             size_t nBytes) const;
 
     /**
+     * Sets the default collection max-visible to seqno (if the collection
+     * exists). This does not just set the value. The seqno passed is the seqno
+     * of the highest committed default collection item between 1 to
+     * high-prepare-seqno. If no committed items were in that window, 0 is used.
+     */
+    void setDefaultCollectionLegacySeqnos(const LoadPreparedSyncWritesResult& lps,
+                                          std::optional<uint64_t>);
+
+    /**
      * Gets the default collections max-visible seqno which is the only
      * collection to track this value to support non-collection aware clients
      * Caller must check for existence of the collection before calling
      */
     uint64_t getDefaultCollectionMaxVisibleSeqno() const;
+
+    uint64_t getDefaultCollectionLegacyHighSeqno() const;
 
     /**
      * Gets the default collections max "legacy DCP". The default collection is
@@ -1102,6 +1118,11 @@ protected:
      * @return the CanDeduplicate setting for the collection
      */
     CanDeduplicate getCanDeduplicate(CollectionID cid) const;
+
+    void attachMaxLegacyDCPSeqno(Item& item) const;
+
+    static std::optional<uint64_t> tryAndRetrieveAttachedMaxLegacyDCPSeqno(
+            Vbid vb, KVStoreIface& kvs);
 
     /**
      * Return a string for use in throwException, returns:

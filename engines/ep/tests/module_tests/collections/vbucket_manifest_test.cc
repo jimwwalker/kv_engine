@@ -380,7 +380,7 @@ public:
                     } else {
                         auto dcpData =
                                 Collections::VB::Manifest::getCreateEventData(
-                                        {qi->getData(), qi->getNBytes()});
+                                        *qi);
                         replica.wlock().replicaCreate(
                                 *vbR,
                                 dcpData.manifestUid,

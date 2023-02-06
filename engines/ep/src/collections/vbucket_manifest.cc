@@ -21,10 +21,13 @@
 #include "ep_time.h"
 #include "item.h"
 #include "systemevent_factory.h"
+#include "tagged_ptr.h"
 #include "vbucket.h"
 
 #include <statistics/cbstat_collector.h>
+#include <xattr/blob.h>
 
+#include <charconv>
 #include <memory>
 
 namespace Collections::VB {
@@ -53,6 +56,7 @@ Manifest::Manifest(std::shared_ptr<Manager> manager,
 
     for (const auto& e : data.collections) {
         const auto& meta = e.metaData;
+        std::cerr << "WAM?\n";
         addNewCollectionEntry({meta.sid, meta.cid},
                               meta.name,
                               meta.maxTtl,
@@ -1032,11 +1036,59 @@ uint64_t Manifest::queueCollectionSystemEvent(
     auto item = makeCollectionSystemEvent(
             getManifestUid(), cid, collectionName, entry, type, seq);
 
+    if (type == SystemEventType::Modify && cid.isDefaultCollection()) {
+        attachMaxLegacyDCPSeqno(*item);
+    }
+
     // Create and transfer Item ownership to the VBucket
     auto rv = vb.addSystemEventItem(
             std::move(item), seq, cid, wHandle, assignedSeqnoCallback);
 
     return rv;
+}
+
+void Manifest::attachMaxLegacyDCPSeqno(Item& item) const {
+    cb::xattr::Blob xattrs;
+    std::string xattrValue;
+    xattrs.set("_legacy",
+               fmt::format("{{\"max_seqno\":\"{}\"}}",
+                           defaultCollectionMaxLegacyDCPSeqno));
+    xattrValue.reserve(xattrs.size() + item.getNBytes());
+    xattrValue.append(xattrs.data(), xattrs.size());
+    xattrValue.append(item.getData(), item.getNBytes());
+    item.replaceValue(
+            TaggedPtr<Blob>(Blob::New(xattrValue.data(), xattrValue.size()),
+                            TaggedPtrBase::NoTagValue));
+    item.setDataType(PROTOCOL_BINARY_DATATYPE_XATTR);
+}
+
+void Manifest::setDefaultCollectionLegacySeqnos(
+        const LoadPreparedSyncWritesResult& lps, Vbid vb, KVStoreIface& kvs) {
+    auto maxLegacyDCPSeqno = tryAndRetrieveAttachedMaxLegacyDCPSeqno(vb, kvs);
+    Manifest::mutex_type::WriteHolder writeLock{rwlock};
+    setDefaultCollectionLegacySeqnos(lps, maxLegacyDCPSeqno);
+}
+
+std::optional<uint64_t> Manifest::tryAndRetrieveAttachedMaxLegacyDCPSeqno(
+        Vbid vb, KVStoreIface& kvs) {
+    // This function is a warmup method to read back the modify
+    auto key = SystemEventFactory::makeCollectionEventKey(
+            CollectionID::Default, SystemEvent::ModifyCollection);
+    auto gv = kvs.get(DiskDocKey{key, false}, vb);
+
+    if (gv.getStatus() != cb::engine_errc::success) {
+        return {};
+    }
+
+    auto& item = *gv.item;
+    // pull out the stashed seqno which the VB:Manifest needs
+    cb::xattr::Blob xattr({const_cast<char*>(item.getData()), item.getNBytes()},
+                          mcbp::datatype::is_snappy(item.getDataType()));
+    auto value = xattr.get("_legacy");
+    auto legacy = nlohmann::json::parse(value.begin(), value.end());
+    auto max = legacy.find("max_seqno");
+    Expects(max != legacy.end());
+    return std::stoull(max->get<std::string>());
 }
 
 size_t Manifest::getSystemEventItemCount() const {
@@ -1107,6 +1159,10 @@ static void verifyFlatbuffersData(std::string_view buf,
     throw std::runtime_error(ss.str());
 }
 
+const Collection* Manifest::getCollectionFlatbuffer(const Item& item) {
+    return getCollectionFlatbuffer(item.getValueViewWithoutXattrs());
+}
+
 const Collection* Manifest::getCollectionFlatbuffer(std::string_view view) {
     verifyFlatbuffersData<Collection>(view, "getCreateFlatbuffer");
     return flatbuffers::GetRoot<Collection>(
@@ -1133,8 +1189,9 @@ const DroppedScope* Manifest::getDroppedScopeFlatbuffer(std::string_view view) {
             reinterpret_cast<const uint8_t*>(view.data()));
 }
 
-CreateEventData Manifest::getCreateEventData(std::string_view flatbufferData) {
-    const auto* collection = getCollectionFlatbuffer(flatbufferData);
+CreateEventData Manifest::getCreateEventData(const Item& item) {
+    Expects(!mcbp::datatype::is_snappy(item.getDataType()));
+    const auto* collection = getCollectionFlatbuffer(item);
 
     // if maxTtlValid needs considering
     cb::ExpiryLimit maxTtl;
@@ -1463,14 +1520,15 @@ cb::engine_errc Manifest::getScopeDataLimitStatus(
     return cb::engine_errc::success;
 }
 
-void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-        const LoadPreparedSyncWritesResult& lps) {
+void Manifest::setDefaultCollectionLegacySeqnos(
+        const LoadPreparedSyncWritesResult& lps,
+        std::optional<uint64_t> legacy) {
     // callers logic is simpler if they don't have to check for default exists
     if (!doesDefaultCollectionExist()) {
         return;
     }
     // This highSeqno represents committed and !committed
-    auto highSeqno = getHighSeqno(CollectionID::Default);
+    auto highSeqno = legacy.value_or(getHighSeqno(CollectionID::Default));
 
     // the passed "seqno" cannot be greater than the high-seqno
     Expects(lps.defaultCollectionMaxVisibleSeqno <= highSeqno);
@@ -1499,6 +1557,8 @@ void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
         // Else use the given seqno, it is the highest commit
         defaultCollectionMaxVisibleSeqno = lps.defaultCollectionMaxVisibleSeqno;
     }
+
+    defaultCollectionMaxLegacyDCPSeqno = legacy.value_or(highSeqno);
 }
 
 uint64_t Manifest::getDefaultCollectionMaxVisibleSeqno() const {

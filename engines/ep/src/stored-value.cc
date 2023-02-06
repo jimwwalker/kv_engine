@@ -496,8 +496,9 @@ static std::string getSystemEventsValueFromStoredValue(const StoredValue& sv) {
             auto eventData = Manifest::getDropEventData(itemValue);
             return to_string(eventData);
         } else {
-            auto eventData = Manifest::getCreateEventData(itemValue);
-            return to_string(eventData);
+#warning "fix me"
+            // auto eventData = Manifest::getCreateEventData(itemValue);
+            // return to_string(eventData);
         }
         break;
     }
