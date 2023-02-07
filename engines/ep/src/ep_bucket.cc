@@ -2021,7 +2021,7 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
         // with our vbucket_state.
         epVb.loadOutstandingPrepares(*vbState, std::move(prepares));
         // No prepares loaded
-        return {0, 0, 0, true};
+        return {0, 0, 0, vbState->persistedPreparedSeqno, true};
     }
 
     // We optimise this step by starting the scan at the seqno following the
@@ -2094,7 +2094,7 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
                 "EPBucket::loadPreparedSyncWrites: scanCtx is null for {}",
                 epVb.getId());
         // No prepares loaded
-        return {0, 0, false};
+        return {0, 0, 0, false};
     }
 
     auto scanResult = kvStore->scan(*scanCtx);
@@ -2111,7 +2111,7 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
         EP_LOG_CRITICAL(
                 "EPBucket::loadPreparedSyncWrites: scan() failed for {}",
                 epVb.getId());
-        return {0, 0, false};
+        return {0, 0, 0, false};
     }
     }
 
@@ -2141,6 +2141,7 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
     return {storageCB.itemsVisited,
             numPrepares,
             storageCB.highestDefaultCollectionVisible,
+            vbState->persistedPreparedSeqno,
             true};
 }
 

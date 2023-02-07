@@ -4549,6 +4549,64 @@ TEST_P(CollectionsPersistentNoNexusParameterizedTest,
     EXPECT_EQ(3, rws->getItemCount(vbid));
 }
 
+// If only prepares are flushed to the default collection  MVS should be 0.
+// However a bug in warmup for this state, meant it came back as the default
+// high-seqno (which tracks prepare/abort)
+TEST_P(CollectionsPersistentParameterizedTest, MB_55451) {
+    setVBucketStateAndRunPersistTask(
+            vbid,
+            vbucket_state_active,
+            {{"topology", nlohmann::json::array({{"active", "replica"}})}});
+
+    auto validate = [this](uint64_t mvs, uint64_t highSeqno) {
+        auto vb = store->getVBucket(vbid);
+        EXPECT_EQ(mvs,
+                  vb->lockCollections().getDefaultCollectionMaxVisibleSeqno());
+        EXPECT_EQ(highSeqno,
+                  vb->lockCollections().getHighSeqno(CollectionID::Default));
+    };
+
+    // Begin with the basic MB. Flush a single prepare@1 and warmup
+    auto item =
+            makePendingItem(StoredDocKey{"d1", CollectionID::Default}, "value");
+    EXPECT_EQ(cb::engine_errc::sync_write_pending, store->set(*item, cookie));
+
+    validate(0, 1);
+    flush_vbucket_to_disk(vbid, 1);
+    validate(0, 1);
+    resetEngineAndWarmup();
+    validate(0, 1);
+
+    // Rest of test flushes other items.
+    // Next create@2 and mutation@3
+    CollectionsManifest cm;
+    cm.add(CollectionEntry::fruit);
+    setCollections(cookie, cm);
+    store_item(vbid, StoredDocKey{"fruit", CollectionEntry::fruit}, "v1");
+    validate(0, 1);
+    flush_vbucket_to_disk(vbid, 2);
+    validate(0, 1);
+    resetEngineAndWarmup();
+    validate(0, 1);
+
+    // Another pending@4 item to default collection
+    item = makePendingItem(StoredDocKey{"d2", CollectionID::Default}, "value");
+    EXPECT_EQ(cb::engine_errc::sync_write_pending, store->set(*item, cookie));
+    flush_vbucket_to_disk(vbid, 1);
+    validate(0, 4);
+    resetEngineAndWarmup();
+    validate(0, 4);
+
+    // finally a standard mutation@5 into the default collection
+    store_item(vbid, StoredDocKey{"d3", CollectionID::Default}, "v1");
+    validate(5, 5);
+
+    flush_vbucket_to_disk(vbid, 1);
+    validate(5, 5);
+    resetEngineAndWarmup();
+    validate(5, 5);
+}
+
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
                          CollectionsExpiryLimitTest,
                          ::testing::Bool(),

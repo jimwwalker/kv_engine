@@ -1466,23 +1466,28 @@ cb::engine_errc Manifest::getScopeDataLimitStatus(
     return cb::engine_errc::success;
 }
 
-void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(uint64_t seqno) {
+void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
+        uint64_t seqno, uint64_t persistedPreparedSeqno) {
     // callers logic is simpler if they don't have to check for default exists
     if (!doesDefaultCollectionExist()) {
         return;
     }
-
     // This highSeqno represents committed and !committed
     auto highSeqno = getHighSeqno(CollectionID::Default);
 
-    // If warmup loadPrepareSyncWrites found a default collection committed item
-    // and that is less than the collection's high-seqno, then we set the
-    // max-visible to seqno
-    if (seqno && seqno < highSeqno) {
-        defaultCollectionMaxVisibleSeqno = seqno;
-    } else {
-        // The collection's high-seqno is visible
+    // the passed "seqno" cannot be greater than the high-seqno
+    Expects(seqno <= highSeqno);
+
+    if (highSeqno > persistedPreparedSeqno ||
+        (seqno == 0 && highSeqno < persistedPreparedSeqno)) {
+        // a) The highSeqno is greater than the persistedPreparedSeqno. It must
+        //    be a visible mutation
+        // b) No commit found in the loadPreparedSyncWrites scan window and
+        //    highSeqno is below the highest prepare
         defaultCollectionMaxVisibleSeqno = highSeqno;
+    } else {
+        // Else use the given seqno, it is the highest commit
+        defaultCollectionMaxVisibleSeqno = seqno;
     }
 }
 

@@ -774,9 +774,12 @@ public:
      * After calling this function, the VB::Manifest will have set the
      * max-visible seqno of the default collection
      *
-     * @param value The value to update the persisted high seqno to
+     * @param seqno the highest committed seqno found
+     * @param persistedPreparedSeqno the persistedPreparedSeqno used in the
+     *        warmup loadPreparedSyncWrites scan
      */
-    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(uint64_t seqno);
+    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(
+            uint64_t seqno, uint64_t persistedPreparedSeqno);
 
     /// @return iterator to the beginning of the underlying collection map
     Manifest::container::iterator begin() {

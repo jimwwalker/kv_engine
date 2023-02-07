@@ -1053,10 +1053,12 @@ protected:
                                             size_t nBytes) const;
     /**
      * Sets the default collection max-visible to seqno (if the collection
-     * exists). This does not just set the value. The seqno passed is the value
-     * warmup found during the scan from start to high-prepare.
+     * exists). This does not just set the value. The seqno passed is the seqno
+     * of the highest committed default collection item between 1 to
+     * high-prepare-seqno. If no committed items were in that window, 0 is used.
      */
-    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(uint64_t seqno);
+    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(
+            uint64_t seqno, uint64_t persistedPreparedSeqno);
 
     /**
      * Gets the default collections max-visible seqno which is the only
