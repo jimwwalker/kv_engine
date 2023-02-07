@@ -1467,7 +1467,7 @@ cb::engine_errc Manifest::getScopeDataLimitStatus(
 }
 
 void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-        uint64_t seqno, uint64_t persistedPreparedSeqno) {
+        const LoadPreparedSyncWritesResult& lps) {
     // callers logic is simpler if they don't have to check for default exists
     if (!doesDefaultCollectionExist()) {
         return;
@@ -1476,18 +1476,31 @@ void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
     auto highSeqno = getHighSeqno(CollectionID::Default);
 
     // the passed "seqno" cannot be greater than the high-seqno
-    Expects(seqno <= highSeqno);
-
-    if (highSeqno > persistedPreparedSeqno ||
-        (seqno == 0 && highSeqno < persistedPreparedSeqno)) {
-        // a) The highSeqno is greater than the persistedPreparedSeqno. It must
-        //    be a visible mutation
-        // b) No commit found in the loadPreparedSyncWrites scan window and
-        //    highSeqno is below the highest prepare
+    Expects(lps.defaultCollectionMaxVisibleSeqno <= highSeqno);
+    if (highSeqno == 0 || highSeqno > lps.scannedRange.high) {
+        // a) highSeqno is 0 => mvs is 0
+        // b) The highSeqno is greater than the persistedPreparedSeqno. It must
+        //    be a visible mutation. The persistedPreparedSeqno is the highest
+        //    prepare in the seqno-index.
         defaultCollectionMaxVisibleSeqno = highSeqno;
+    } else if (lps.defaultCollectionMaxVisibleSeqno == 0 && highSeqno &&
+               highSeqno < lps.scannedRange.low) {
+        // a) No committed seqno found in loadPreparedSyncWrites scan. AND
+        // b) The collection has a highSeqno. AND
+        // c) That highSeqno is below the scanned range.
+        //    This is the problematic case. We cannot make any judgement about
+        //    the visibility of the highSeqno - it could be an abort.
+        //    The solution chosen here is to "lie" and set the mvs to 1. The
+        //    whole reason KV has this mvs tracking is for DCP clients that use
+        //    getAllVBSeqs and expect their DCP stream will reach at least the
+        //    value returned by getAllVBSeqs. There is never a guarantee that
+        //    the value of mvs will be in the stream.
+        // Note: we could improve by doing a getBySeqno read from KVStore and
+        //       from that check the key's visibility
+        defaultCollectionMaxVisibleSeqno = 1;
     } else {
         // Else use the given seqno, it is the highest commit
-        defaultCollectionMaxVisibleSeqno = seqno;
+        defaultCollectionMaxVisibleSeqno = lps.defaultCollectionMaxVisibleSeqno;
     }
 }
 

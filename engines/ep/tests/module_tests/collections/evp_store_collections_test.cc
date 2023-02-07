@@ -4607,6 +4607,73 @@ TEST_P(CollectionsPersistentParameterizedTest, MB_55451) {
     validate(5, 5);
 }
 
+TEST_P(CollectionsPersistentParameterizedTest,
+       defaultCollectionHighSeqnoAbort) {
+    setVBucketStateAndRunPersistTask(
+            vbid,
+            vbucket_state_active,
+            {{"topology", nlohmann::json::array({{"active", "replica"}})}});
+
+    CollectionsManifest cm;
+    cm.add(CollectionEntry::fruit);
+    setCollections(cookie, cm);
+    flush_vbucket_to_disk(vbid, 1);
+    auto key = StoredDocKey{"k1", CollectionID::Default};
+    auto item = makePendingItem(key, "value");
+    EXPECT_EQ(cb::engine_errc::sync_write_pending, store->set(*item, cookie));
+    flush_vbucket_to_disk(vbid, 1);
+    auto vb = store->getVBucket(vbid);
+    EXPECT_EQ(cb::engine_errc::success,
+              vb->abort(key,
+                        item->getBySeqno(),
+                        {} /*abortSeqno*/,
+                        vb->lockCollections(key)));
+    flush_vbucket_to_disk(vbid, 1);
+    auto validate = [this](uint64_t mvs, uint64_t highSeqno) {
+        auto vb = store->getVBucket(vbid);
+        EXPECT_EQ(mvs,
+                  vb->lockCollections().getDefaultCollectionMaxVisibleSeqno());
+        EXPECT_EQ(highSeqno,
+                  vb->lockCollections().getHighSeqno(CollectionID::Default));
+    };
+
+    validate(0, 3); // high-seqno is an abort.
+
+    // move hcs up
+    key = StoredDocKey{"k1", CollectionEntry::fruit};
+    item = makePendingItem(key, "value");
+    EXPECT_EQ(cb::engine_errc::sync_write_pending, store->set(*item, cookie));
+    flush_vbucket_to_disk(vbid, 1);
+    EXPECT_EQ(cb::engine_errc::success,
+              vb->abort(key,
+                        item->getBySeqno(),
+                        {} /*abortSeqno*/,
+                        vb->lockCollections(key)));
+    flush_vbucket_to_disk(vbid, 1);
+
+    EXPECT_EQ(cb::engine_errc::sync_write_pending,
+              store->set(*makePendingItem(
+                                 StoredDocKey{"fruit1", CollectionEntry::fruit},
+                                 "value"),
+                         cookie));
+    EXPECT_EQ(cb::engine_errc::sync_write_pending,
+              store->set(*makePendingItem(
+                                 StoredDocKey{"fruit2", CollectionEntry::fruit},
+                                 "value"),
+                         cookie));
+    EXPECT_EQ(cb::engine_errc::sync_write_pending,
+              store->set(*makePendingItem(
+                                 StoredDocKey{"fruit3", CollectionEntry::fruit},
+                                 "value"),
+                         cookie));
+    flush_vbucket_to_disk(vbid, 3);
+
+    vb.reset();
+
+    resetEngineAndWarmup();
+    validate(0, 1); // We've hit the case where we trigger a reset to 1
+}
+
 INSTANTIATE_TEST_SUITE_P(CollectionsExpiryLimitTests,
                          CollectionsExpiryLimitTest,
                          ::testing::Bool(),

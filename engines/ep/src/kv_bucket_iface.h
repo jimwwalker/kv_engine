@@ -846,17 +846,6 @@ public:
             const CookieIface* cookie,
             std::unique_ptr<Collections::Manifest>& newManifest) = 0;
 
-    /**
-     * Result of the loadPreparedSyncWrites function
-     */
-    struct LoadPreparedSyncWritesResult {
-        uint64_t itemsVisited = 0;
-        uint64_t preparesLoaded = 0;
-        uint64_t defaultCollectionMaxVisibleSeqno = 0;
-        uint64_t hps = 0;
-        bool success = false;
-    };
-
 protected:
     /**
      * Get metadata and value for a given key
@@ -912,9 +901,9 @@ protected:
      *
      * @param vb vBucket for which we will load SyncWrites
      *
-     * @returns number of prepares loaded
+     * @returns optional LoadPreparedSyncWritesResult. Fail returns std::nullopt
      */
-    virtual LoadPreparedSyncWritesResult loadPreparedSyncWrites(
+    virtual std::optional<LoadPreparedSyncWritesResult> loadPreparedSyncWrites(
             VBucket& vb) = 0;
 
     // During the warmup phase we might want to enable external traffic

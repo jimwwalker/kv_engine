@@ -1935,7 +1935,7 @@ void EPBucket::rollbackUnpersistedItems(VBucket& vb, int64_t rollbackSeqno) {
 // At the end of the scan, all outstanding Prepared items (which did not
 // have a Commit persisted to disk) will be registered with the Durability
 // Monitor.
-EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
+std::optional<LoadPreparedSyncWritesResult> EPBucket::loadPreparedSyncWrites(
         VBucket& vb) {
     /// Disk load callback for scan.
     struct LoadSyncWrites : public StatusCallback<GetValue> {
@@ -2021,7 +2021,11 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
         // with our vbucket_state.
         epVb.loadOutstandingPrepares(*vbState, std::move(prepares));
         // No prepares loaded
-        return {0, 0, 0, vbState->persistedPreparedSeqno, true};
+        return LoadPreparedSyncWritesResult{0,
+                                            0,
+                                            0,
+                                            vbState->persistedCompletedSeqno,
+                                            vbState->persistedPreparedSeqno};
     }
 
     // We optimise this step by starting the scan at the seqno following the
@@ -2093,8 +2097,7 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
         EP_LOG_CRITICAL(
                 "EPBucket::loadPreparedSyncWrites: scanCtx is null for {}",
                 epVb.getId());
-        // No prepares loaded
-        return {0, 0, 0, false};
+        return std::nullopt;
     }
 
     auto scanResult = kvStore->scan(*scanCtx);
@@ -2111,7 +2114,7 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
         EP_LOG_CRITICAL(
                 "EPBucket::loadPreparedSyncWrites: scan() failed for {}",
                 epVb.getId());
-        return {0, 0, 0, false};
+        return std::nullopt;
     }
     }
 
@@ -2138,11 +2141,12 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
     auto numPrepares = prepares.size();
     epVb.loadOutstandingPrepares(*vbState, std::move(prepares));
 
-    return {storageCB.itemsVisited,
+    return LoadPreparedSyncWritesResult{
+            storageCB.itemsVisited,
             numPrepares,
             storageCB.highestDefaultCollectionVisible,
-            vbState->persistedPreparedSeqno,
-            true};
+            startSeqno,
+            endSeqno};
 }
 
 ValueFilter EPBucket::getValueFilterForCompressionMode(

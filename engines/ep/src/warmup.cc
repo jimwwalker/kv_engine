@@ -1622,12 +1622,8 @@ void Warmup::loadPreparedSyncWrites(uint16_t shardId) {
         // for rollback.
         auto& vb = *(itr->second);
 
-        auto [itemsVisited,
-              preparesLoaded,
-              defaultCollectionMVS,
-              persistedPreparedSeqno,
-              success] = store.loadPreparedSyncWrites(vb);
-        if (!success) {
+        auto result = store.loadPreparedSyncWrites(vb);
+        if (!result) {
             EP_LOG_CRITICAL(
                     "Warmup::loadPreparedSyncWrites(): "
                     "EPBucket::loadPreparedSyncWrites() failed for {} aborting "
@@ -1636,10 +1632,10 @@ void Warmup::loadPreparedSyncWrites(uint16_t shardId) {
             return;
         }
         auto& epStats = store.getEPEngine().getEpStats();
-        epStats.warmupItemsVisitedWhilstLoadingPrepares += itemsVisited;
-        epStats.warmedUpPrepares += preparesLoaded;
+        epStats.warmupItemsVisitedWhilstLoadingPrepares += result->itemsVisited;
+        epStats.warmedUpPrepares += result->preparesLoaded;
         vb.getManifest().wlock().setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-                defaultCollectionMVS, persistedPreparedSeqno);
+                *result);
     }
 
     if (++threadtask_count == store.vbMap.getNumShards()) {

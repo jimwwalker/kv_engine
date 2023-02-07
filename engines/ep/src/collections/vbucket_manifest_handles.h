@@ -779,7 +779,7 @@ public:
      *        warmup loadPreparedSyncWrites scan
      */
     void setDefaultCollectionMaxVisibleSeqnoFromWarmup(
-            uint64_t seqno, uint64_t persistedPreparedSeqno);
+            const LoadPreparedSyncWritesResult& lps);
 
     /// @return iterator to the beginning of the underlying collection map
     Manifest::container::iterator begin() {
