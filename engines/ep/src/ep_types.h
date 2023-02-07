@@ -370,6 +370,30 @@ private:
     HistoryRetentionAvailable historyRetentionAvailable;
 };
 
+/**
+ * Result of the KVBucket::loadPreparedSyncWrites function
+ */
+struct LoadPreparedSyncWritesResult {
+    LoadPreparedSyncWritesResult() = default;
+    LoadPreparedSyncWritesResult(uint64_t itemsVisited,
+                                 uint64_t preparesLoaded,
+                                 uint64_t defaultCollectionMaxVisibleSeqno,
+                                 uint64_t low,
+                                 uint64_t high)
+        : itemsVisited(itemsVisited),
+          preparesLoaded(preparesLoaded),
+          defaultCollectionMaxVisibleSeqno(defaultCollectionMaxVisibleSeqno),
+          scannedRange{low, high} {
+    }
+    uint64_t itemsVisited = 0;
+    uint64_t preparesLoaded = 0;
+    uint64_t defaultCollectionMaxVisibleSeqno = 0;
+    struct Range {
+        uint64_t low = 0;
+        uint64_t high = 0;
+    } scannedRange;
+};
+
 namespace cb {
 
 /**

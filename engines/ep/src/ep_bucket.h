@@ -220,7 +220,8 @@ public:
 
     void rollbackUnpersistedItems(VBucket& vb, int64_t rollbackSeqno) override;
 
-    LoadPreparedSyncWritesResult loadPreparedSyncWrites(VBucket& vb) override;
+    std::optional<LoadPreparedSyncWritesResult> loadPreparedSyncWrites(
+            VBucket& vb) override;
 
     /**
      * Returns the ValueFilter to use for KVStore scans, given the bucket

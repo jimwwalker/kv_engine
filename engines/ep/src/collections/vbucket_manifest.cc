@@ -1047,9 +1047,8 @@ uint64_t Manifest::queueCollectionSystemEvent(
     return rv;
 }
 
-void Manifest::setDefaultCollectionLegacySeqnos(uint64_t maxCommittedSeqno,
-                                                Vbid vb,
-                                                KVStoreIface& kvs) {
+void Manifest::setDefaultCollectionLegacySeqnos(
+        const LoadPreparedSyncWritesResult& lps, Vbid vb, KVStoreIface& kvs) {
     uint64_t highSeqno{0};
     {
         auto handle = lock();
@@ -1065,7 +1064,7 @@ void Manifest::setDefaultCollectionLegacySeqnos(uint64_t maxCommittedSeqno,
 
     // Re-lock for the update to the object
     auto handle = lock();
-    setDefaultCollectionLegacySeqnos(maxCommittedSeqno, maxLegacyDCPSeqno);
+    setDefaultCollectionLegacySeqnos(lps, maxLegacyDCPSeqno);
 }
 
 // Build an XATTR pair which records the defaultCollectionMaxLegacyDCPSeqno
@@ -1587,8 +1586,8 @@ cb::engine_errc Manifest::getScopeDataLimitStatus(
     return cb::engine_errc::success;
 }
 
-void Manifest::setDefaultCollectionLegacySeqnos(uint64_t maxCommittedSeqno,
-                                                uint64_t maxLegacyDCPSeqno) {
+void Manifest::setDefaultCollectionLegacySeqnos(
+        const LoadPreparedSyncWritesResult& lps, uint64_t maxLegacyDCPSeqno) {
     // The given value is the correct seqno
     // This highSeqno represents committed and !committed (but never modify)
     defaultCollectionMaxLegacyDCPSeqno = maxLegacyDCPSeqno;
@@ -1596,16 +1595,62 @@ void Manifest::setDefaultCollectionLegacySeqnos(uint64_t maxCommittedSeqno,
     // If warmup loadPrepareSyncWrites found a default collection committed item
     // and that is less than the collection's high-seqno, then we set the
     // max-visible to seqno
-    if (maxCommittedSeqno &&
-        maxCommittedSeqno < defaultCollectionMaxLegacyDCPSeqno) {
-        defaultCollectionMaxVisibleSeqno = maxCommittedSeqno;
+    if (lps.defaultCollectionMaxVisibleSeqno &&
+        lps.defaultCollectionMaxVisibleSeqno <
+                defaultCollectionMaxLegacyDCPSeqno) {
+        defaultCollectionMaxVisibleSeqno = lps.defaultCollectionMaxVisibleSeqno;
     } else {
         // The collection's high-seqno is visible
 
         defaultCollectionMaxVisibleSeqno =
                 defaultCollectionMaxLegacyDCPSeqno.load();
     }
+
+    if (maxLegacyDCPSeqno == 0 || maxLegacyDCPSeqno > lps.scannedRange.high) {
+        defaultCollectionMaxVisibleSeqno = maxLegacyDCPSeqno;
+    } else if (lps.defaultCollectionMaxVisibleSeqno == 0 && maxLegacyDCPSeqno && highSeqno < lps.scannedRange.low) {
+
+    }
 }
+#if 0
+void Manifest::setDefaultCollectionMaxVisibleSeqnoFromWarmup(
+        const LoadPreparedSyncWritesResult& lps) {
+    // callers logic is simpler if they don't have to check for default exists
+    if (!doesDefaultCollectionExist()) {
+        return;
+    }
+    // This highSeqno represents committed and !committed
+    auto highSeqno = getHighSeqno(CollectionID::Default);
+
+    // the passed "seqno" cannot be greater than the high-seqno
+    Expects(lps.defaultCollectionMaxVisibleSeqno <= highSeqno);
+    if (highSeqno == 0 || highSeqno > lps.scannedRange.high) {
+        // a) highSeqno is 0 => mvs is 0
+        // b) The highSeqno is greater than the persistedPreparedSeqno. It must
+        //    be a visible mutation. The persistedPreparedSeqno is the highest
+        //    prepare in the seqno-index.
+        defaultCollectionMaxVisibleSeqno = highSeqno;
+    } else if (lps.defaultCollectionMaxVisibleSeqno == 0 && highSeqno &&
+               highSeqno < lps.scannedRange.low) {
+        // a) No committed seqno found in loadPreparedSyncWrites scan. AND
+        // b) The collection has a highSeqno. AND
+        // c) That highSeqno is below the scanned range.
+        //    This is the problematic case. We cannot make any judgement about
+        //    the visibility of the highSeqno - it could be an abort.
+        //    The solution chosen here is to "lie" and set the mvs to 1. The
+        //    whole reason KV has this mvs tracking is for DCP clients that use
+        //    getAllVBSeqs and expect their DCP stream will reach at least the
+        //    value returned by getAllVBSeqs. There is never a guarantee that
+        //    the value of mvs will be in the stream.
+        // Note: we could improve by doing a getBySeqno read from KVStore and
+        //       from that check the key's visibility
+        defaultCollectionMaxVisibleSeqno = 1;
+    } else {
+        // Else use the given seqno, it is the highest commit
+        defaultCollectionMaxVisibleSeqno = lps.defaultCollectionMaxVisibleSeqno;
+    }
+}
+#endif
 
 uint64_t Manifest::getDefaultCollectionMaxVisibleSeqno() const {
     if (!doesDefaultCollectionExist()) {

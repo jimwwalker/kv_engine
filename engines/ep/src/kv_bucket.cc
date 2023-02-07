@@ -2571,7 +2571,7 @@ TaskStatus KVBucket::rollback(Vbid vbid, uint64_t rollbackSeqno) {
                 if (result.highSeqno > 0) {
                     rollbackUnpersistedItems(*vb, result.highSeqno);
                     const auto loadResult = loadPreparedSyncWrites(*vb);
-                    if (loadResult.success) {
+                    if (loadResult) {
                         auto& epVb = static_cast<EPVBucket&>(*vb.getVB());
                         epVb.postProcessRollback(result, prevHighSeqno, *this);
                         engine.getDcpConnMap().closeStreamsDueToRollback(vbid);

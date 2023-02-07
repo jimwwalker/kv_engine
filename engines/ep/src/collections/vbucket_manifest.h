@@ -265,7 +265,7 @@ public:
      * Warmup also passes the vbucket and KVStore reference so the DCP max seqno
      * can be retrieved.
      */
-    void setDefaultCollectionLegacySeqnos(uint64_t maxCommittedSeqno,
+    void setDefaultCollectionLegacySeqnos(const LoadPreparedSyncWritesResult& lps,
                                           Vbid vb,
                                           KVStoreIface& kvs);
 
@@ -1119,12 +1119,6 @@ protected:
      */
     cb::engine_errc getScopeDataLimitStatus(const container::const_iterator itr,
                                             size_t nBytes) const;
-    /**
-     * Sets the default collection max-visible to seqno (if the collection
-     * exists). This does not just set the value. The seqno passed is the value
-     * warmup found during the scan from start to high-prepare.
-     */
-    void setDefaultCollectionMaxVisibleSeqnoFromWarmup(uint64_t seqno);
 
     /**
      * Set both of the default collection's legacy seqnos.
@@ -1134,8 +1128,9 @@ protected:
      *    as tracked by MB-55451.
      * 2) The max DCP seqno is set to the given value.
      */
-    void setDefaultCollectionLegacySeqnos(uint64_t maxCommittedSeqno,
-                                          uint64_t maxLegacyDCPSeqno);
+    void setDefaultCollectionLegacySeqnos(
+            const LoadPreparedSyncWritesResult& lps,
+            uint64_t maxLegacyDCPSeqno);
 
     /**
      * Gets the default collections max-visible seqno which is the only
