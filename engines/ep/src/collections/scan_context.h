@@ -13,6 +13,7 @@
 
 #include "collections/collections_types.h"
 
+#include <unordered_map>
 #include <unordered_set>
 
 struct DocKey;
@@ -20,6 +21,7 @@ struct DocKey;
 namespace Collections {
 
 namespace KVStore {
+struct OpenCollection;
 struct DroppedCollection;
 }
 
@@ -33,6 +35,8 @@ namespace VB {
 class ScanContext {
 public:
     explicit ScanContext(
+            const std::vector<Collections::KVStore::OpenCollection>*
+                    openCollections,
             const std::vector<Collections::KVStore::DroppedCollection>&
                     droppedCollections);
 
@@ -83,11 +87,17 @@ public:
     }
 
 protected:
+    bool isLogicallyDeleted(CollectionID cid,
+                            bool isDeleted,
+                            uint64_t seqno) const;
+
     friend std::ostream& operator<<(std::ostream&, const ScanContext&);
 
     std::unordered_set<CollectionID> dropped;
+    std::unordered_map<CollectionID, uint64_t> alive;
     uint64_t startSeqno = std::numeric_limits<uint64_t>::max();
     uint64_t endSeqno = 0;
+    bool canCheckAliveMap{false};
 };
 
 std::ostream& operator<<(std::ostream& os, const ScanContext& scanContext);

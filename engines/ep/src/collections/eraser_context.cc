@@ -18,7 +18,7 @@ namespace Collections::VB {
 EraserContext::EraserContext(
         const std::vector<Collections::KVStore::DroppedCollection>&
                 droppedCollections)
-    : ScanContext(droppedCollections) {
+    : ScanContext({/* no open collections in this case*/}, droppedCollections) {
 }
 
 void EraserContext::processSystemEvent(const DocKey& key, SystemEvent se) {

@@ -40,7 +40,9 @@ public:
         // duplicates require that magma retains all of the test mutations.
         // MockMagmaKVStore then allows for arbitrary positioning of the history
         // window.
-        config_string += "history_retention_bytes=104857600";
+        config_string +=
+                "history_retention_bytes=104857600;history_retention_seconds="
+                "5000";
 
         CollectionsDcpParameterizedTest::SetUp();
         // To allow tests to set where history begins, use MockMagmaKVStore
@@ -552,6 +554,88 @@ TEST_P(HistoryScanTest, BackfillWithDroppedCollection) {
                      {},
                      {},
                      items);
+}
+
+// A dropped collection can still exist inside the history window, test it is
+// not observable by DCP change stream when backfilling
+// MB-55557
+TEST_P(HistoryScanTest, BackfillWithDroppedCollectionAndPurge) {
+    // Stop creating history
+    store->setHistoryRetentionBytes(0);
+
+    CollectionsManifest cm;
+    setCollections(cookie, cm.add(CollectionEntry::vegetable, {}, true));
+    std::vector<Item> items;
+
+    store_item(vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v0");
+    flush_vbucket_to_disk(vbid, 1 + 1);
+
+    // Now history begins here
+    store->setHistoryRetentionBytes(1024 * 1024 * 100);
+
+    store_item(vbid, makeStoredDocKey("b", CollectionEntry::vegetable), "v0");
+    flush_vbucket_to_disk(vbid, 1);
+    store_item(vbid, makeStoredDocKey("b", CollectionEntry::vegetable), "v1");
+    flush_vbucket_to_disk(vbid, 1);
+    store_item(vbid, makeStoredDocKey("b", CollectionEntry::vegetable), "v2");
+    flush_vbucket_to_disk(vbid, 1);
+
+    // Now store 1 item to default (which will be in the snapshot)
+    items.emplace_back(store_item(
+            vbid, makeStoredDocKey("default", CollectionID::Default), "val-a"));
+
+    items.emplace_back(makeStoredDocKey("", CollectionEntry::vegetable),
+                       vbid,
+                       queue_op::system_event,
+                       0,
+                       items.back().getBySeqno() + 1);
+
+    setCollections(cookie, cm.remove(CollectionEntry::vegetable));
+    flush_vbucket_to_disk(vbid, 2);
+
+    runCollectionsEraser(vbid);
+
+    ensureDcpWillBackfill();
+
+    createDcpObjects(std::string_view{},
+                     OutOfOrderSnapshots::No,
+                     0,
+                     true, // sync-repl enabled
+                     ~0ull,
+                     ChangeStreams::Yes);
+
+    runBackfill();
+
+    // At the moment an "empty" marker is produced. Only history exists on disk
+    // but the code which drives the snapshot marker doesn't know. All it knows
+    // is.
+    // DCP stream start-seqno=0
+    // history start-seqno = 1m
+    // it doesn't know if the KVStore has data from 1 to 1m, we would have to
+    // change the sending code to delay the marker until data is found...
+    // Anyway for now, it's a minor 'imperfection'
+    validateSnapshot(vbid,
+                     0,
+                     items.back().getBySeqno(),
+                     MARKER_FLAG_CHK | MARKER_FLAG_DISK,
+                     0 /*hcs*/,
+                     items.back().getBySeqno() /*mvs*/,
+                     {},
+                     {},
+                     {}); //<<< no data
+
+    // Now the history snap
+    validateSnapshot(vbid,
+                     0,
+                     items.back().getBySeqno(),
+                     MARKER_FLAG_HISTORY |
+                             MARKER_FLAG_MAY_CONTAIN_DUPLICATE_KEYS |
+                             MARKER_FLAG_CHK | MARKER_FLAG_DISK,
+                     0 /*hcs*/,
+                     items.back().getBySeqno() /*mvs*/,
+                     {},
+                     {},
+                     items); // test will fail because vegetable keys are sent
 }
 
 // Tests which don't need executing in two eviction modes

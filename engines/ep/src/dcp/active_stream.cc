@@ -461,6 +461,7 @@ bool ActiveStream::backfillReceived(std::unique_ptr<Item> itm,
         // Skip this item, but continue backfill at next item.
         return true;
     }
+    std::cerr << *itm << std::endl;
 
     queued_item qi(std::move(itm));
     // We need to send a mutation instead of a commit if this Item is a

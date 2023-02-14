@@ -1639,6 +1639,8 @@ public:
                      ValueFilter _valFilter,
                      uint64_t _documentCount,
                      const vbucket_state& vbucketState,
+                     const std::vector<Collections::KVStore::OpenCollection>*
+                             openCollections,
                      const std::vector<Collections::KVStore::DroppedCollection>&
                              droppedCollections,
                      DomainAwareUniquePtr<DomainAwareSeqIterator> itr,
@@ -1654,6 +1656,7 @@ public:
                              _valFilter,
                              _documentCount,
                              vbucketState,
+                             openCollections,
                              droppedCollections,
                              std::nullopt, // timestamp
                              historyStartSeqno),
@@ -1724,6 +1727,16 @@ std::unique_ptr<BySeqnoScanContext> MagmaKVStore::initBySeqnoScanContext(
                 getDroppedStatus.String());
     }
 
+    auto [getOpenCollectionsStatus, openCollections] =
+            getOpenCollections(vbid, snapshot);
+    if (!getOpenCollectionsStatus.OK()) {
+        logger->warn(
+                "MagmaKVStore::initBySeqnoScanContext {} failed to get "
+                "open collections from disk. Status:{}",
+                vbid,
+                getOpenCollectionsStatus.String());
+    }
+
     auto historyStartSeqno = magma->GetOldestHistorySeqno(snapshot);
     if (logger->should_log(spdlog::level::info)) {
         logger->info(
@@ -1740,7 +1753,7 @@ std::unique_ptr<BySeqnoScanContext> MagmaKVStore::initBySeqnoScanContext(
                 valOptions,
                 itr->to_string());
     }
-
+#warning "Don't always want the alive collections??"
     return std::make_unique<MagmaScanContext>(std::move(cb),
                                               std::move(cl),
                                               vbid,
@@ -1752,6 +1765,7 @@ std::unique_ptr<BySeqnoScanContext> MagmaKVStore::initBySeqnoScanContext(
                                               valOptions,
                                               nDocsToRead,
                                               readState.state,
+                                              &openCollections,
                                               dropped,
                                               std::move(itr),
                                               historyStartSeqno);
@@ -3084,6 +3098,17 @@ MagmaKVStore::getDroppedCollections(Vbid vbid) const {
             Collections::KVStore::decodeDroppedCollections(
                     {reinterpret_cast<const uint8_t*>(dropped.data()),
                      dropped.length()})};
+}
+
+std::pair<magma::Status, std::vector<Collections::KVStore::OpenCollection>>
+MagmaKVStore::getOpenCollections(Vbid vbid,
+                                 magma::Magma::Snapshot& snapshot) const {
+    Slice keySlice(LocalDocKey::openCollections);
+    auto [status, openCollections] = readLocalDoc(vbid, snapshot, keySlice);
+    return {status,
+            Collections::KVStore::decodeOpenCollections(
+                    {reinterpret_cast<const uint8_t*>(openCollections.data()),
+                     openCollections.length()})};
 }
 
 std::pair<magma::Status, std::vector<Collections::KVStore::DroppedCollection>>
