@@ -614,6 +614,7 @@ TEST_P(HistoryScanTest, BackfillWithDroppedCollectionAndPurge) {
     // it doesn't know if the KVStore has data from 1 to 1m, we would have to
     // change the sending code to delay the marker until data is found...
     // Anyway for now, it's a minor 'imperfection'
+#if 0
     validateSnapshot(vbid,
                      0,
                      items.back().getBySeqno(),
@@ -623,6 +624,80 @@ TEST_P(HistoryScanTest, BackfillWithDroppedCollectionAndPurge) {
                      {},
                      {},
                      {}); //<<< no data
+#endif
+
+    // Now the history snap
+    validateSnapshot(vbid,
+                     0,
+                     items.back().getBySeqno(),
+                     MARKER_FLAG_HISTORY |
+                             MARKER_FLAG_MAY_CONTAIN_DUPLICATE_KEYS |
+                             MARKER_FLAG_CHK | MARKER_FLAG_DISK,
+                     0 /*hcs*/,
+                     items.back().getBySeqno() /*mvs*/,
+                     {},
+                     {},
+                     items); // test will fail because vegetable keys are sent
+}
+
+TEST_P(HistoryScanTest, DoubleMarker) {
+    store->setHistoryRetentionBytes(0);
+
+    CollectionsManifest cm;
+    setCollections(cookie, cm.add(CollectionEntry::vegetable, {}, true));
+    std::vector<Item> items;
+
+    store_item(vbid, makeStoredDocKey("a", CollectionEntry::vegetable), "v0");
+    flush_vbucket_to_disk(vbid, 1 + 1);
+
+    // History begins here
+    store->setHistoryRetentionBytes(1024 * 1024 * 100);
+
+    // Now store 1 item to default (which will be in the snapshot)
+    items.emplace_back(store_item(
+            vbid, makeStoredDocKey("default", CollectionID::Default), "val-a"));
+
+    setCollections(cookie, cm.remove(CollectionEntry::vegetable));
+    // Add an item which represents the system event for the drop
+    items.emplace_back(makeStoredDocKey("", CollectionEntry::vegetable),
+                       vbid,
+                       queue_op::system_event,
+                       0,
+                       items.back().getBySeqno() + 1);
+    flush_vbucket_to_disk(vbid, 2);
+
+    runCollectionsEraser(vbid);
+
+    ensureDcpWillBackfill();
+
+    createDcpObjects(std::string_view{},
+                     OutOfOrderSnapshots::No,
+                     0,
+                     true, // sync-repl enabled
+                     ~0ull,
+                     ChangeStreams::Yes);
+
+    runBackfill();
+
+    // At the moment an "empty" marker is produced. Only history exists on disk
+    // but the code which drives the snapshot marker doesn't know. All it knows
+    // is.
+    // DCP stream start-seqno=0
+    // history start-seqno = 1m
+    // it doesn't know if the KVStore has data from 1 to 1m, we would have to
+    // change the sending code to delay the marker until data is found...
+    // Anyway for now, it's a minor 'imperfection'
+#if 0
+    validateSnapshot(vbid,
+                     0,
+                     items.back().getBySeqno(),
+                     MARKER_FLAG_CHK | MARKER_FLAG_DISK,
+                     0 /*hcs*/,
+                     items.back().getBySeqno() /*mvs*/,
+                     {},
+                     {},
+                     {}); //<<< no data
+#endif
 
     // Now the history snap
     validateSnapshot(vbid,

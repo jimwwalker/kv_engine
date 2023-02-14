@@ -926,6 +926,8 @@ private:
      */
     Collections::VB::Filter filter;
 
+    std::unique_ptr<SnapshotMarker> pendingDiskMarker;
+
 protected:
     /**
      * A stream-ID which is defined if the producer is using enabled to allow

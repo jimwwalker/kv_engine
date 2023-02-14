@@ -382,16 +382,30 @@ bool ActiveStream::markDiskSnapshot(uint64_t startSeqno,
             dcpMarkerFlagsToString(flags),
             to_string_or_none(hcsToSend),
             to_string_or_none(mvsToSend));
-        pushToReadyQ(std::make_unique<SnapshotMarker>(opaque_,
-                                                      vb_,
-                                                      startSeqno,
-                                                      endSeqno,
-                                                      flags,
-                                                      hcsToSend,
-                                                      mvsToSend,
-                                                      timestamp,
-                                                      sid));
-        lastSentSnapEndSeqno.store(endSeqno, std::memory_order_relaxed);
+
+        if (source == SnapshotSource::NoHistoryPrologue) {
+            pendingDiskMarker = std::make_unique<SnapshotMarker>(opaque_,
+                                                                 vb_,
+                                                                 startSeqno,
+                                                                 endSeqno,
+                                                                 flags,
+                                                                 hcsToSend,
+                                                                 mvsToSend,
+                                                                 timestamp,
+                                                                 sid);
+        } else {
+            pendingDiskMarker.reset();
+            pushToReadyQ(std::make_unique<SnapshotMarker>(opaque_,
+                                                          vb_,
+                                                          startSeqno,
+                                                          endSeqno,
+                                                          flags,
+                                                          hcsToSend,
+                                                          mvsToSend,
+                                                          timestamp,
+                                                          sid));
+            lastSentSnapEndSeqno.store(endSeqno, std::memory_order_relaxed);
+        }
 
         if (!isDiskOnly()) {
             // Only re-register the cursor if we still need to get memory
@@ -399,7 +413,10 @@ bool ActiveStream::markDiskSnapshot(uint64_t startSeqno,
             registerCursor(*vb->checkpointManager, chkCursorSeqno);
         }
     }
-    notifyStreamReady();
+
+    if (!pendingDiskMarker) {
+        notifyStreamReady();
+    }
     return true;
 }
 
@@ -496,6 +513,12 @@ bool ActiveStream::backfillReceived(std::unique_ptr<Item> itm,
         if (!producer->recordBackfillManagerBytesRead(
                     resp->getApproximateSize())) {
             return false;
+        }
+
+        if (pendingDiskMarker) {
+            lastSentSnapEndSeqno.store(pendingDiskMarker->getEndSeqno(),
+                                       std::memory_order_relaxed);
+            pushToReadyQ(std::move(pendingDiskMarker));
         }
 
         // Passed all checks, item will be added to ready queue now.
