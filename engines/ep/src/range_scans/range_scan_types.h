@@ -28,3 +28,10 @@ struct RangeScanCreateToken {
     cb::rangescan::Id uuid;
     RangeScanCreateState state{RangeScanCreateState::Pending};
 };
+
+// Data stored in engine-specific during a RangeScan continue request
+struct RangeScanContinueToken {
+    RangeScanContinueToken(cb::rangescan::Id uuid) : uuid(uuid) {
+    }
+    cb::rangescan::Id uuid;
+};
