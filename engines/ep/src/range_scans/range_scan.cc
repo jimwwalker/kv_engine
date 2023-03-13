@@ -369,6 +369,24 @@ cb::engine_errc RangeScan::prepareToContinueOnIOThread() {
     return cb::engine_errc::range_scan_more;
 }
 
+std::unique_ptr<RangeScanContinueResult>
+RangeScan::continuePartialOnFrontendThread() {
+    return handler->continuePartialOnFrontendThread();
+}
+
+std::unique_ptr<RangeScanContinueResult>
+RangeScan::continueMoreOnFrontendThread() {
+    return handler->continueMoreOnFrontendThread();
+}
+
+std::unique_ptr<RangeScanContinueResult> RangeScan::completeOnFrontendThread() {
+    return handler->completeOnFrontendThread();
+}
+
+std::unique_ptr<RangeScanContinueResult> RangeScan::cancelOnFrontendThread() {
+    return handler->cancelOnFrontendThread();
+}
+
 cb::engine_errc RangeScan::continueOnIOThread(KVStoreIface& kvstore) {
     EP_LOG_DEBUG(
             "RangeScan {} continueOnIOThread for {}", uuid, getVBucketId());

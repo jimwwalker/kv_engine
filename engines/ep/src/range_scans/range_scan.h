@@ -31,6 +31,7 @@ class EPBucket;
 class EventuallyPersistentEngine;
 class KVStoreIface;
 class KVStoreScanTracker;
+class RangeScanContinueResult;
 class RangeScanDataHandlerIFace;
 class StatCollector;
 class VBucket;
@@ -106,26 +107,41 @@ public:
                                  const EventuallyPersistentEngine& engine);
 
     /**
-     * Frontend executor invokes this method after an IO complete notification
-     * when the status is success or range_scan_more.
-     *
-     * @param client Cookie related to the continue request
+     * Frontend executor invokes this method after an IO complete notification.
+     * This method only calls through to the RangeScanDataHandler function of
+     * the same name.
+     * @return abstract RangeScanContinueResult which knows how to handle the
+     *         sending and destruction of the buffered scan data.
      */
-    void continueOnFrontendThread(CookieIface& client);
 
+    std::unique_ptr<RangeScanContinueResult> continuePartialOnFrontendThread();
     /**
-     * Frontend executor invokes this method after an IO complete notification
-     * when the status is range_scan_complete.
-     *
-     * @param client Cookie related to the continue request
+     * Frontend executor invokes this method after an IO complete notification.
+     * This method only calls through to the RangeScanDataHandler function of
+     * the same name.
+     * @return abstract RangeScanContinueResult which knows how to handle the
+     *         sending and destruction of the buffered scan data.
      */
-    void completeOnFrontendThread(CookieIface& client);
 
+    std::unique_ptr<RangeScanContinueResult> continueMoreOnFrontendThread();
     /**
-     * Frontend executor invokes this method after an IO complete notification
-     * when there is an error that triggers cancellation.
+     * Frontend executor invokes this method after an IO complete notification.
+     * This method only calls through to the RangeScanDataHandler function of
+     * the same name.
+     * @return abstract RangeScanContinueResult which knows how to handle the
+     *         sending and destruction of the buffered scan data.
      */
-    void cancelOnFrontendThread();
+
+    std::unique_ptr<RangeScanContinueResult> completeOnFrontendThread();
+    /**
+     * Frontend executor invokes this method after an IO complete notification.
+     * This method only calls through to the RangeScanDataHandler function of
+     * the same name.
+     * @return abstract RangeScanContinueResult which knows how to handle the
+     *         sending and destruction of the buffered scan data.
+     */
+
+    std::unique_ptr<RangeScanContinueResult> cancelOnFrontendThread();
 
     /**
      * Prepare the scan ready to continue. This function performs "pre-flight"

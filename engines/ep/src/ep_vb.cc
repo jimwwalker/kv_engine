@@ -1352,7 +1352,7 @@ cb::engine_errc EPVBucket::checkAndCancelRangeScanCreate(CookieIface& cookie) {
     }
 
     if (rangeScanCreateToken->state == RangeScanCreateState::Creating) {
-        return cancelRangeScan(rangeScanCreateToken->uuid, nullptr, true);
+        return cancelRangeScan(rangeScanCreateToken->uuid, nullptr);
     }
     return cb::engine_errc::success;
 }
@@ -1430,24 +1430,27 @@ cb::engine_errc EPVBucket::continueRangeScan(
         return status;
     }
 
-    status = rangeScans.continueScan(dynamic_cast<EPBucket&>(*bucket),
-                                     cookie,
-                                     continueToken.has_value(),
-                                     params);
+    auto continueState =
+            rangeScans.continueScan(dynamic_cast<EPBucket&>(*bucket),
+                                    cookie,
+                                    continueToken.has_value(),
+                                    params);
 
-    if (status == cb::engine_errc::would_block) {
+    if (continueState.first == cb::engine_errc::would_block) {
         // Stash a token and save the current UUID
         bucket->getEPEngine().storeEngineSpecific(
                 cookie, RangeScanContinueToken{params.uuid});
     }
 
-    return status;
+    if (continueState.second) {
+        continueState.second->complete(cookie);
+    }
+
+    return continueState.first;
 }
 
-// @todo: remove the now unused schedule parameter
 cb::engine_errc EPVBucket::cancelRangeScan(cb::rangescan::Id id,
-                                           CookieIface* cookie,
-                                           bool schedule) {
+                                           CookieIface* cookie) {
     cb::engine_errc status{cb::engine_errc::success};
     if (cookie) {
         status = rangeScans.hasPrivilege(id, *cookie, bucket->getEPEngine());
@@ -1476,10 +1479,6 @@ cb::engine_errc EPVBucket::cancelRangeScan(cb::rangescan::Id id,
 
     // The client doesn't wait for the task to run/complete
     return cancelStatus;
-}
-
-void EPVBucket::completeRangeScan(cb::rangescan::Id id) {
-    rangeScans.completeScan(id);
 }
 
 cb::engine_errc EPVBucket::doRangeScanStats(const StatCollector& collector) {

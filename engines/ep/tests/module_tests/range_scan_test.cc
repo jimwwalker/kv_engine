@@ -58,16 +58,27 @@ public:
         return testHook(scannedItems.size());
     }
 
-    void sendContinueDone(CookieIface& cookie) override {
-        // no-op. Real handler will invoke methods on cookie to send batch
+    std::unique_ptr<RangeScanContinueResult> continuePartialOnFrontendThread()
+            override {
+        // no-op
+        return {};
     }
 
-    void sendComplete(CookieIface& cookie) override {
-        // no-op. Real handler will invoke methods on cookie to send batch
+    std::unique_ptr<RangeScanContinueResult> continueMoreOnFrontendThread()
+            override {
+        // no-op
+        return {};
     }
 
-    void processCancel() override {
-        // no-op. Real handler will release any buffered data here
+    std::unique_ptr<RangeScanContinueResult> completeOnFrontendThread()
+            override {
+        // no-op
+        return {};
+    }
+
+    std::unique_ptr<RangeScanContinueResult> cancelOnFrontendThread() override {
+        // no-op
+        return {};
     }
 
     void addStats(std::string_view prefix,
@@ -783,8 +794,7 @@ TEST_P(RangeScanTest, continue_must_be_serialised) {
     destroy_mock_cookie(cookie2);
 
     // But can cancel
-    EXPECT_EQ(cb::engine_errc::success,
-              vb->cancelRangeScan(uuid, cookie, true));
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, cookie));
 
     // must run the cancel (so for magma we can shutdown)
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
@@ -795,8 +805,7 @@ TEST_P(RangeScanTest, continue_must_be_serialised) {
 TEST_P(RangeScanTest, create_cancel) {
     auto uuid = createScan(scanCollection, {"user"}, {"user\xFF"});
     auto vb = store->getVBucket(vbid);
-    EXPECT_EQ(cb::engine_errc::success,
-              vb->cancelRangeScan(uuid, cookie, true));
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, cookie));
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
                 "RangeScanContinueTask");
 
@@ -832,8 +841,7 @@ TEST_P(RangeScanTest, create_continue_is_cancelled) {
               vb->continueRangeScan(*cookie, continueParams));
 
     // Cancel
-    EXPECT_EQ(cb::engine_errc::success,
-              vb->cancelRangeScan(uuid, cookie, true));
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, cookie));
 
     // Task will run and cancel the scan, it will reschedule until nothing is
     // found in the ReadyScans queue (so 1 reschedule for this test).
@@ -862,7 +870,7 @@ TEST_P(RangeScanTest, create_continue_is_cancelled_2) {
             // a double lock of the collection manifest which is locked by the
             // scan loop
             EXPECT_EQ(cb::engine_errc::success,
-                      vb->cancelRangeScan(uuid, nullptr, true));
+                      vb->cancelRangeScan(uuid, nullptr));
         }
         return TestRangeScanHandler::Status::OK;
     };
@@ -870,8 +878,7 @@ TEST_P(RangeScanTest, create_continue_is_cancelled_2) {
     continueRangeScan(uuid, 0, 0ms, 0, cb::engine_errc::range_scan_cancelled);
 
     // Check scan is gone, cannot be cancelled again
-    EXPECT_EQ(cb::engine_errc::no_such_key,
-              vb->cancelRangeScan(uuid, cookie, true));
+    EXPECT_EQ(cb::engine_errc::no_such_key, vb->cancelRangeScan(uuid, cookie));
 
     // Or continued, uuid is unknown
     EXPECT_EQ(cb::engine_errc::no_such_key,
@@ -941,8 +948,7 @@ TEST_P(RangeScanTest, snapshot_upto_seqno) {
                            reqs,
                            {/* no sampling config*/},
                            cb::engine_errc::success);
-    EXPECT_EQ(cb::engine_errc::success,
-              vb->cancelRangeScan(uuid, cookie, false));
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, cookie));
 
     // Run the continue (so it cancels) this is required for a clean magma
     // shutdown.
@@ -962,8 +968,7 @@ TEST_P(RangeScanTest, snapshot_contains_seqno) {
                            reqs,
                            {/* no sampling config*/},
                            cb::engine_errc::success);
-    EXPECT_EQ(cb::engine_errc::success,
-              vb->cancelRangeScan(uuid, cookie, false));
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, cookie));
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
                 "RangeScanContinueTask");
 }
@@ -1381,8 +1386,7 @@ TEST_P(RangeScanTest, wait_for_persistence_success) {
                            cb::engine_errc::success);
 
     // Close the scan
-    EXPECT_EQ(cb::engine_errc::success,
-              vb->cancelRangeScan(uuid, cookie, false));
+    EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, cookie));
 
     runNextTask(*task_executor->getLpTaskQ()[AUXIO_TASK_IDX],
                 "RangeScanContinueTask");
@@ -1463,8 +1467,7 @@ TEST_P(RangeScanTest, cancel_when_yielding) {
     // would yield
     testHook = [&vb, uuid, this](size_t count) {
         // Cancel after the first key has been read
-        EXPECT_EQ(cb::engine_errc::success,
-                  vb->cancelRangeScan(uuid, nullptr, true));
+        EXPECT_EQ(cb::engine_errc::success, vb->cancelRangeScan(uuid, nullptr));
         return TestRangeScanHandler::Status::OK;
     };
 
@@ -1501,14 +1504,27 @@ public:
         return Status::OK;
     }
 
-    void sendContinueDone(CookieIface& cookie) override {
-#warning "throw or similar??"
+    std::unique_ptr<RangeScanContinueResult> continuePartialOnFrontendThread()
+            override {
+        // no-op
+        return {};
     }
 
-    void sendComplete(CookieIface& cookie) override {
+    std::unique_ptr<RangeScanContinueResult> continueMoreOnFrontendThread()
+            override {
+        // no-op
+        return {};
     }
 
-    void processCancel() override {
+    std::unique_ptr<RangeScanContinueResult> completeOnFrontendThread()
+            override {
+        // no-op
+        return {};
+    }
+
+    std::unique_ptr<RangeScanContinueResult> cancelOnFrontendThread() override {
+        // no-op
+        return {};
     }
 
     void addStats(std::string_view prefix,
@@ -2102,14 +2118,27 @@ public:
         return Status::OK;
     }
 
-    void sendContinueDone(CookieIface& cookie) override {
-#warning "throw or similar"
+    std::unique_ptr<RangeScanContinueResult> continuePartialOnFrontendThread()
+            override {
+        // no-op
+        return {};
     }
 
-    void sendComplete(CookieIface& cookie) override {
+    std::unique_ptr<RangeScanContinueResult> continueMoreOnFrontendThread()
+            override {
+        // no-op
+        return {};
     }
 
-    void processCancel() override {
+    std::unique_ptr<RangeScanContinueResult> completeOnFrontendThread()
+            override {
+        // no-op
+        return {};
+    }
+
+    std::unique_ptr<RangeScanContinueResult> cancelOnFrontendThread() override {
+        // no-op
+        return {};
     }
 
     void addStats(std::string_view prefix,

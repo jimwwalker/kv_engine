@@ -35,3 +35,94 @@ struct RangeScanContinueToken {
     }
     cb::rangescan::Id uuid;
 };
+
+/**
+ * Base class for the frontend executor RangeScan result. This class owns
+ * the std::vector which stores mcbp formatted data from the scan. This class
+ * also knows if the scan is key or value.
+ *
+ */
+class RangeScanContinueResult {
+public:
+    virtual ~RangeScanContinueResult() = default;
+    virtual void complete(CookieIface& cookie) = 0;
+
+protected:
+    RangeScanContinueResult(std::vector<uint8_t> buffer, bool keyOnly);
+
+    void send(CookieIface& cookie, cb::engine_errc status);
+
+    std::vector<uint8_t> responseBuffer;
+    bool keyOnly{false};
+};
+
+/**
+ * RangeScanContinueResultPartial is an object created when a RangeScan has
+ * yielded because the send buffer is at or exceeding the configured size. In
+ * this case the RangeScan will run again without any input from the client.
+ */
+class RangeScanContinueResultPartial : public RangeScanContinueResult {
+public:
+    RangeScanContinueResultPartial(std::vector<uint8_t> buffer, bool keyOnly);
+
+    /**
+     * Sends the buffered data using Cookie::sendResponse with a status code of
+     * success.
+     */
+    virtual void complete(CookieIface& cookie);
+};
+
+// Intermediate class which extends the baseclass with the read bytes
+class RangeScanContinueResultWithReadBytes : public RangeScanContinueResult {
+protected:
+    RangeScanContinueResultWithReadBytes(std::vector<uint8_t> buffer,
+                                         size_t readBytes,
+                                         bool keyOnly);
+
+    /**
+     * Passes the value of readBytes to Cookie::addDocumentReadBytes
+     */
+    virtual void complete(CookieIface& cookie);
+
+    /// the number of bytes read so for the scan
+    size_t readBytes{0};
+};
+
+class RangeScanContinueResultMore
+    : public RangeScanContinueResultWithReadBytes {
+public:
+    RangeScanContinueResultMore(std::vector<uint8_t> buffer,
+                                size_t readBytes,
+                                bool keyOnly);
+
+    /**
+     * Sends the buffered data using Cookie::sendResponse with a status code of
+     * range_scan_more.
+     */
+    virtual void complete(CookieIface& cookie);
+};
+
+class RangeScanContinueResultComplete
+    : public RangeScanContinueResultWithReadBytes {
+public:
+    RangeScanContinueResultComplete(std::vector<uint8_t> buffer,
+                                    size_t readBytes,
+                                    bool keyOnly);
+    /**
+     * Sends the buffered data using Cookie::sendResponse with a status code of
+     * range_scan_complete.
+     */
+    virtual void complete(CookieIface& cookie);
+};
+
+class RangeScanContinueResultCancelled
+    : public RangeScanContinueResultWithReadBytes {
+public:
+    RangeScanContinueResultCancelled(std::vector<uint8_t> buffer,
+                                     size_t readBytes,
+                                     bool keyOnly);
+
+    virtual void complete(CookieIface& cookie) {
+        RangeScanContinueResultWithReadBytes::complete(cookie);
+    }
+};

@@ -1787,18 +1787,14 @@ public:
      * Cancel the range scan with the given identifier. The cancel itself will
      * be scheduled to run on an I/O task
      * @param id The identifier of the scan to continue
-     * @param cookie The cookie of the connection/request. This is a pointer so
-     *        that cancellation from internal paths doesn't need to pass a
-     *        cookie (and skips privilege checking).
-     * @param schedule request if a task should be scheduled to perform the
-     *        cancellation. If false, the RangeScan object may destruct (and
-     *        close any snapshot) within this function call.
+     * @param cookie The cookie of the connection/request. If nullptr then
+     *        privilege checks are bypassed (required for internal calls that
+     *        must not fail priv checks).
      * @return would_block if the scan was found and successfully scheduled for
      *         cancellation
      */
     virtual cb::engine_errc cancelRangeScan(cb::rangescan::Id id,
-                                            CookieIface* cookie,
-                                            bool schedule) = 0;
+                                            CookieIface* cookie) = 0;
 
     /**
      * Handler for cmd_stat "range-scans"

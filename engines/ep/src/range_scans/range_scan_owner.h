@@ -148,20 +148,20 @@ public:
      * Handler for a range-scan-continue operation. Method will locate the
      * scan and make it available for running.
      *
-     * Failure to locate the scan -> cb::engine_errc::no_such_key
-     * Scan already continued -> cb::engine_errc::too_busy
-     *
      * @param bucket The bucket of the scan
      * @param cookie client cookie requesting the continue
      * @param ioComplete true if this is the IO complete iteration
      * @param params bundled continue parameters
-     * @return success or other status (see above)
+     * @return pair of status and a TODO. The status is used to determine the
+     *         state of the command (which may be an I/O complete phase). The
+     *         caller must check the returned buffer and decide to ship any data
+     *         to the connection which issues the continue.
      */
-    cb::engine_errc continueScan(
-            EPBucket& bucket,
-            CookieIface& cookie,
-            bool ioComplete,
-            const cb::rangescan::ContinueParameters& params);
+    std::pair<cb::engine_errc, std::unique_ptr<RangeScanContinueResult>>
+    continueScan(EPBucket& bucket,
+                 CookieIface& cookie,
+                 bool ioComplete,
+                 const cb::rangescan::ContinueParameters& params);
 
     /**
      * Handler for a range-scan-cancel operation or a force cancel due to some
@@ -211,16 +211,6 @@ public:
      * Find the scan for the given id
      */
     std::shared_ptr<RangeScan> getScan(cb::rangescan::Id id) const;
-
-    /**
-     * Handler for completed scans. A completed scan will be removed from the
-     * set of known scans and allowed to destruct. The destruction is intended
-     * to happen in the caller. It is possible that this call does nothing if
-     * a cancellation occurs ahead of this call.
-     *
-     * @param id scan to complete
-     */
-    void completeScan(cb::rangescan::Id id);
 
     /**
      * Check if the caller can progress the scan with the given id by doing
