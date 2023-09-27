@@ -64,8 +64,10 @@ void logWarmupStats(const EPStats& stats, const Warmup& warmup) {
     double megabytes = stats.getPreciseTotalMemoryUsed() / 1.0e6;
     double megabytes_per_seconds = megabytes / seconds.count();
     EP_LOG_INFO(
-            "Warmup completed: {} keys and {} values loaded in {} ({} keys/s), "
+            "Warmup({}) completed: {} keys and {} values loaded in {} ({} "
+            "keys/s), "
             "mem_used now at {} MB ({} MB/s)",
+            warmup.getName(),
             stats.warmedUpKeys,
             stats.warmedUpValues,
             cb::time2text(std::chrono::nanoseconds(warmup.getTime())),
@@ -1264,7 +1266,8 @@ Warmup::Warmup(EPBucket& st, const Configuration& config_)
       stats(st.getEPEngine().getEpStats()),
       shardVbStates(store.vbMap.getNumShards()),
       shardVbIds(store.vbMap.getNumShards()),
-      warmedUpVbuckets(config.getMaxVbuckets()) {
+      warmedUpVbuckets(config.getMaxVbuckets()),
+      name("Primary") {
     setMemoryThreshold(config.getWarmupMinMemoryThreshold());
     setItemThreshold(config.getWarmupMinItemsThreshold());
 }
@@ -1336,18 +1339,21 @@ void Warmup::initialize() {
         // 'ep_force_shutdown=true' in the stats.json file.
         session_stats["ep_force_shutdown"] = "true";
         while (!store.getOneRWUnderlying()->snapshotStats(session_stats)) {
-            EP_LOG_ERR_RAW(
-                    "Warmup::initialize(): failed to persist setting "
+            EP_LOG_ERR(
+                    "Warmup({})::initialize(): failed to persist setting "
                     "ep_force_shutdown=true to stats.json, sleeping for 1 sec "
-                    "before retrying");
+                    "before retrying",
+                    getName());
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
 
     if (!store.getCollectionsManager().warmupLoadManifest(
                 store.getEPEngine().getConfiguration().getDbname())) {
-        EP_LOG_CRITICAL_RAW(
-                "Warmup::initialize aborting as manifest cannot be loaded");
+        EP_LOG_CRITICAL(
+                "Warmup({})::initialize aborting as "
+                "CollectionsManager::warmupLoadManifest failed",
+                getName());
         return;
     }
 
@@ -1378,8 +1384,9 @@ void Warmup::createVBuckets(uint16_t shardId) {
         // 'namespacing' applied to the key space
         if (!vbs.supportsNamespaces) {
             EP_LOG_CRITICAL(
-                    "Warmup::createVBuckets aborting warmup as {} datafile "
+                    "Warmup({})::createVBuckets aborting warmup as {} datafile "
                     "is unusable, name-spacing is not enabled.",
+                    getName(),
                     vbid);
             return;
         }
@@ -1402,8 +1409,9 @@ void Warmup::createVBuckets(uint16_t shardId) {
                                 ->getCollectionsManifest(vbid);
                 if (!getManifestStatus) {
                     EP_LOG_CRITICAL(
-                            "Warmup::createVBuckets: {} failed to read "
+                            "Warmup({})::createVBuckets: {} failed to read "
                             " collections manifest from disk",
+                            getName(),
                             vbid);
                     return;
                 }
@@ -1448,8 +1456,10 @@ void Warmup::createVBuckets(uint16_t shardId) {
 
                 auto entry = vb->failovers->getLatestEntry();
                 EP_LOG_INFO(
-                        "Warmup::createVBuckets: {} created new failover entry "
+                        "Warmup({})::createVBuckets: {} created new failover "
+                        "entry "
                         "with uuid:{} and seqno:{} due to {}",
+                        getName(),
                         vbid,
                         entry.vb_uuid,
                         entry.by_seqno,
@@ -1487,8 +1497,10 @@ void Warmup::processCreateVBucketsComplete(cb::engine_errc status) {
         return;
     }
 
-    EP_LOG_INFO("Warmup::processCreateVBucketsComplete unblocking {} cookie(s)",
-                toNotify.size());
+    EP_LOG_INFO(
+            "Warmup({})::processCreateVBucketsComplete unblocking {} cookie(s)",
+            getName(),
+            toNotify.size());
     for (auto* c : toNotify) {
         store.getEPEngine().notifyIOComplete(c, status);
     }
@@ -1529,9 +1541,10 @@ void Warmup::loadCollectionStatsForShard(uint16_t shardId) {
         auto kvstoreContext = kvstore->makeFileHandle(vbid);
         if (!kvstoreContext) {
             EP_LOG_CRITICAL(
-                    "Warmup::loadCollectionStatsForShard() Unable to make "
+                    "Warmup({})::loadCollectionStatsForShard() Unable to make "
                     "KVFileHandle for {}, aborting warmup as we will not be "
                     "able to check collection stats.",
+                    getName(),
                     vbid);
             return;
         }
@@ -1551,10 +1564,11 @@ void Warmup::loadCollectionStatsForShard(uint16_t shardId) {
                     *kvstoreContext, collection.first);
             if (status == KVStore::GetCollectionStatsStatus::Failed) {
                 EP_LOG_CRITICAL(
-                        "Warmup::loadCollectionStatsForShard(): "
+                        "Warmup({})::loadCollectionStatsForShard(): "
                         "getCollectionStats() failed for {}, aborting warmup "
                         "as we will not be "
                         "able to check collection stats.",
+                        getName(),
                         vbid);
                 return;
             }
@@ -1635,9 +1649,10 @@ void Warmup::loadPreparedSyncWrites(uint16_t shardId) {
                 store.loadPreparedSyncWrites(vb);
         if (!success) {
             EP_LOG_CRITICAL(
-                    "Warmup::loadPreparedSyncWrites(): "
+                    "Warmup({})::loadPreparedSyncWrites(): "
                     "EPBucket::loadPreparedSyncWrites() failed for {} aborting "
                     "Warmup",
+                    getName(),
                     vbid);
             return;
         }
@@ -1697,9 +1712,11 @@ void Warmup::populateVBucketMap(uint16_t shardId) {
                 // Disabling writes to this node as we're unable to persist
                 // vbucket state to disk.
                 EP_LOG_CRITICAL(
-                        "Warmup::populateVBucketMap() flush state failed for "
+                        "Warmup({})::populateVBucketMap() flush state failed "
+                        "for "
                         "{} highSeqno:{}, write traffic will be disabled for "
                         "this node.",
+                        getName(),
                         vbid,
                         vbPtr->getHighSeqno());
                 failedToSetAVbucketState = true;
@@ -1730,7 +1747,8 @@ void Warmup::populateVBucketMap(uint16_t shardId) {
             std::lock_guard<std::mutex> lock(warmupStart.mutex);
             metadata.store(std::chrono::steady_clock::now() - warmupStart.time);
         }
-        EP_LOG_INFO("metadata loaded in {}",
+        EP_LOG_INFO("Warmup({}) metadata loaded in {}",
+                    getName(),
                     cb::time2text(std::chrono::nanoseconds(metadata.load())));
     }
 }
@@ -1808,7 +1826,9 @@ void Warmup::loadingAccessLog(uint16_t shardId) {
             }
         } catch (MutationLog::ReadException& e) {
             corruptAccessLog = true;
-            EP_LOG_WARN("Error reading warmup access log:  {}", e.what());
+            EP_LOG_WARN("Warmup({}) Error reading access log:  {}",
+                        getName(),
+                        e.what());
         }
     }
 
@@ -1826,16 +1846,20 @@ void Warmup::loadingAccessLog(uint16_t shardId) {
                 }
             } catch (MutationLog::ReadException& e) {
                 corruptAccessLog = true;
-                EP_LOG_WARN("Error reading old access log:  {}", e.what());
+                EP_LOG_WARN("Warmup({}) Error reading old access log:  {}",
+                            getName(),
+                            e.what());
             }
         }
     }
 
     size_t numItems = store.getEPEngine().getEpStats().warmedUpValues;
     if (success && numItems) {
-        EP_LOG_INFO("{} items loaded from access log, completed in {}",
-                    uint64_t(numItems),
-                    cb::time2text(std::chrono::steady_clock::now() - stTime));
+        EP_LOG_INFO(
+                "Warmup({}) {} items loaded from access log, completed in {}",
+                getName(),
+                uint64_t(numItems),
+                cb::time2text(std::chrono::steady_clock::now() - stTime));
     } else {
         size_t estimatedCount = store.getEPEngine().getEpStats().warmedUpKeys;
         setEstimatedWarmupCount(estimatedCount);
@@ -1887,11 +1911,13 @@ size_t Warmup::doWarmup(MutationLog& lf,
 
     size_t total = harvester.total();
     setEstimatedWarmupCount(total);
-    EP_LOG_DEBUG("Completed log read in {} with {} entries",
+    EP_LOG_DEBUG("Warmup({}) Completed log read in {} with {} entries",
+                 getName(),
                  cb::time2text(log_load_duration),
                  total);
 
-    EP_LOG_DEBUG("Populated log in {} with(l: {}, s: {}, e: {})",
+    EP_LOG_DEBUG("Warmup({}) Populated log in {} with(l: {}, s: {}, e: {})",
+                 getName(),
                  cb::time2text(log_apply_duration),
                  cookie.loaded,
                  cookie.skipped,
@@ -1977,8 +2003,8 @@ void Warmup::step() {
         scheduleCompletion();
         return;
     }
-    throw std::logic_error("Warmup::step: illegal warmup state:" +
-                           std::to_string(int(state.getState())));
+    throw std::logic_error(fmt::format(
+            "Warmup({})::step: illegal warmup state:{}", getName(), state));
 }
 
 void Warmup::transition(WarmupState::State to, bool force) {
@@ -2158,15 +2184,17 @@ bool Warmup::hasReachedThreshold() const {
 
     if (memoryUsed >= stats.mem_low_wat) {
         EP_LOG_INFO(
-                "Total memory use reached to the low water mark, stop warmup"
-                ": memoryUsed ({}) >= low water mark ({})",
+                "Warmup({}) Total memory use reached to the low water mark, "
+                "stop warmup: memoryUsed ({}) >= low water mark ({})",
+                getName(),
                 memoryUsed,
                 uint64_t(stats.mem_low_wat.load()));
         return true;
     } else if (memoryUsed > (maxSize * maxSizeScaleFactor)) {
         EP_LOG_INFO(
-                "Enough MB of data loaded to enable traffic"
+                "Warmup({}) Enough MB of data loaded to enable traffic"
                 ": memoryUsed ({}) > (maxSize({}) * warmupMemUsedCap({}))",
+                getName(),
                 memoryUsed,
                 maxSize,
                 maxSizeScaleFactor);
@@ -2177,10 +2205,10 @@ bool Warmup::hasReachedThreshold() const {
         // Let ep-engine think we're done with the warmup phase
         // (we should refactor this into "enableTraffic")
         EP_LOG_INFO(
-                "Enough number of items loaded to enable traffic (value "
-                "eviction)"
-                ": warmedUpValues({}) >= (warmedUpKeys({}) * "
+                "Warmup({}) Enough number of items loaded to enable traffic "
+                "(value eviction): warmedUpValues({}) >= (warmedUpKeys({}) * "
                 "warmupNumReadCap({}))",
+                getName(),
                 uint64_t(stats.warmedUpValues.load()),
                 uint64_t(stats.warmedUpKeys.load()),
                 maxItemsScaleFactor);
@@ -2192,10 +2220,10 @@ bool Warmup::hasReachedThreshold() const {
         // of warmed up values, therefore for honoring the min_item threshold
         // in this scenario, we can consider warmup's estimated item count.
         EP_LOG_INFO(
-                "Enough number of items loaded to enable traffic (full "
-                "eviction)"
-                ": warmedUpValues({}) >= (warmup est items({}) * "
-                "warmupNumReadCap({}))",
+                "Warmup({}) Enough number of items loaded to enable traffic "
+                "(full eviction): warmedUpValues({}) >= (warmup est items({})"
+                " * warmupNumReadCap({}))",
+                getName(),
                 uint64_t(stats.warmedUpValues.load()),
                 uint64_t(getEstimatedItemCount()),
                 maxItemsScaleFactor);

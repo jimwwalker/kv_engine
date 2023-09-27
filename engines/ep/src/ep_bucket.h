@@ -253,7 +253,7 @@ public:
         return retainErroneousTombstones.load();
     }
 
-    Warmup* getWarmup() const override;
+    Warmup* getPrimaryWarmup() const override;
 
     bool isWarmupLoadingData() override;
 

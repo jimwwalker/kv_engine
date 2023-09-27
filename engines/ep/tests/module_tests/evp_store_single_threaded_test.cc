@@ -4713,7 +4713,7 @@ TEST_P(STParamPersistentBucketTest,
     store->initialize();
 
     auto& readerQueue = *task_executor->getLpTaskQ()[READER_TASK_IDX];
-    auto* warmup = engine->getKVBucket()->getWarmup();
+    auto* warmup = engine->getKVBucket()->getPrimaryWarmup();
     ASSERT_TRUE(warmup);
 
     // Warmup - run past the PopulateVBucketMap step which is the one that
@@ -4775,7 +4775,7 @@ void STParamPersistentBucketTest::testFailoverTableEntryPersistedAtWarmup(
     resetEngineAndEnableWarmup("", true /*unclean*/);
 
     auto& readerQueue = *task_executor->getLpTaskQ()[READER_TASK_IDX];
-    auto* warmup = engine->getKVBucket()->getWarmup();
+    auto* warmup = engine->getKVBucket()->getPrimaryWarmup();
     ASSERT_TRUE(warmup);
 
     // Warmup - load everything but don't run the complete phase which schedules
@@ -6263,7 +6263,7 @@ TEST_P(WarmupSTSingleShardTest, WarmupBackillYieldForwardProgress) {
             "warmup_backfill_scan_chunk_duration=0;access_scanner_enabled="
             "false");
     auto& readerQueue = *task_executor->getLpTaskQ()[READER_TASK_IDX];
-    auto* warmup = engine->getKVBucket()->getWarmup();
+    auto* warmup = engine->getKVBucket()->getPrimaryWarmup();
     ASSERT_TRUE(warmup);
 
     // 3) Warmup - run up to the first stage where we scan disk for documents -

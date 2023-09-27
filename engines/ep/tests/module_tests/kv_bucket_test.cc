@@ -84,10 +84,11 @@ void KVBucketTest::SetUp() {
             "After initialise() the calling thread should be associated with "
             "the newly-created engine");
 
-    if (completeWarmup && engine->getKVBucket()->getWarmup()) {
-        engine->getKVBucket()->getWarmup()->setFinishedLoading();
-        engine->getKVBucket()->getWarmup()->processCreateVBucketsComplete(
-                cb::engine_errc::success);
+    if (completeWarmup && engine->getKVBucket()->getPrimaryWarmup()) {
+        engine->getKVBucket()->getPrimaryWarmup()->setFinishedLoading();
+        engine->getKVBucket()
+                ->getPrimaryWarmup()
+                ->processCreateVBucketsComplete(cb::engine_errc::success);
     }
 }
 
