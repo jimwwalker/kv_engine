@@ -87,6 +87,7 @@ class LoadStorageKVPairCallback : public StatusCallback<GetValue> {
 public:
     LoadStorageKVPairCallback(
             EPBucket& ep,
+            Warmup& warmup,
             bool checkWarmupThresholdReached,
             WarmupState::State warmupState,
             std::optional<const std::chrono::steady_clock::duration>
@@ -108,6 +109,7 @@ private:
     VBucketMap& vbuckets;
     EPStats& stats;
     EPBucket& epstore;
+    Warmup& warmup;
     bool hasPurged;
     std::optional<const std::chrono::steady_clock::duration>
             deltaDeadlineFromNow;
@@ -539,6 +541,7 @@ bool WarmupVbucketVisitor::visit(VBucket& vb) {
                         .getWarmupBackfillScanChunkDuration()};
         auto kvLookup = std::make_unique<LoadStorageKVPairCallback>(
                 ep,
+                backfillTask.getWarmup(),
                 backfillTask.checkWarmupThresholdReached(),
                 backfillTask.getWarmup().getWarmupState(),
                 chunkDuration);
@@ -1008,6 +1011,7 @@ std::ostream& operator<<(std::ostream& out, const WarmupState& state) {
 
 LoadStorageKVPairCallback::LoadStorageKVPairCallback(
         EPBucket& ep,
+        Warmup& warmup,
         bool checkWarmupThresholdReached,
         WarmupState::State warmupState,
         std::optional<const std::chrono::steady_clock::duration>
@@ -1015,6 +1019,7 @@ LoadStorageKVPairCallback::LoadStorageKVPairCallback(
     : vbuckets(ep.vbMap),
       stats(ep.getEPEngine().getEpStats()),
       epstore(ep),
+      warmup(warmup),
       hasPurged(false),
       deltaDeadlineFromNow(std::move(deltaDeadlineFromNow)),
       deadline(std::chrono::steady_clock::time_point::max()),
@@ -1046,7 +1051,7 @@ void LoadStorageKVPairCallback::callback(GetValue& val) {
     }
 
     bool stopLoading = false;
-    if (i && !epstore.getWarmup()->isFinishedLoading()) {
+    if (i && !warmup.isFinishedLoading()) {
         VBucketPtr vb = vbuckets.getBucket(i->getVBucketId());
         if (!vb) {
             setStatus(cb::engine_errc::not_my_vbucket);
@@ -1128,7 +1133,7 @@ void LoadStorageKVPairCallback::callback(GetValue& val) {
         switch (warmupState) {
         case WarmupState::State::KeyDump:
             if (stats.warmOOM) {
-                epstore.getWarmup()->setOOMFailure();
+                warmup.setOOMFailure();
                 stopLoading = true;
             } else {
                 ++stats.warmedUpKeys;
@@ -1785,7 +1790,7 @@ void Warmup::scheduleLoadingAccessLog() {
 }
 
 void Warmup::loadingAccessLog(uint16_t shardId) {
-    LoadStorageKVPairCallback load_cb(store, true, state.getState());
+    LoadStorageKVPairCallback load_cb(store, *this, true, state.getState());
     bool success = false;
     auto stTime = std::chrono::steady_clock::now();
     if (accessLog[shardId].exists()) {
