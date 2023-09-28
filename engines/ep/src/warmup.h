@@ -250,7 +250,36 @@ std::string to_string(WarmupState::State val);
  */
 class Warmup {
 public:
-    Warmup(EPBucket& st, const Configuration& config);
+    /**
+     * @param st reference to the owning bucket
+     * @param config reference to the bucket's configuration
+     * @param warmupDoneFunction This function is invoked once by Warmup on
+     *        reaching the Done state.
+     * @param name A name used in logging
+     */
+    Warmup(EPBucket& st,
+           const Configuration& config,
+           std::function<void()> warmupDoneFunction,
+           size_t memoryThreshold,
+           size_t itemsThreshold,
+           std::string name);
+
+    /**
+     * Constructor exists for creating the Secondary warm-up object, which skips
+     * the initial warm-up states (e.g. LoadPreparedSyncWrites). This
+     * constructor copies required state from the given warmup object and will
+     * begin from CheckForAccessLog.
+     *
+     * @param warmup Parts of this object are copied/moved into the new Warmup.
+     * @param warmupDoneFunction This function is invoked once by Warmup on
+     *        reaching the Done state.
+     * @param name A name used in logging
+     */
+    Warmup(Warmup& warmup,
+           std::function<void()> warmupDoneFunction,
+           size_t memoryThreshold,
+           size_t itemsThreshold,
+           std::string name);
 
     ~Warmup();
 
@@ -518,6 +547,9 @@ private:
     EPBucket& store;
     const Configuration& config;
     const EPStats& stats;
+
+    /// A callback to invoke when Warmup is Done.
+    std::function<void()> warmupDoneFunction;
 
     // Unordered set to hold the current executing tasks
     std::mutex taskSetMutex;

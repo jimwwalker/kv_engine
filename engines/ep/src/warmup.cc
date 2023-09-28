@@ -981,7 +981,7 @@ void WarmupState::transition(State to, bool allowAnyState) {
 bool WarmupState::legalTransition(State from, State to) const {
     switch (from) {
     case State::Initialize:
-        return (to == State::CreateVBuckets);
+        return (to == State::CreateVBuckets || to == State::CheckForAccessLog);
     case State::CreateVBuckets:
         return (to == State::LoadingCollectionCounts);
     case State::LoadingCollectionCounts:
@@ -1260,16 +1260,57 @@ void LoadValueCallback::callback(CacheLookup& lookup) {
 //                                                                          //
 //////////////////////////////////////////////////////////////////////////////
 
-Warmup::Warmup(EPBucket& st, const Configuration& config_)
+Warmup::Warmup(EPBucket& st,
+               const Configuration& config,
+               std::function<void()> warmupDoneFunction,
+               size_t memoryThreshold,
+               size_t itemsThreshold,
+               std::string name)
     : store(st),
-      config(config_),
-      stats(st.getEPEngine().getEpStats()),
+      config(config),
+      stats(store.getEPEngine().getEpStats()),
+      warmupDoneFunction(std::move(warmupDoneFunction)),
       shardVbStates(store.vbMap.getNumShards()),
       shardVbIds(store.vbMap.getNumShards()),
       warmedUpVbuckets(config.getMaxVbuckets()),
-      name("Primary") {
-    setMemoryThreshold(config.getWarmupMinMemoryThreshold());
-    setItemThreshold(config.getWarmupMinItemsThreshold());
+      name(std::move(name)) {
+    {
+        std::lock_guard<std::mutex> lock(warmupStart.mutex);
+        warmupStart.time = std::chrono::steady_clock::now();
+    }
+    setMemoryThreshold(memoryThreshold);
+    setItemThreshold(itemsThreshold);
+}
+
+// This constructor is selectively moving and copying the state which was
+// initialised in the Warmup steps that it will skip... this is a bit brittle
+// as it could miss something important. The alternative is to move the whole
+// thing into *this and then reset everything we want in default initialise
+// state. For now the current approach works for the unit tests
+Warmup::Warmup(Warmup& warmup,
+               std::function<void()> warmupDoneFunction,
+               size_t memoryThreshold,
+               size_t itemsThreshold,
+               std::string name)
+    : store(warmup.store),
+      config(warmup.config),
+      stats(warmup.stats),
+      warmupDoneFunction(std::move(warmupDoneFunction)),
+      shardVbStates(std::move(warmup.shardVbStates)),
+      shardVbIds(std::move(warmup.shardVbIds)),
+      estimatedItemCount(warmup.estimatedItemCount.load()),
+      warmedUpVbuckets(config.getMaxVbuckets()),
+      name(std::move(name)) {
+    { // todo remove duplicate
+        std::lock_guard<std::mutex> lock(warmupStart.mutex);
+        warmupStart.time = std::chrono::steady_clock::now();
+    }
+
+    setMemoryThreshold(memoryThreshold);
+    setItemThreshold(itemsThreshold);
+
+    // Jump into the state machine at CheckForAccessLog to begin loading data.
+    transition(WarmupState::State::CheckForAccessLog);
 }
 
 Warmup::~Warmup() = default;
@@ -1324,11 +1365,6 @@ void Warmup::scheduleInitialize() {
 }
 
 void Warmup::initialize() {
-    {
-        std::lock_guard<std::mutex> lock(warmupStart.mutex);
-        warmupStart.time = std::chrono::steady_clock::now();
-    }
-
     auto session_stats = store.getOneROUnderlying()->getPersistedStats();
     auto it = session_stats.find("ep_force_shutdown");
     if (it != session_stats.end() && it.value() == "false") {
@@ -1959,7 +1995,7 @@ void Warmup::scheduleCompletion() {
 void Warmup::done() {
     if (setFinishedLoading()) {
         setWarmupTime();
-        store.warmupCompleted();
+        warmupDoneFunction();
         logWarmupStats(store.getEPEngine().getEpStats(), *this);
     }
 }
@@ -2008,6 +2044,7 @@ void Warmup::step() {
 }
 
 void Warmup::transition(WarmupState::State to, bool force) {
+    EP_LOG_DEBUG("Warmup({}) transition to {}", getName(), to_string(to));
     state.transition(to, force);
     stateTransitionHook(to);
     step();
