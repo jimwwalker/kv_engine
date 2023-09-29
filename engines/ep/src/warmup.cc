@@ -1344,8 +1344,9 @@ void Warmup::initialize() {
 
 void Warmup::scheduleCreateVBuckets() {
     threadtask_count = 0;
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
-        ExTask task = std::make_shared<WarmupCreateVBuckets>(store, i, this);
+    for (size_t shard = 0; shard < getNumShards(); shard++) {
+        ExTask task =
+                std::make_shared<WarmupCreateVBuckets>(store, shard, this);
         ExecutorPool::get()->schedule(task);
     }
 }
@@ -1456,7 +1457,7 @@ void Warmup::createVBuckets(uint16_t shardId) {
         vb->setPersistenceSeqno(vbs.highSeqno);
     }
 
-    if (++threadtask_count == store.vbMap.getNumShards()) {
+    if (++threadtask_count == getNumShards()) {
         transition(WarmupState::State::LoadingCollectionCounts);
     }
 }
@@ -1490,9 +1491,9 @@ bool Warmup::maybeWaitForVBucketWarmup(CookieIface* cookie) {
 
 void Warmup::scheduleLoadingCollectionCounts() {
     threadtask_count = 0;
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+    for (size_t shard = 0; shard < getNumShards(); shard++) {
         ExTask task = std::make_shared<WarmupLoadingCollectionCounts>(
-                store, i, *this);
+                store, shard, *this);
         ExecutorPool::get()->schedule(task);
     }
 }
@@ -1557,7 +1558,7 @@ void Warmup::loadCollectionStatsForShard(uint16_t shardId) {
         }
     }
 
-    if (++threadtask_count == store.vbMap.getNumShards()) {
+    if (++threadtask_count == getNumShards()) {
         transition(WarmupState::State::EstimateDatabaseItemCount);
     }
 }
@@ -1566,9 +1567,9 @@ void Warmup::scheduleEstimateDatabaseItemCount() {
     threadtask_count = 0;
     estimateTime.store(std::chrono::steady_clock::duration::zero());
     estimatedItemCount = 0;
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+    for (size_t shard = 0; shard < getNumShards(); shard++) {
         ExTask task = std::make_shared<WarmupEstimateDatabaseItemCount>(
-                store, i, this);
+                store, shard, this);
         ExecutorPool::get()->schedule(task);
     }
 }
@@ -1591,16 +1592,16 @@ void Warmup::estimateDatabaseItemCount(uint16_t shardId) {
     estimatedItemCount.fetch_add(item_count);
     estimateTime.fetch_add(std::chrono::steady_clock::now() - st);
 
-    if (++threadtask_count == store.vbMap.getNumShards()) {
+    if (++threadtask_count == getNumShards()) {
         transition(WarmupState::State::LoadPreparedSyncWrites);
     }
 }
 
 void Warmup::scheduleLoadPreparedSyncWrites() {
     threadtask_count = 0;
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+    for (size_t shard = 0; shard < getNumShards(); shard++) {
         ExTask task = std::make_shared<WarmupLoadPreparedSyncWrites>(
-                store.getEPEngine(), i, *this);
+                store.getEPEngine(), shard, *this);
         ExecutorPool::get()->schedule(task);
     }
 }
@@ -1635,16 +1636,16 @@ void Warmup::loadPreparedSyncWrites(uint16_t shardId) {
                 *store.getRWUnderlyingByShard(shardId));
     }
 
-    if (++threadtask_count == store.vbMap.getNumShards()) {
+    if (++threadtask_count == getNumShards()) {
         transition(WarmupState::State::PopulateVBucketMap);
     }
 }
 
 void Warmup::schedulePopulateVBucketMap() {
     threadtask_count = 0;
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+    for (size_t shard = 0; shard < getNumShards(); shard++) {
         ExTask task =
-                std::make_shared<WarmupPopulateVBucketMap>(store, i, *this);
+                std::make_shared<WarmupPopulateVBucketMap>(store, shard, *this);
         ExecutorPool::get()->schedule(task);
     }
 }
@@ -1694,7 +1695,7 @@ void Warmup::populateVBucketMap(uint16_t shardId) {
         }
     }
 
-    if (++threadtask_count == store.vbMap.getNumShards()) {
+    if (++threadtask_count == getNumShards()) {
         // All threads have finished populating the vBucket map (and potentially
         // flushing a new vBucket state), it's now safe for us to start the
         // flushers.
@@ -1713,7 +1714,7 @@ void Warmup::populateVBucketMap(uint16_t shardId) {
 
 void Warmup::scheduleBackfillTask(MakeBackfillTaskFn makeBackfillTask) {
     threadtask_count = 0;
-    for (size_t shardId = 0; shardId < store.vbMap.shards.size(); ++shardId) {
+    for (size_t shardId = 0; shardId < getNumShards(); ++shardId) {
         ExecutorPool::get()->schedule(makeBackfillTask(shardId));
     }
 }
@@ -1746,13 +1747,13 @@ void Warmup::checkForAccessLog() {
 
     size_t accesslogs = 0;
     if (config.isAccessScannerEnabled()) {
-        for (uint16_t i = 0; i < store.vbMap.getNumShards(); i++) {
+        for (uint16_t i = 0; i < getNumShards(); i++) {
             accessLog.emplace_back(
                     config.getAlogPath() + "." + std::to_string(i),
                     config.getAlogBlockSize());
         }
 
-        for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+        for (size_t i = 0; i < getNumShards(); i++) {
             std::string curr = accessLog[i].getLogFile();
             std::string old = accessLog[i].getLogFile();
             old.append(".old");
@@ -1761,7 +1762,7 @@ void Warmup::checkForAccessLog() {
             }
         }
     }
-    if (accesslogs == store.vbMap.shards.size()) {
+    if (accesslogs == getNumShards()) {
         transition(WarmupState::State::LoadingAccessLog);
     } else {
         // We aren't loading anything from the accessLog, nuke it
@@ -1777,8 +1778,8 @@ void Warmup::checkForAccessLog() {
 
 void Warmup::scheduleLoadingAccessLog() {
     threadtask_count = 0;
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
-        ExTask task = std::make_shared<WarmupLoadAccessLog>(store, i, this);
+    for (size_t shard = 0; shard < getNumShards(); shard++) {
+        ExTask task = std::make_shared<WarmupLoadAccessLog>(store, shard, this);
         ExecutorPool::get()->schedule(task);
     }
 }
@@ -1829,7 +1830,7 @@ void Warmup::loadingAccessLog(uint16_t shardId) {
         setEstimatedWarmupCount(estimatedCount);
     }
 
-    if (++threadtask_count == store.vbMap.getNumShards()) {
+    if (++threadtask_count == getNumShards()) {
         // We don't need the accessLog anymore, and it uses a bunch of memory.
         // Nuke it now to get the memory back.
         accessLog.clear();
@@ -2056,12 +2057,12 @@ void Warmup::addStatusMetrics(const StatCollector& collector) const {
     }
 }
 
-uint16_t Warmup::getNumKVStores() {
+size_t Warmup::getNumShards() const {
     return store.vbMap.getNumShards();
 }
 
 void Warmup::populateShardVbStates() {
-    uint16_t numKvs = getNumKVStores();
+    uint16_t numKvs = getNumShards();
 
     for (size_t i = 0; i < numKvs; i++) {
         std::vector<vbucket_state*> kvStoreVbStates =
@@ -2072,13 +2073,13 @@ void Warmup::populateShardVbStates() {
             }
             auto vb = (j * numKvs) + i;
             std::map<Vbid, vbucket_state>& shardVB =
-                    shardVbStates[vb % store.vbMap.getNumShards()];
+                    shardVbStates[vb % getNumShards()];
             shardVB.insert(std::pair<Vbid, vbucket_state>(
                     Vbid(vb), *(kvStoreVbStates[j])));
         }
     }
 
-    for (size_t i = 0; i < store.vbMap.shards.size(); i++) {
+    for (size_t i = 0; i < getNumShards(); i++) {
         std::vector<Vbid> activeVBs, otherVBs;
         std::map<Vbid, vbucket_state>::const_iterator it;
         for (auto shardIt : shardVbStates[i]) {
