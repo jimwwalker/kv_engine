@@ -83,7 +83,7 @@ class LoadStorageKVPairCallback : public StatusCallback<GetValue> {
 public:
     LoadStorageKVPairCallback(
             EPBucket& ep,
-            bool stopIfWarmupThresholdsReached,
+            bool checkWarmupThresholdReached,
             WarmupState::State warmupState,
             std::optional<const std::chrono::steady_clock::duration>
                     deltaDeadlineFromNow = std::nullopt);
@@ -114,7 +114,7 @@ private:
      * of the thresholds which require warmup to stop. LoadStorageKVPairCallback
      * will then stop and return control to scan (with status cancelled).
      */
-    const bool stopIfWarmupThresholdsReached{false};
+    const bool checkWarmupThresholdReached{false};
     WarmupState::State warmupState;
 };
 
@@ -478,7 +478,13 @@ public:
 
     virtual WarmupState::State getNextState() const = 0;
     virtual ValueFilter getValueFilter() const = 0;
-    virtual bool maybeEnableTraffic() const = 0;
+
+    /**
+     * Function for sub-class to configured if LoadStorageKVPairCallback should
+     * check hasWarmupReachedThresholds after every loaded key.
+     */
+    virtual bool checkWarmupThresholdReached() const = 0;
+
     virtual CacheLookupCallBackPtr makeCacheLookupCallback() const = 0;
 
 protected:
@@ -525,7 +531,7 @@ bool WarmupVbucketVisitor::visit(VBucket& vb) {
                         .getWarmupBackfillScanChunkDuration()};
         auto kvLookup = std::make_unique<LoadStorageKVPairCallback>(
                 ep,
-                backfillTask.maybeEnableTraffic(),
+                backfillTask.checkWarmupThresholdReached(),
                 backfillTask.getWarmup().getWarmupState(),
                 chunkDuration);
         currentScanCtx = kvstore->initBySeqnoScanContext(
@@ -627,7 +633,9 @@ public:
         return ValueFilter::KEYS_ONLY;
     };
 
-    bool maybeEnableTraffic() const override {
+    bool checkWarmupThresholdReached() const override {
+        // KeyDump has bespoke code in LoadStorageKVPairCallback which doesn't
+        // use hasWarmupReachedThresholds.
         return false;
     };
 
@@ -730,7 +738,7 @@ public:
         return warmup.store.getValueFilterForCompressionMode();
     };
 
-    bool maybeEnableTraffic() const override {
+    bool checkWarmupThresholdReached() const override {
         return warmup.store.getItemEvictionPolicy() == EvictionPolicy::Full;
     };
 
@@ -765,7 +773,7 @@ public:
         return warmup.store.getValueFilterForCompressionMode();
     };
 
-    bool maybeEnableTraffic() const override {
+    bool checkWarmupThresholdReached() const override {
         return true;
     };
 
@@ -996,7 +1004,7 @@ std::ostream& operator<<(std::ostream& out, const WarmupState& state) {
 
 LoadStorageKVPairCallback::LoadStorageKVPairCallback(
         EPBucket& ep,
-        bool stopIfWarmupThresholdsReached,
+        bool checkWarmupThresholdReached,
         WarmupState::State warmupState,
         std::optional<const std::chrono::steady_clock::duration>
                 deltaDeadlineFromNow)
@@ -1006,7 +1014,7 @@ LoadStorageKVPairCallback::LoadStorageKVPairCallback(
       hasPurged(false),
       deltaDeadlineFromNow(std::move(deltaDeadlineFromNow)),
       deadline(std::chrono::steady_clock::time_point::max()),
-      stopIfWarmupThresholdsReached(stopIfWarmupThresholdsReached),
+      checkWarmupThresholdReached(checkWarmupThresholdReached),
       warmupState(warmupState) {
 }
 
@@ -1109,7 +1117,7 @@ void LoadStorageKVPairCallback::callback(GetValue& val) {
             }
         } while (!succeeded && retry-- > 0);
 
-        if (stopIfWarmupThresholdsReached) {
+        if (checkWarmupThresholdReached) {
             stopLoading = epstore.hasWarmupReachedThreshold();
         }
 
