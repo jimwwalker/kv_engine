@@ -425,6 +425,24 @@ public:
     }
 
     /**
+     * Increment stats related to how many keys have been loaded.
+     * This will increment a Warmup counter and the "total" owned by EPStats
+     */
+    void incrementKeys();
+
+    /**
+     * Increment stats related to how many value have been loaded.
+     * This will increment a Warmup counter and the "total" owned by EPStats
+     */
+    void incrementValues();
+
+    /// @return the number of keys loaded by this Warmup
+    size_t getKeys() const;
+
+    /// @return the number of values loaded by this Warmup
+    size_t getValues() const;
+
+    /**
      * Testing hook which if set is called every time warmup transitions to
      * a new state.
      */
@@ -542,6 +560,9 @@ private:
     ///         concurrency of certain stages).
     size_t getNumShards() const;
 
+    /// log as INFO interesting statistics about this Warmup
+    void logStats() const;
+
     WarmupState state;
 
     EPBucket& store;
@@ -624,6 +645,9 @@ private:
 
     /// A name used in logging about Warmup
     std::string name;
+    // Counters for this Warmup
+    cb::RelaxedAtomic<size_t> keys{0};
+    cb::RelaxedAtomic<size_t> values{0}; // relaxed!
 
     // To avoid making a number of methods on Warmup public; grant friendship
     // to the various Tasks which run the stages of warmup.
