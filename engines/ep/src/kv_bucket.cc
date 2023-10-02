@@ -2212,15 +2212,11 @@ bool KVBucket::isExpPagerEnabled() {
     return expiryPagerTask->isEnabled();
 }
 
-bool KVBucket::isWarmupLoadingData() {
+bool KVBucket::isWarmupLoadingData() const {
     return false;
 }
 
-bool KVBucket::isWarmupComplete() {
-    return false;
-}
-
-bool KVBucket::isWarmupOOMFailure() {
+bool KVBucket::isWarmupOOMFailure() const {
     return false;
 }
 
