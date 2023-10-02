@@ -56,25 +56,6 @@ struct WarmupCookie {
     MutationLog& log;
 };
 
-void logWarmupStats(const EPStats& stats, const Warmup& warmup) {
-    std::chrono::duration<double, std::chrono::seconds::period> seconds =
-            warmup.getTime();
-    double keys_per_seconds = stats.warmedUpValues / seconds.count();
-    double megabytes = stats.getPreciseTotalMemoryUsed() / 1.0e6;
-    double megabytes_per_seconds = megabytes / seconds.count();
-    EP_LOG_INFO(
-            "Warmup({}) completed: {} keys and {} values loaded in {} ({} "
-            "keys/s), "
-            "mem_used now at {} MB ({} MB/s)",
-            warmup.getName(),
-            stats.warmedUpKeys,
-            stats.warmedUpValues,
-            cb::time2text(std::chrono::nanoseconds(warmup.getTime())),
-            keys_per_seconds,
-            megabytes,
-            megabytes_per_seconds);
-}
-
 //////////////////////////////////////////////////////////////////////////////
 //                                                                          //
 //    Helper class used to insert data into the epstore                     //
@@ -1144,19 +1125,19 @@ void LoadStorageKVPairCallback::callback(GetValue& val) {
                 warmup.setOOMFailure();
                 stopLoading = true;
             } else {
-                ++stats.warmedUpKeys;
+                warmup.incrementKeys();
             }
             break;
         case WarmupState::State::LoadingData:
         case WarmupState::State::LoadingAccessLog:
             if (epstore.getItemEvictionPolicy() == EvictionPolicy::Full) {
-                ++stats.warmedUpKeys;
+                warmup.incrementKeys();
             }
-            ++stats.warmedUpValues;
+            warmup.incrementValues();
             break;
         default:
-            ++stats.warmedUpKeys;
-            ++stats.warmedUpValues;
+            warmup.incrementKeys();
+            warmup.incrementValues();
         }
     } else {
         stopLoading = true;
@@ -1305,6 +1286,24 @@ Warmup::Warmup(Warmup& warmup,
 }
 
 Warmup::~Warmup() = default;
+
+void Warmup::incrementKeys() {
+    ++keys;
+    ++store.getEPEngine().getEpStats().warmedUpKeys;
+}
+
+void Warmup::incrementValues() {
+    ++values;
+    ++store.getEPEngine().getEpStats().warmedUpValues;
+}
+
+size_t Warmup::getKeys() const {
+    return keys;
+}
+
+size_t Warmup::getValues() const {
+    return values;
+}
 
 void Warmup::addToTaskSet(size_t taskId) {
     std::lock_guard<std::mutex> lh(taskSetMutex);
@@ -1974,7 +1973,7 @@ void Warmup::done() {
     if (setFinishedLoading()) {
         setWarmupTime();
         warmupDoneFunction();
-        logWarmupStats(store.getEPEngine().getEpStats(), *this);
+        logStats();
     }
 }
 
@@ -2212,4 +2211,25 @@ bool Warmup::hasReachedThreshold() const {
         return true;
     }
     return false;
+}
+
+void Warmup::logStats() const {
+    const auto time = getTime();
+    std::chrono::duration<double, std::chrono::seconds::period> seconds = time;
+    double keys_per_seconds = getValues() / seconds.count();
+    const auto& stats = store.getEPEngine().getEpStats();
+    double megabytes = stats.getPreciseTotalMemoryUsed() / 1.0e6;
+    double megabytesPerSecond = megabytes / seconds.count();
+    EP_LOG_INFO(
+            "Warmup({}) completed: {} keys (total:{}) and {} values (total:{}) "
+            "loaded in {} ({} keys/s), mem_used now at {} MB ({} MB/s)",
+            getName(),
+            getKeys(),
+            stats.warmedUpKeys,
+            getValues(),
+            stats.warmedUpValues,
+            cb::time2text(std::chrono::nanoseconds(time)),
+            keys_per_seconds,
+            megabytes,
+            megabytesPerSecond);
 }
