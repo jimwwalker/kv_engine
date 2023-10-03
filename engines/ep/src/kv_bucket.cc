@@ -2239,6 +2239,11 @@ bool KVBucket::isWarmupOOMFailure() {
     return false;
 }
 
+cb::engine_errc KVBucket::doWarmupStats(const AddStatFn& add_stat,
+                                        CookieIface& cookie) const {
+    return cb::engine_errc::no_such_key;
+}
+
 bool KVBucket::hasWarmupSetVbucketStateFailed() const {
     return false;
 }

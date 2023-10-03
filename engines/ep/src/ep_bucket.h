@@ -257,6 +257,12 @@ public:
 
     bool isWarmupComplete() override;
 
+    /**
+     * Add warmup stats if the warmupTask object exists
+     */
+    cb::engine_errc doWarmupStats(const AddStatFn& add_stat,
+                                  CookieIface& cookie) const override;
+
     bool isWarmupOOMFailure() override;
 
     bool hasWarmupSetVbucketStateFailed() const override;
