@@ -248,12 +248,6 @@ public:
     //! Number of OOM failures at warmup time.
     Counter warmOOM;
 
-    //! Fill % of memory used during warmup we're going to enable traffic
-    std::atomic<double> warmupMemUsedCap;
-    //! Fill % of number of items read during warmup we're going to
-    //  enable traffic
-    std::atomic<double> warmupNumReadCap;
-
     //! Amount of items waiting for persistence
     cb::AtomicNonNegativeCounter<size_t> diskQueueSize;
     //! Size of the in-process (output) queue.

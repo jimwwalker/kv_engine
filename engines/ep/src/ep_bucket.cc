@@ -222,6 +222,16 @@ public:
             bucket.setAccessScannerSleeptime(value, false);
         } else if (key == "alog_task_time") {
             bucket.resetAccessScannerStartTime();
+        } else if (key == "warmup_min_memory_threshold") {
+            auto* warmup = bucket.getWarmup();
+            if (warmup) {
+                warmup->setMemoryThreshold(value);
+            }
+        } else if (key == "warmup_min_items_threshold") {
+            auto* warmup = bucket.getWarmup();
+            if (warmup) {
+                warmup->setItemThreshold(value);
+            }
         } else {
             EP_LOG_WARN("Failed to change value for unknown variable, {}", key);
         }
@@ -285,6 +295,13 @@ EPBucket::EPBucket(EventuallyPersistentEngine& engine)
     retainErroneousTombstones = config.isRetainErroneousTombstones();
     config.addValueChangedListener(
             "retain_erroneous_tombstones",
+            std::make_unique<ValueChangedListener>(*this));
+
+    config.addValueChangedListener(
+            "warmup_min_memory_threshold",
+            std::make_unique<ValueChangedListener>(*this));
+    config.addValueChangedListener(
+            "warmup_min_items_threshold",
             std::make_unique<ValueChangedListener>(*this));
 
     // create the semaphore with a default capacity of 1. This will be
@@ -2209,7 +2226,8 @@ EPBucket::LoadPreparedSyncWritesResult EPBucket::loadPreparedSyncWrites(
             true};
 }
 
-ValueFilter EPBucket::getValueFilterForCompressionMode(CookieIface* cookie) {
+ValueFilter EPBucket::getValueFilterForCompressionMode(
+        CookieIface* cookie) const {
     auto compressionMode = engine.getCompressionMode();
     auto filter = ValueFilter::VALUES_COMPRESSED;
     if (compressionMode == BucketCompressionMode::Off) {
@@ -2281,59 +2299,6 @@ void EPBucket::startWarmupTask() {
         // No warmup, immediately online the bucket.
         warmupCompleted();
     }
-}
-
-bool EPBucket::hasWarmupReachedThreshold() const {
-    auto memoryUsed =
-            static_cast<double>(stats.getEstimatedTotalMemoryUsed());
-    auto maxSize = static_cast<double>(stats.getMaxDataSize());
-
-    if (memoryUsed >= stats.mem_low_wat) {
-        EP_LOG_INFO(
-                "Total memory use reached to the low water mark, stop warmup"
-                ": memoryUsed ({}) >= low water mark ({})",
-                memoryUsed,
-                uint64_t(stats.mem_low_wat.load()));
-        return true;
-    } else if (memoryUsed > (maxSize * stats.warmupMemUsedCap)) {
-        EP_LOG_INFO(
-                "Enough MB of data loaded to enable traffic"
-                ": memoryUsed ({}) > (maxSize({}) * warmupMemUsedCap({}))",
-                memoryUsed,
-                maxSize,
-                stats.warmupMemUsedCap.load());
-        return true;
-    } else if (eviction_policy == EvictionPolicy::Value &&
-               stats.warmedUpValues >=
-                       (stats.warmedUpKeys * stats.warmupNumReadCap)) {
-        // Let ep-engine think we're done with the warmup phase
-        // (we should refactor this into "enableTraffic")
-        EP_LOG_INFO(
-                "Enough number of items loaded to enable traffic (value "
-                "eviction)"
-                ": warmedUpValues({}) >= (warmedUpKeys({}) * "
-                "warmupNumReadCap({}))",
-                uint64_t(stats.warmedUpValues.load()),
-                uint64_t(stats.warmedUpKeys.load()),
-                stats.warmupNumReadCap.load());
-        return true;
-    } else if (eviction_policy == EvictionPolicy::Full &&
-               stats.warmedUpValues >= (warmupTask->getEstimatedItemCount() *
-                                        stats.warmupNumReadCap)) {
-        // In case of FULL EVICTION, warmed up keys always matches the number
-        // of warmed up values, therefore for honoring the min_item threshold
-        // in this scenario, we can consider warmup's estimated item count.
-        EP_LOG_INFO(
-                "Enough number of items loaded to enable traffic (full "
-                "eviction)"
-                ": warmedUpValues({}) >= (warmup est items({}) * "
-                "warmupNumReadCap({}))",
-                uint64_t(stats.warmedUpValues.load()),
-                uint64_t(warmupTask->getEstimatedItemCount()),
-                stats.warmupNumReadCap.load());
-        return true;
-    }
-    return false;
 }
 
 void EPBucket::warmupCompleted() {
