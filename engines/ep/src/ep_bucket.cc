@@ -2245,6 +2245,16 @@ bool EPBucket::isWarmupComplete() {
     return warmupTask && warmupTask->isComplete();
 }
 
+cb::engine_errc EPBucket::doWarmupStats(const AddStatFn& add_stat,
+                                        CookieIface& cookie) const {
+    if (!warmupTask) {
+        return cb::engine_errc::no_such_key;
+    }
+
+    warmupTask->addStats(CBStatCollector(add_stat, cookie));
+    return cb::engine_errc::success;
+}
+
 bool EPBucket::isWarmupOOMFailure() {
     return warmupTask && warmupTask->hasOOMFailure();
 }
