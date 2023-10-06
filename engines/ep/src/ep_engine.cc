@@ -6508,36 +6508,25 @@ cb::engine_errc EventuallyPersistentEngine::dcpOpen(
         }
         handler = dcpConnMap_->newProducer(cookie, connName, flags);
     } else {
-        // Don't accept dcp consumer open requests during warm up. This waits
-        // for warmup to complete entirely (including background tasks) as it
-        // was observed in MB-48373 that a rollback from a DCP connection could
-        // delete a vBucket from under a warmup task.
-        if (kvBucket->isWarmupComplete()) {
-            // Check if consumer_name specified in value; if so use in Consumer
-            // object.
-            nlohmann::json jsonValue;
-            std::string consumerName;
-            if (!value.empty()) {
-                jsonValue = nlohmann::json::parse(value);
-                consumerName = jsonValue.at("consumer_name").get<std::string>();
-            }
-            handler = dcpConnMap_->newConsumer(cookie, connName, consumerName);
-
-            EP_LOG_INFO(
-                    "EventuallyPersistentEngine::dcpOpen: opening new DCP "
-                    "Consumer handler - stream name:{}, opaque:{}, seqno:{}, "
-                    "flags:0b{} value:{}",
-                    connName,
-                    opaque,
-                    seqno,
-                    std::bitset<sizeof(flags) * 8>(flags).to_string(),
-                    jsonValue.dump());
-        } else {
-            EP_LOG_WARN_RAW(
-                    "EventuallyPersistentEngine::dcpOpen: not opening new DCP "
-                    "Consumer handler as EPEngine is still warming up");
-            return cb::engine_errc::temporary_failure;
+        // Check if consumer_name specified in value; if so use in Consumer
+        // object.
+        nlohmann::json jsonValue;
+        std::string consumerName;
+        if (!value.empty()) {
+            jsonValue = nlohmann::json::parse(value);
+            consumerName = jsonValue.at("consumer_name").get<std::string>();
         }
+        handler = dcpConnMap_->newConsumer(cookie, connName, consumerName);
+
+        EP_LOG_INFO(
+                "EventuallyPersistentEngine::dcpOpen: opening new DCP "
+                "Consumer handler - stream name:{}, opaque:{}, seqno:{}, "
+                "flags:0b{} value:{}",
+                connName,
+                opaque,
+                seqno,
+                std::bitset<sizeof(flags) * 8>(flags).to_string(),
+                jsonValue.dump());
     }
 
     if (handler == nullptr) {

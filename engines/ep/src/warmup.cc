@@ -538,6 +538,21 @@ bool WarmupVbucketVisitor::visit(VBucket& vb) {
                 backfillTask.getValueFilter(),
                 SnapshotSource::Head);
         if (!currentScanCtx) {
+            if (vb.getState() == vbucket_state_replica &&
+                vb.getHighSeqno() == 0 && vb.isBucketCreation()) {
+                // Note: ideally we could determine a more detailed reason as to
+                // why initBySeqnoScanContext failed. Here the assumption is
+                // that given that earlier the VBucket existed (was added via
+                // warmup populate VBMap) and now we have a creating VBucket,
+                // it has rolled back.
+                EP_LOG_INFO(
+                        "WarmupVbucketVisitor::visit(): {} shardId:{} "
+                        "tolerating failure of initBySeqnoScanContext and "
+                        "assuming vbucket rolled back during warmup.",
+                        vb.getId(),
+                        backfillTask.getShardId());
+                return true;
+            }
             throw std::runtime_error(fmt::format(
                     "WarmupVbucketVisitor::visit(): {} shardId:{} failed to "
                     "create BySeqnoScanContext, for backfill task:'{}'",
