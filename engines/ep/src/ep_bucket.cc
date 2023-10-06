@@ -232,6 +232,16 @@ public:
             if (warmup) {
                 warmup->setItemThreshold(value);
             }
+        } else if (key == "secondary_warmup_min_memory_threshold") {
+            auto* warmup = bucket.getSecondaryWarmup();
+            if (warmup) {
+                warmup->setMemoryThreshold(value);
+            }
+        } else if (key == "secondary_warmup_min_items_threshold") {
+            auto* warmup = bucket.getSecondaryWarmup();
+            if (warmup) {
+                warmup->setItemThreshold(value);
+            }
         } else {
             EP_LOG_WARN("Failed to change value for unknown variable, {}", key);
         }
@@ -302,6 +312,12 @@ EPBucket::EPBucket(EventuallyPersistentEngine& engine)
             std::make_unique<ValueChangedListener>(*this));
     config.addValueChangedListener(
             "warmup_min_items_threshold",
+            std::make_unique<ValueChangedListener>(*this));
+    config.addValueChangedListener(
+            "secondary_warmup_min_memory_threshold",
+            std::make_unique<ValueChangedListener>(*this));
+    config.addValueChangedListener(
+            "secondary_warmup_min_items_threshold",
             std::make_unique<ValueChangedListener>(*this));
 
     // create the semaphore with a default capacity of 1. This will be
@@ -2254,6 +2270,10 @@ Warmup* EPBucket::getPrimaryWarmup() const {
 }
 
 const Warmup* EPBucket::getSecondaryWarmup() const {
+    return secondaryWarmupTask.get();
+}
+
+Warmup* EPBucket::getSecondaryWarmup() {
     return secondaryWarmupTask.get();
 }
 
