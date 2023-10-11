@@ -2298,12 +2298,22 @@ cb::engine_errc EPBucket::doWarmupStats(const AddStatFn& add_stat,
     // operation of the bucket, e.g. the "ep_warmup_thread" that ns_server is
     // monitoring. Thus if secondary warmup exists, do not call addStats on the
     // secondary instance
-    warmupTask->addStats(CBStatCollector(add_stat, cookie));
+    CBStatCollector collector(add_stat, cookie);
+    warmupTask->addStats(collector);
 
     if (secondaryWarmupTask) {
         // @todo: May need a bespoke function for secondary and also decide
         // what we expose. E.g. do we given the "duplicated" stats a unique
         // name (yes for cbstats) and/or unique labels?
+        // Add some further information which will let us know that secondary
+        // exists and how it and primary compare.
+        using namespace cb::stats;
+
+        collector.addStat(Key::ep_secondary_warmup_time,
+                          std::chrono::duration_cast<std::chrono::microseconds>(
+                                  secondaryWarmupTask->getTime())
+                                  .count());
+        ;
     }
     return cb::engine_errc::success;
 }

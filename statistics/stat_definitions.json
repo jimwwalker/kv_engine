@@ -892,8 +892,14 @@
     {
         "key": "ep_warmup_time",
         "unit": "microseconds",
-        "description": "Time (\u00b5s) spent by warming data",
+        "description": "Time (\u00b5s) spent by warming data during Primary warm-up",
         "added": "7.0.0"
+    },
+    {
+        "key": "ep_secondary_warmup_time",
+        "unit": "microseconds",
+        "description": "Time (\u00b5s) spent by warming data during Secondary warm-up",
+        "added": "7.6.0"
     },
     {
         "key": "ep_warmup_oom",
