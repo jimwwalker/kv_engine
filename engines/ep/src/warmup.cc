@@ -2076,9 +2076,8 @@ void Warmup::addCommonStats(const StatCollector& collector) const {
 
     auto w_time = warmup.load();
     if (w_time > w_time.zero()) {
-        collector.addStat(
-                Key::ep_warmup_time,
-                duration_cast<std::chrono::microseconds>(w_time).count());
+        collector.addStat(Key::ep_warmup_time,
+                          duration_cast<microseconds>(w_time).count());
     }
 }
 
@@ -2102,9 +2101,8 @@ void Warmup::addStats(const StatCollector& collector) const {
 
     auto md_time = metadata.load();
     if (md_time > md_time.zero()) {
-        collector.addStat(
-                Key::ep_warmup_keys_time,
-                duration_cast<std::chrono::microseconds>(md_time).count());
+        collector.addStat(Key::ep_warmup_keys_time,
+                          duration_cast<microseconds>(md_time).count());
     }
 
     size_t itemCount = estimatedItemCount.load();
@@ -2113,9 +2111,8 @@ void Warmup::addStats(const StatCollector& collector) const {
     } else {
         auto e_time = estimateTime.load();
         if (e_time != e_time.zero()) {
-            collector.addStat(
-                    Key::ep_warmup_estimate_time,
-                    duration_cast<std::chrono::microseconds>(e_time).count());
+            collector.addStat(Key::ep_warmup_estimate_time,
+                              duration_cast<microseconds>(e_time).count());
         }
         collector.addStat(Key::ep_warmup_estimated_key_count, itemCount);
     }
