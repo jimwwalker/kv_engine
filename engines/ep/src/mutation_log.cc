@@ -270,7 +270,8 @@ MutationLog::MutationLog(std::string path,
       entryBuffer(MutationLogEntry::len(256)),
       blockBuffer(bs),
       syncConfig(DEFAULT_SYNC_CONF),
-      readOnly(false) {
+      readOnly(false),
+      resumeItr(end()) {
     for (auto& ii : itemsLogged) {
         ii.store(0);
     }
@@ -548,6 +549,7 @@ void MutationLog::open(bool _readOnly) {
     if (!isEnabled()) {
         return;
     }
+    openTimePoint = std::chrono::steady_clock::now();
     readOnly = _readOnly;
     std::string error;
     if (readOnly) {

@@ -396,10 +396,18 @@ public:
     /**
      * An iterator pointing to the beginning of the log file.
      */
-    iterator begin() {
+    iterator begin() { // DELETE??? private??
         iterator it(iterator(this));
         it.nextBlock();
         return it;
+    }
+
+    // For pause/resume purposes, returns a stable iterator
+    iterator resume() {
+        if (resumeItr == end()) {
+            return begin();
+        }
+        return resumeItr;
     }
 
     /**
@@ -407,6 +415,25 @@ public:
      */
     iterator end() {
         return iterator(this, true);
+    }
+
+    void incrementKeyLoaded() {
+    }
+    void incrementKeySkipped() {
+    }
+    void incrementKeyError() {
+    }
+    size_t getLoaded() const {
+        return 0;
+    }
+    size_t getSkipped() const {
+        return 0;
+    }
+    size_t getError() const {
+        return 0;
+    }
+    const std::chrono::nanoseconds getDurationSinceOpen() const {
+        return std::chrono::steady_clock::now() - openTimePoint;
     }
 
     //! Items logged by type.
@@ -452,6 +479,8 @@ protected:
     std::vector<uint8_t> blockBuffer;
     uint8_t            syncConfig;
     bool               readOnly;
+    iterator resumeItr;
+    std::chrono::steady_clock::time_point openTimePoint;
 
     friend std::ostream& operator<<(std::ostream& os, const MutationLog& mlog);
 

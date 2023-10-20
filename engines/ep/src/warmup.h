@@ -314,9 +314,10 @@ public:
                      std::chrono::steady_clock::duration(1));
     }
 
-    size_t doWarmup(MutationLog& lf,
-                    const std::map<Vbid, vbucket_state>& vbmap,
-                    StatusCallback<GetValue>& cb);
+    enum class WarmupAccessLogState { Yield, Done, Failed };
+    WarmupAccessLogState doWarmup(MutationLog& lf,
+                                  const std::map<Vbid, vbucket_state>& vbmap,
+                                  StatusCallback<GetValue>& cb);
 
     bool isComplete() const {
         return finishedLoading && state.getState() == WarmupState::State::Done;
@@ -524,8 +525,13 @@ private:
      *   KVStore.
      * - If key exists (wasn't subsequently deleted), insert into the
      *   HashTable.
+     *
+     * @return true if task should reschedule, false if not
      */
-    void loadingAccessLog(uint16_t shardId);
+    bool loadingAccessLog(uint16_t shardId);
+
+    /// single load COMMENT THIS
+    WarmupAccessLogState loadFromAccessLog(MutationLog& log, uint16_t shardId);
 
     /* Terminal state of warmup. Updates statistics and marks warmup as
      * completed
@@ -628,7 +634,7 @@ private:
      */
     folly::AtomicHashMap<uint16_t, VBucketPtr> warmedUpVbuckets;
 
-    std::deque<MutationLog> accessLog;
+    std::vector<std::vector<std::unique_ptr<MutationLog>>> accessLog;
 
     /**
      * A scale factor for computing how much memory can be consumed during
