@@ -403,10 +403,50 @@ public:
     }
 
     /**
+     * The MutationLog stores one iterator that can be used for pause/resume
+     * iteration patterns. This method on first call will initialise the resume
+     * iterator to begin() and on subsequent calls return the resume iterator.
+     */
+    iterator& resume() {
+        if (resumeItr == end()) {
+            resumeItr = begin();
+        }
+        return resumeItr;
+    }
+
+    /**
      * An iterator pointing at the end of the log file.
      */
     iterator end() {
         return iterator(this, true);
+    }
+
+    void incrementKeyLoaded() {
+        ++keyLoaded;
+    }
+
+    void incrementKeySkipped() {
+        ++keySkipped;
+    }
+
+    void incrementKeyError() {
+        ++keyError;
+    }
+
+    size_t getLoaded() const {
+        return keyLoaded;
+    }
+
+    size_t getSkipped() const {
+        return keySkipped;
+    }
+
+    size_t getError() const {
+        return keyError;
+    }
+
+    const std::chrono::nanoseconds getDurationSinceOpen() const {
+        return std::chrono::steady_clock::now() - openTimePoint;
     }
 
     //! Items logged by type.
@@ -452,6 +492,11 @@ protected:
     std::vector<uint8_t> blockBuffer;
     uint8_t            syncConfig;
     bool               readOnly;
+    iterator resumeItr;
+    std::chrono::steady_clock::time_point openTimePoint;
+    size_t keyLoaded{0};
+    size_t keySkipped{0};
+    size_t keyError{0};
 
     friend std::ostream& operator<<(std::ostream& os, const MutationLog& mlog);
 
@@ -504,8 +549,7 @@ public:
      * @return iterator of where to resume in the log (if the end was not
      *         reached), or MutationLog::iterator::end().
      */
-    MutationLog::iterator loadBatch(const MutationLog::iterator& start,
-                                    size_t limit);
+    bool loadBatch(size_t limit);
 
     /**
      * Apply the processed log entries through the given function.
@@ -523,6 +567,11 @@ public:
      *        have pre-populated the hash table and makes this a valid operation
      */
     void apply(void* arg, mlCallbackWithQueue mlc, bool removeNonExistentKeys);
+
+    bool loadAndApply(size_t limit,
+                      void* arg,
+                      mlCallbackWithQueue mlc,
+                      bool removeNonExistentKeys);
 
     /**
      * Get the total number of entries found in the log.
