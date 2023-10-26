@@ -497,6 +497,7 @@ TEST_F(MutationLogTest, BatchLoad) {
         // Ask for 2 items, ensure we get just two.
         auto next_it = h.loadBatch(ml.begin(), 2);
         EXPECT_NE(next_it, ml.end());
+        EXPECT_EQ(2, h.total());
 
         std::set<StoredDocKey> maps[2];
         h.apply(&maps, loaderFun);
@@ -504,7 +505,8 @@ TEST_F(MutationLogTest, BatchLoad) {
 
         // Ask for 10; should get the remainder (8).
         next_it = h.loadBatch(next_it, 10);
-        cb_assert(next_it == ml.end());
+        ASSERT_EQ(next_it, ml.end());
+        EXPECT_EQ(10, h.total());
 
         for (auto& map : maps) {
             map.clear();

@@ -291,7 +291,8 @@ public:
     void start();
     void stop();
 
-    size_t getEstimatedItemCount() const;
+    size_t getEstimatedKeyCount() const;
+    size_t getEstimatedValueCount() const;
 
     void addCommonStats(const StatCollector& collector) const;
 
@@ -454,7 +455,7 @@ private:
 
     void step();
 
-    void setEstimatedWarmupCount(size_t num);
+    void setEstimatedValueCount(size_t num);
 
     /*
      * Methods called by the different tasks to perform the given warmup stage.
@@ -596,7 +597,7 @@ private:
     std::vector<std::vector<Vbid>> shardVbIds;
 
     cb::AtomicDuration<> estimateTime;
-    std::atomic<size_t> estimatedItemCount{std::numeric_limits<size_t>::max()};
+    std::atomic<size_t> estimatedKeyCount{std::numeric_limits<size_t>::max()};
     bool cleanShutdown{false};
     bool corruptAccessLog{false};
 
@@ -609,8 +610,7 @@ private:
      */
     std::atomic<bool> finishedLoading{false};
     std::atomic<bool> warmupOOMFailure{false};
-    std::atomic<size_t> estimatedWarmupCount{
-            std::numeric_limits<size_t>::max()};
+    std::atomic<size_t> estimatedValueCount{std::numeric_limits<size_t>::max()};
 
     /// All of the cookies which need notifying when create-vbuckets is done
     using PendingCookiesQueue = std::deque<CookieIface*>;
