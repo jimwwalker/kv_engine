@@ -710,3 +710,40 @@ TEST_F(BasicClusterTest, OAUTHBEARER) {
     // now that we've waited the "not before time" should have passed
     notReadyConn->selectBucket("default");
 }
+
+TEST_F(BasicClusterTest, Snapshots) {
+    auto bucket = cluster->getBucket("default");
+    auto conn = bucket->getAuthedConnection(Vbid(0));
+    auto replica = bucket->getAuthedConnection(Vbid(0), vbucket_state_replica);
+
+    BinprotGenericCommand cmd(cb::mcbp::ClientOpcode::PrepareSnapshot);
+    cmd.setVBucket(Vbid{0});
+    auto rsp = conn->execute(cmd);
+    ASSERT_TRUE(rsp.isSuccess());
+
+    nlohmann::json source;
+    if (conn->getFamily() == AF_INET) {
+        source["host"] = "127.0.0.1";
+    } else {
+        source["host"] = "::1";
+    }
+
+    source["port"] = conn->getPort();
+    source["bucket"] = "default";
+    source["sasl"]["mechanism"] = "PLAIN";
+    source["sasl"]["username"] = "@admin";
+    source["sasl"]["password"] = "password";
+
+    nlohmann::json request = {{"snapshot_manifest", rsp.getDataJson()},
+                              {"source", std::move(source)}};
+
+    BinprotGenericCommand download(ClientOpcode::DownloadSnapshot);
+    download.setDatatype(cb::mcbp::Datatype::JSON);
+    download.setValue(request.dump());
+
+    rsp = replica->execute(download);
+    ASSERT_TRUE(rsp.isSuccess()) << rsp.getStatus() << std::endl
+                                 << rsp.getDataView();
+
+    // @todo promote the snapshots
+}

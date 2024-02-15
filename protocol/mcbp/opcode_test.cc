@@ -206,6 +206,10 @@ const std::map<ClientOpcode, std::string> client_blueprint = {{
         {ClientOpcode::RangeScanCreate, "RANGE_SCAN_CREATE"},
         {ClientOpcode::RangeScanContinue, "RANGE_SCAN_CONTINUE"},
         {ClientOpcode::RangeScanCancel, "RANGE_SCAN_CANCEL"},
+        {ClientOpcode::GetFileFragment, "GET_FILE_FRAGMENT"},
+        {ClientOpcode::PrepareSnapshot, "PREPARE_SNAPSHOT"},
+        {ClientOpcode::ReleaseSnapshot, "RELEASE_SNAPSHOT"},
+        {ClientOpcode::DownloadSnapshot, "DOWNLOAD_SNAPSHOT"},
 }};
 
 TEST(ClientOpcode_to_string, LegalValues) {

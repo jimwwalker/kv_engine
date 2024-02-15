@@ -24,6 +24,7 @@
 #include "dcp/msg_producers_border_guard.h"
 #include "dcp/producer.h"
 #include "dockey_validator.h"
+#include "download_snapshot_task.h"
 #include "environment.h"
 #include "ep_bucket.h"
 #include "ep_engine_group.h"
@@ -74,7 +75,9 @@
 #include <platform/dirutils.h>
 #include <platform/platform_time.h>
 #include <platform/scope_timer.h>
+#include <platform/strerror.h>
 #include <platform/string_hex.h>
+#include <platform/uuid.h>
 #include <serverless/config.h>
 #include <statistics/cbstat_collector.h>
 #include <statistics/collector.h>
@@ -7731,6 +7734,41 @@ EventuallyPersistentEngine::set_active_encryption_keys(
     return acquireEngine(this)->setActiveEncryptionKeys(json);
 }
 
+cb::engine_errc EventuallyPersistentEngine::prepare_snapshot(
+        CookieIface& cookie,
+        Vbid vbid,
+        const std::function<void(const nlohmann::json&)>& callback) {
+    std::function<void(const nlohmann::json&)> non_alloc =
+            [c = std::cref(callback)](const auto& json) {
+                NonBucketAllocationGuard guard;
+                c(json);
+            };
+    return acquireEngine(this)->prepareSnapshot(cookie, vbid, non_alloc);
+}
+cb::engine_errc EventuallyPersistentEngine::download_snapshot(
+        CookieIface& cookie, std::string_view metadata) {
+    return acquireEngine(this)->downloadSnapshot(cookie, metadata);
+}
+
+cb::engine_errc EventuallyPersistentEngine::get_snapshot_file_info(
+        CookieIface& cookie,
+        std::string_view uuid,
+        std::size_t file_id,
+        const std::function<void(const nlohmann::json&)>& callback) {
+    std::function<void(const nlohmann::json&)> non_alloc =
+            [c = std::cref(callback)](const auto& json) {
+                NonBucketAllocationGuard guard;
+                c(json);
+            };
+    return acquireEngine(this)->getSnapshotFileInfo(
+            cookie, uuid, file_id, non_alloc);
+}
+
+cb::engine_errc EventuallyPersistentEngine::release_snapshot(
+        CookieIface& cookie, std::string_view uuid) {
+    return acquireEngine(this)->releaseSnapshot(cookie, uuid);
+}
+
 cb::engine_errc EventuallyPersistentEngine::setActiveEncryptionKeys(
         const nlohmann::json& json) {
     cb::crypto::KeyStore ks;
@@ -7738,6 +7776,186 @@ cb::engine_errc EventuallyPersistentEngine::setActiveEncryptionKeys(
         ks = json;
     }
     encryptionKeyProvider.setKeys(std::move(ks));
+    return cb::engine_errc::success;
+}
+
+cb::engine_errc EventuallyPersistentEngine::prepareSnapshot(
+        CookieIface& cookie,
+        Vbid vbid,
+        const std::function<void(const nlohmann::json&)>& callback) {
+    VBucketPtr vb = kvBucket->getVBucket(vbid);
+    if (!vb) {
+        return cb::engine_errc::not_my_vbucket;
+    }
+    std::shared_lock rlh(vb->getStateLock());
+    if (vb->getState() != vbucket_state_active) {
+        return cb::engine_errc::not_my_vbucket;
+    }
+
+    const auto manifest_file =
+            std::filesystem::path{configuration.getDbname()} / "snapshots" /
+            std::to_string(vbid.get()) / "manifest.json";
+
+    if (exists(manifest_file)) {
+        try {
+            auto manifest =
+                    nlohmann::json::parse(cb::io::loadFile(manifest_file));
+            callback(manifest);
+            return cb::engine_errc::success;
+        } catch (std::exception& exception) {
+            // an error occurred..
+            LOG_WARNING_CTX("Failed to read existing manifest",
+                            {"conn_id", cookie.getConnectionId()},
+                            {"error", exception.what()});
+            return cb::engine_errc::failed;
+        }
+    }
+    std::string uuid = ::to_string(cb::uuid::random());
+    auto snapshotDirectory = std::filesystem::path(configuration.getDbname()) /
+                             "snapshots" / uuid;
+    std::optional<std::filesystem::path> linkFile;
+
+    try {
+        create_directories(snapshotDirectory);
+        create_symlink("." / snapshotDirectory.filename(),
+                       std::filesystem::path{configuration.getDbname()} /
+                               "snapshots" / std::to_string(vbid.get()));
+        linkFile = std::filesystem::path{configuration.getDbname()} /
+                   "snapshots" / std::to_string(vbid.get());
+        auto [rv, files] = kvBucket->getRWUnderlying(vbid)->prepareSnapshot(
+                snapshotDirectory, vbid);
+        if (rv == cb::engine_errc::success) {
+            nlohmann::json array = nlohmann::json::array();
+            int ii = 0;
+            for (const auto& info : files) {
+                array.emplace_back(
+                        nlohmann::json{{"id", ++ii},
+                                       {"path", info.path.string()},
+                                       {"size", std::to_string(info.size)},
+                                       {"deks", info.deks}});
+                ;
+            }
+            nlohmann::json manifest = {{"uuid", uuid},
+                                       {"files", std::move(array)}};
+            FILE* fp = fopen(manifest_file.string().c_str(), "w");
+            if (!fp) {
+                EP_LOG_WARN_CTX("Failed to save vbucket snapshot manifest",
+                                {"conn_id", cookie.getConnectionId()},
+                                {"file", manifest_file.string().c_str()},
+                                {"error", cb_strerror()});
+                return cb::engine_errc::failed;
+            }
+            fprintf(fp, "%s\n", manifest.dump().c_str());
+            fclose(fp);
+            callback(manifest);
+        } else {
+            std::error_code ec;
+            remove_all(snapshotDirectory, ec);
+            remove_all(linkFile.value(), ec);
+        }
+        return rv;
+    } catch (const std::exception& exception) {
+        LOG_WARNING_CTX("Failed to prepare snapshot",
+                        {"conn_id", cookie.getConnectionId()},
+                        {"error", exception.what()});
+        std::error_code ec;
+        remove_all(snapshotDirectory, ec);
+        if (linkFile.has_value()) {
+            remove_all(linkFile.value(), ec);
+        }
+    }
+
+    return cb::engine_errc::failed;
+}
+
+cb::engine_errc EventuallyPersistentEngine::downloadSnapshot(
+        CookieIface& cookie, std::string_view metadata) {
+    auto task =
+            takeEngineSpecific<std::shared_ptr<DownloadSnapshotTask>>(cookie);
+    if (task) {
+        auto [status, message] = (*task)->getResult();
+        if (status == cb::engine_errc::success) {
+            return status;
+        }
+        NonBucketAllocationGuard guard;
+        cookie.setErrorContext(message);
+        return status;
+    }
+    auto downloader = DownloadSnapshotTask::create(cookie, *this, metadata);
+    storeEngineSpecific(cookie, downloader);
+    ExecutorPool::get()->schedule(downloader);
+    return cb::engine_errc::would_block;
+}
+
+cb::engine_errc EventuallyPersistentEngine::getSnapshotFileInfo(
+        CookieIface& cookie,
+        std::string_view uuid,
+        std::size_t file_id,
+        const std::function<void(const nlohmann::json&)>& callback) {
+    const auto snapshot = std::filesystem::path{configuration.getDbname()} /
+                          "snapshots" / uuid / "manifest.json";
+    if (!exists(snapshot)) {
+        return cb::engine_errc::no_such_key;
+    }
+    try {
+        auto json = nlohmann::json::parse(cb::io::loadFile(snapshot));
+        // update the timestamp for the manifest file (to push it from being
+        // automatically closed)
+        std::error_code ec;
+        last_write_time(
+                snapshot, std::filesystem::file_time_type::clock::now(), ec);
+        for (const auto& file : json["files"]) {
+            if (file["id"].get<std::size_t>() == file_id) {
+                nlohmann::json full = file;
+                full["path"] =
+                        (std::filesystem::path{configuration.getDbname()} /
+                         file["path"])
+                                .string();
+                callback(full);
+                return cb::engine_errc::success;
+            }
+        }
+    } catch (const std::exception& exception) {
+        EP_LOG_WARN_CTX("Failed to locate file id",
+                        {"conn_id", cookie.getConnectionId()},
+                        {"uuid", uuid},
+                        {"id", file_id},
+                        {"exception", exception.what()});
+        return cb::engine_errc::failed;
+    }
+
+    return cb::engine_errc::no_such_key;
+}
+
+cb::engine_errc EventuallyPersistentEngine::releaseSnapshot(
+        CookieIface& cookie, std::string_view uuid) {
+    const auto snapshot = std::filesystem::path{configuration.getDbname()} /
+                          "snapshots" / uuid;
+    if (!exists(snapshot)) {
+        return cb::engine_errc::no_such_key;
+    }
+    try {
+        // find the link pointing to the snapshot:
+        std::error_code ec;
+        for (const auto& p :
+             std::filesystem::directory_iterator(snapshot.parent_path(), ec)) {
+            if (is_symlink(p.path(), ec)) {
+                auto target = read_symlink(p.path(), ec);
+                if (target.filename().string() == uuid) {
+                    remove_all(p.path(), ec);
+                    break;
+                }
+            }
+        }
+        // finally remove the actual snapshot
+        remove_all(snapshot);
+    } catch (const std::exception& exception) {
+        EP_LOG_WARN_CTX("Failed to remove snapshot",
+                        {"conn_id", cookie.getConnectionId()},
+                        {"uuid", uuid},
+                        {"exception", exception.what()});
+        return cb::engine_errc::failed;
+    }
     return cb::engine_errc::success;
 }
 

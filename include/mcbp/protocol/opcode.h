@@ -326,6 +326,11 @@ enum class ClientOpcode : uint8_t {
     /* Cancel a "key-index" RangeScan */
     RangeScanCancel = 0xdc,
 
+    PrepareSnapshot = 0xe0,
+    ReleaseSnapshot = 0xe1,
+    DownloadSnapshot = 0xe2,
+    GetFileFragment = 0xe3,
+
     /* Scrub the data */
     Scrub = 0xf0,
     /* Refresh the ISASL data */

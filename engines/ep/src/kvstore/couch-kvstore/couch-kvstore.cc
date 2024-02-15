@@ -2068,6 +2068,37 @@ CouchKVStore::getVbucketEncryptionKeyIds(Vbid vb) const {
     return {cb::engine_errc::success, {unencrypted.getId()}};
 }
 
+std::pair<cb::engine_errc, std::vector<snapshot::FileInfo>>
+CouchKVStore::prepareSnapshot(const std::filesystem::path& snapshotDirectory,
+                              Vbid vb) {
+    DbHolder db(*this);
+    couchstore_error_t err = openDB(vb, db, COUCHSTORE_OPEN_FLAG_RDONLY);
+    if (err != COUCHSTORE_SUCCESS) {
+        logOpenError(__func__,
+                     spdlog::level::level_enum::warn,
+                     err,
+                     vb,
+                     db.getFilename(),
+                     COUCHSTORE_OPEN_FLAG_RDONLY);
+        return {cb::engine_errc::failed, {}};
+    }
+
+    std::vector<std::pair<std::string, std::size_t>> ret;
+    std::filesystem::path path = db.getFilename();
+    std::filesystem::path root = dbname;
+    auto source = root / path.filename();
+    auto target = snapshotDirectory / source.filename();
+    create_hard_link(source, target);
+
+    std::vector<std::string> deks;
+    if (cb::couchstore::isEncrypted(*db)) {
+        deks.emplace_back(cb::couchstore::getEncryptionKeyId(*db));
+    }
+
+    return {cb::engine_errc::success,
+            {{target.filename(), file_size(source), std::move(deks)}}};
+}
+
 bool CouchKVStore::getStat(std::string_view name, size_t& value) const {
     using namespace std::string_view_literals;
     if (name == "failure_get"sv) {

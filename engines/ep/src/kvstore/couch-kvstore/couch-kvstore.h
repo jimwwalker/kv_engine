@@ -301,6 +301,10 @@ public:
     std::pair<cb::engine_errc, nlohmann::json> getVbucketEncryptionKeyIds(
             Vbid vb) const override;
 
+    /// Create a snapshot in the provided directory for the provided vbucket
+    std::pair<cb::engine_errc, std::vector<snapshot::FileInfo>> prepareSnapshot(
+            const std::filesystem::path& snapshotDirectory, Vbid vb) override;
+
     bool getStat(std::string_view name, size_t& value) const override;
 
     couchstore_error_t fetchDoc(Db* db,

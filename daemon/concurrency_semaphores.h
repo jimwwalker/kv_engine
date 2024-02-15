@@ -44,6 +44,11 @@ public:
     cb::AwaitableSemaphore compress_cluster_config{1};
     /// SetActiveCompressionKeys should be serialized.
     cb::AwaitableSemaphore set_active_encryption_keys{1};
+    /// Prepare/ReleaseSnapshot should be serialized.
+    cb::AwaitableSemaphore snapshot_management{1};
+    /// We don't want to be able to run too many tasks to read chunks
+    /// off disk in parallel (each task may read up to 50MB of data)
+    cb::AwaitableSemaphore read_vbucket_chunk{4};
 
 protected:
     ConcurrencySemaphores();
