@@ -51,6 +51,14 @@ namespace VB {
 class Commit;
 }
 
+namespace snapshot {
+struct FileInfo {
+    std::filesystem::path path;
+    std::size_t size;
+    std::vector<std::string> deks;
+};
+} // namespace snapshot
+
 /**
  * When fetching documents from disk, what form should the value be returned?
  */
@@ -172,6 +180,15 @@ public:
     /// Get the Encryption Key Identifiers used by the provided VBucket
     virtual std::pair<cb::engine_errc, nlohmann::json>
     getVbucketEncryptionKeyIds(Vbid vb) const {
+        return {cb::engine_errc::not_supported, {}};
+    }
+
+    /// Prepare a snapshot in the provided directory for the provided vbucket
+    /// The returned array contains the files and their sizes (relative to the
+    /// snapshot directory)
+
+    virtual std::pair<cb::engine_errc, std::vector<snapshot::FileInfo>>
+    prepareSnapshot(const std::filesystem::path& snapshotDirectory, Vbid vb) {
         return {cb::engine_errc::not_supported, {}};
     }
 

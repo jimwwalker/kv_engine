@@ -312,6 +312,8 @@ ADD_LIBRARY(ep STATIC
             src/dockey_validator.cc
             src/doc_pre_expiry.cc
             src/doc_pre_expiry.h
+            src/download_snapshot_task.cc
+            src/download_snapshot_task.h
             src/durability/active_durability_monitor.cc
             src/durability/dead_durability_monitor.cc
             src/durability/durability_completion_task.cc
@@ -387,6 +389,7 @@ ADD_LIBRARY(ep STATIC
             src/seqlist.cc
             src/seqno_persistence_notify_task.cc
             src/serialised_dockey.cc
+            src/snapshots/snapshots.cc
             src/stats.cc
             src/string_utils.cc
             src/stored-value.cc
@@ -429,10 +432,12 @@ target_link_libraries(ep
         engine_utilities
         ep-engine_collections
         mcbp
+        mc_client_connection
         mcd_executor
         mcd_tracing
         mcd_util
         phosphor
+        snapshot_download
         xattr)
 kv_enable_pch(ep)
 
