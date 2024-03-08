@@ -420,6 +420,24 @@ void Manifest::completeUpdate(VBucketStateLockRef vbStateLock,
                          OptionalSeqno{/*no-seqno*/});
     }
 
+    // @todo rename applyCreates
+    auto finalFlush = applyCreates(
+            vbStateLock, wHandle, vb, changeset.collectionsToFlush);
+    if (finalFlush) {
+        // @todo: rename createCollection
+        createCollection(vbStateLock,
+                         wHandle,
+                         vb,
+                         changeset.getUidForChange(manifestUid),
+                         finalFlush.value().identifiers,
+                         finalFlush.value().name,
+                         finalFlush.value().maxTtl,
+                         finalFlush.value().metered,
+                         finalFlush.value().canDeduplicate,
+                         finalFlush.value().flushUid,
+                         OptionalSeqno{/*no-seqno*/});
+    }
+
     // This is done last so the scope deletion follows any collection
     // deletions
     auto finalScopeDrop =
@@ -491,16 +509,26 @@ void Manifest::createCollection(VBucketStateLockRef vbStateLock,
                                 CanDeduplicate canDeduplicate,
                                 ManifestUid flushUid,
                                 OptionalSeqno optionalSeqno) {
+    auto mapEntry = map.find(identifiers.second);
+
     // 1. Update the manifest, adding or updating an entry in the collections
     // map. The start-seqno is 0 here and is patched up once we've created and
     // queued the system-event Item (step 2 and 3)
-    auto& entry = addNewCollectionEntry(identifiers,
-                                        collectionName,
-                                        maxTtl,
-                                        metered,
-                                        canDeduplicate,
-                                        flushUid,
-                                        0);
+    ManifestEntry* entry = nullptr;
+    bool flushing{false};
+    if (mapEntry != map.end()) {
+        flushing = true;
+        entry = &mapEntry->second;
+        entry->setFlushUid(flushUid);
+    } else {
+        entry = &addNewCollectionEntry(identifiers,
+                                       collectionName,
+                                       maxTtl,
+                                       metered,
+                                       canDeduplicate,
+                                       flushUid,
+                                       0);
+    }
 
     // 1.1 record the uid of the manifest which is adding the collection
     updateUid(newManUid, optionalSeqno.has_value());
@@ -512,15 +540,16 @@ void Manifest::createCollection(VBucketStateLockRef vbStateLock,
                                             vb,
                                             identifiers.second,
                                             collectionName,
-                                            entry,
+                                            *entry,
                                             SystemEventType::Create,
                                             optionalSeqno,
                                             {/*no callback*/});
 
     EP_LOG_DEBUG(
-            "{} create collection:id:{}, name:{} in scope:{}, metered:{}, "
-            "flushUid:{} seq:{}, manifest:{:#x}, {}{}{}",
+            "{} {} collection:id:{}, name:{} in scope:{}, metered:{}, "
+            "flushUid:{}, seq:{}, manifest:{:#x}, {}{}{}",
             vb.getId(),
+            flushing ? "flush" : "create",
             identifiers.second,
             collectionName,
             identifiers.first,
@@ -532,13 +561,12 @@ void Manifest::createCollection(VBucketStateLockRef vbStateLock,
             maxTtl.has_value()
                     ? ", maxttl:" + std::to_string(maxTtl.value().count())
                     : "",
-            flushUid,
             optionalSeqno.has_value() ? ", replica" : "");
 
     // 3. Now patch the entry with the seqno of the system event, note the copy
     //    of the manifest taken at step 1 gets the correct seqno when the system
-    //    event is flushed.
-    entry.setStartSeqno(seqno);
+    //    event is flushed to disk
+    entry->setStartSeqno(seqno);
 }
 
 ManifestEntry& Manifest::addNewCollectionEntry(ScopeCollectionPair identifiers,
@@ -851,15 +879,29 @@ Manifest::ManifestChanges Manifest::processManifest(
         if (itr == manifest.end()) {
             // Not found, so this collection should be dropped.
             rv.collectionsToDrop.push_back(cid);
-        } else if (entry.getCanDeduplicate() != itr->second.canDeduplicate ||
-                   entry.getMaxTtl() != itr->second.maxTtl ||
-                   entry.isMetered() != itr->second.metered) {
-            // Found the collection and history/TTL/metered was modified, save
-            // the new state
-            rv.collectionsToModify.push_back({cid,
-                                              itr->second.canDeduplicate,
-                                              itr->second.maxTtl,
-                                              itr->second.metered});
+        } else {
+            // Collection exists - check if it has been modified. We could see
+            // manifest that includes modifications and a flush
+            if (entry.getFlushUid() < itr->second.flushUid) {
+                rv.collectionsToFlush.push_back(
+                        {std::make_pair(entry.getScopeID(), cid),
+                         std::string{entry.getName()},
+                         entry.getMaxTtl(),
+                         entry.isMetered(),
+                         entry.getCanDeduplicate(),
+                         itr->second.flushUid});
+            }
+
+            if (entry.getCanDeduplicate() != itr->second.canDeduplicate ||
+                entry.getMaxTtl() != itr->second.maxTtl ||
+                entry.isMetered() != itr->second.metered) {
+                // Found the collection and history/TTL/metered was modified,
+                // save the new state
+                rv.collectionsToModify.push_back({cid,
+                                                  itr->second.canDeduplicate,
+                                                  itr->second.maxTtl,
+                                                  itr->second.metered});
+            }
         }
     }
 
@@ -1017,7 +1059,8 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
                 getHistoryFromCanDeduplicate(entry.getCanDeduplicate()),
                 cid.isDefaultCollection() ? defaultCollectionMaxLegacyDCPSeqno
                                           : 0,
-                getMeteredFromEnum(entry.isMetered()));
+                getMeteredFromEnum(entry.isMetered()),
+                entry.getFlushUid());
         builder.Finish(collection);
         break;
     }

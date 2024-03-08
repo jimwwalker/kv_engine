@@ -30,6 +30,8 @@ enum class SystemEvent : uint32_t {
      *
      * In-use since 7.0 (epoch of SystemEvents)
      *
+     * With 8.0 flush, the Collection system event can move to represent the
+     * new start of a collection.
      */
     Collection = 0,
 
@@ -54,7 +56,7 @@ enum class SystemEvent : uint32_t {
      * Added in 7.2
      *
      */
-    ModifyCollection = 2
+    ModifyCollection = 2,
 };
 
 static inline std::string to_string(const SystemEvent se) {
@@ -66,6 +68,7 @@ static inline std::string to_string(const SystemEvent se) {
     case SystemEvent::ModifyCollection:
         return "ModifyCollection";
     }
+
     throw std::invalid_argument("to_string(SystemEvent) unknown " +
                                 std::to_string(int(se)));
 }

@@ -32,8 +32,11 @@ class SystemEventFactory {
 public:
     /**
      * Make an Item representing the Collection SystemEvent, the returned Item
-     * will represent a "Create of CID" but can be marked deleted by the caller
-     * to represent a "Drop of CID"
+     * will represent the start of the collection. The same Item can be changed
+     * to represent the end (drop) of the collection by setting as deleted.
+     *
+     * This Item is also used when flushing a collection, which moves the start
+     * of the collection to a new seqno.
      *
      * @param cid The ID of the collection
      * @param data The data which will be written to the value of the Item

@@ -2049,6 +2049,7 @@ TEST_P(CollectionsEraserPersistentOnly, DropDuringFlush) {
                                 {},
                                 Collections::Metered::Yes,
                                 CanDeduplicate::Yes,
+                                Collections::ManifestUid{},
                                 1);
     ASSERT_EQ(0, vb->getNumItems());
 

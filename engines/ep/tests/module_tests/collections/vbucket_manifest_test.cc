@@ -393,6 +393,7 @@ public:
                                 dcpData.metaData.maxTtl,
                                 Collections::Metered::No,
                                 CanDeduplicate::Yes,
+                                Collections::ManifestUid{},
                                 qi->getBySeqno());
                     }
                     break;
@@ -458,6 +459,7 @@ public:
                             maxTtl = std::chrono::seconds(collection.maxTtl());
                         }
                         folly::SharedMutex::ReadHolder rlh(vbR->getStateLock());
+
                         replica.wlock(rlh).replicaCreate(
                                 *vbR,
                                 Collections::ManifestUid{collection.uid()},
@@ -468,6 +470,7 @@ public:
                                 Collections::getMetered(collection.metered()),
                                 getCanDeduplicateFromHistory(
                                         collection.history()),
+                                Collections::ManifestUid{collection.flushUid()},
                                 qi->getBySeqno());
                     }
                     break;
@@ -518,7 +521,7 @@ public:
                     break;
                 }
                 default:
-                    throw std::invalid_argument("Unknown event " +
+                    throw std::invalid_argument("Unknown event (flatbuffers) " +
                                                 std::to_string(qi->getFlags()));
                 }
             }
@@ -1363,6 +1366,30 @@ TEST_P(VBucketManifestTest, logically_deleted) {
     EXPECT_TRUE(readHandle.isLogicallyDeleted(
             SystemEventFactory::makeScopeEventKey(ScopeEntry::shop2),
             testSeqno));
+}
+
+TEST_P(VBucketManifestTest, flush) {
+    // Test requires FlatBuffers event to pass most up-to-date event types.
+    if (!GetParam()) {
+        GTEST_SKIP();
+    }
+
+    ASSERT_TRUE(manifest.update(cm.add(CollectionEntry::fruit)));
+
+    // Next mutation exists in the collection
+    auto seqno = manifest.getActiveVB().getHighSeqno() + 1;
+
+    EXPECT_FALSE(manifest.isLogicallyDeleted(
+            StoredDocKey{"pear", CollectionEntry::fruit}, seqno));
+
+    // flush and add, the add is only here to make the manifestUid different to
+    // the flushUid
+    cm.flush(CollectionEntry::fruit);
+    ASSERT_TRUE(manifest.update(cm.add(CollectionEntry::dairy)));
+
+    // Now that seqno is considered flush/deleted
+    EXPECT_TRUE(manifest.isLogicallyDeleted(
+            StoredDocKey{"pear", CollectionEntry::fruit}, seqno));
 }
 
 INSTANTIATE_TEST_SUITE_P(VBucketManifestTests,
