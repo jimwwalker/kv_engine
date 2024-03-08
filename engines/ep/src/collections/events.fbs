@@ -68,6 +68,16 @@ table DroppedCollection {
     systemCollection:bool = false;
 }
 
+// FlatBuffers SystemEvents: This is the structure used by FlushCollection
+table FlushCollection {
+    // The following fields all exist with the "epoch" of FlushCollection, 8.0+
+    uid:ulong;
+    scopeId:uint;
+    collectionId:uint;
+    flushUid:ulong;
+    systemCollection:bool;
+}
+
 // FlatBuffers SystemEvents: This is the structure used by CreateScope
 table Scope {
     // The following fields all exist with the "epoch" of collections, 7.0+

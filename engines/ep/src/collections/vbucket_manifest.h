@@ -57,6 +57,7 @@ struct Collection;
 struct Scope;
 struct DroppedCollection;
 struct DroppedScope;
+struct FlushCollection;
 
 /**
  * Collections::VB::Manifest is a container for all of the collections a VBucket
@@ -299,6 +300,20 @@ public:
     static const DroppedScope* getDroppedScopeFlatbuffer(std::string_view view);
 
     /**
+     * @return FlushCollection (system event) FlatBuffers object from the given
+     *         Item
+     */
+    static const FlushCollection& getFlushCollectionFlatbuffer(
+            const Item& item);
+
+    /**
+     * @return FlushCollection (system event) FlatBuffers object from the given
+     *         view
+     */
+    static const FlushCollection& getFlushCollectionFlatbuffer(
+            std::string_view view);
+
+    /**
      * Get the Collection CreateEventData collection from a SystemEvent Item.
      *
      * The supplied Item can be a create or modify collection. The item cannot
@@ -329,6 +344,17 @@ public:
      *          marshalled into a DCP system event message.
      */
     static CreateEventData getCreateEventData(const Collection& collection);
+
+    /**
+     * Get the system event collection flush data from a SystemEvent
+     * Item's value.
+     *
+     * @param flatbufferData buffer storing flatbuffer
+     *        Collections.VB.FlushCollection
+     * @returns FlushEventData which carries all of the data which needs to be
+     *          marshalled into a DCP system event message.
+     */
+    static FlushEventData getFlushEventData(std::string_view flatbufferData);
 
     /**
      * Get the system event collection drop data from a SystemEvent
@@ -362,7 +388,7 @@ public:
     static DropScopeEventData getDropScopeEventData(
             std::string_view flatbufferData);
 
-    enum SystemEventType { Create, Modify, Delete };
+    enum SystemEventType { Create, Modify, Flush, Delete };
 
     /**
      * @return an Item that represent a collection create or delete
@@ -404,6 +430,11 @@ public:
         Metered metered;
     };
 
+    struct CollectionFlush {
+        CollectionID cid;
+        ManifestUid flushUid;
+    };
+
     // local struct for managing scope creation
     struct ScopeCreation {
         ScopeID sid;
@@ -423,6 +454,7 @@ public:
         std::vector<CollectionCreation> collectionsToCreate;
         std::vector<CollectionID> collectionsToDrop;
         std::vector<CollectionModification> collectionsToModify;
+        std::vector<CollectionFlush> collectionsToFlush;
 
         const ManifestUid newUid{0};
 
@@ -430,7 +462,7 @@ public:
         bool none() const {
             return scopesToCreate.empty() && scopesToDrop.empty() &&
                    collectionsToCreate.empty() && collectionsToDrop.empty() &&
-                   collectionsToModify.empty();
+                   collectionsToModify.empty() && collectionsToFlush.empty();
         }
 
         /**
@@ -500,6 +532,12 @@ protected:
             const WriteHandle& wHandle,
             ::VBucket& vb,
             std::vector<CollectionModification>& changes);
+
+    std::optional<CollectionFlush> applyFlush(
+            VBucketStateLockRef vbStateLock,
+            const WriteHandle& wHandle,
+            ::VBucket& vb,
+            std::vector<CollectionFlush>& changes);
 
     std::optional<ScopeCreation> applyScopeCreates(
             VBucketStateLockRef vbStateLock,
@@ -590,6 +628,30 @@ protected:
                           Metered metered,
                           CanDeduplicate canDeduplicate,
                           OptionalSeqno optionalSeqno);
+
+    /**
+     * Flush a collection
+     *
+     * @param vbStateLock read lock on the vBucket state.
+     * @param wHandle The manifest write handle under which this operation is
+     *        currently locked. Required to ensure we lock correctly around
+     *        VBucket::notifyNewSeqno
+     * @param vb The vbucket to modify the collection in
+     * @param newManUid the uid of the manifest which made the change
+     * @param cid CollectionID to flush
+     * @param flushUid The uid of the flush, which could be different to the
+     *        manifestUid
+     * @param optionalSeqno Either a seqno to assign to the flush event
+     *        of the collection or none (none means the checkpoint assigns the
+     *        seqno).
+     */
+    void flushCollection(VBucketStateLockRef vbStateLock,
+                         const WriteHandle& wHandle,
+                         ::VBucket& vb,
+                         ManifestUid newManUid,
+                         CollectionID cid,
+                         ManifestUid flushUid,
+                         OptionalSeqno optionalSeqno);
 
     /**
      * Create a scope in the vbucket.

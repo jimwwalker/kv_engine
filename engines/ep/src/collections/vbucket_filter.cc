@@ -314,6 +314,7 @@ bool Filter::checkAndUpdateSystemEvent(const Item& item) {
     switch (SystemEvent(item.getFlags())) {
     case SystemEvent::Collection:
     case SystemEvent::ModifyCollection:
+    case SystemEvent::FlushCollection:
         return processCollectionEvent(item);
     case SystemEvent::Scope:
         return processScopeEvent(item);

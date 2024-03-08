@@ -29,6 +29,16 @@ std::string to_string(const CreateEventData& event) {
                                : 0);
 }
 
+std::string to_string(const FlushEventData& event) {
+    return fmt::format(
+            FMT_STRING("FlushCollection{{uid:{:#x} scopeID:{} collectionID:{} "
+                       "flushUid:{:#x}}}"),
+            event.manifestUid.load(),
+            event.sid.to_string(),
+            event.cid.to_string(),
+            event.flushUid.load());
+}
+
 std::string to_string(const DropEventData& event) {
     return fmt::format(
             FMT_STRING(

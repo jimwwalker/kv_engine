@@ -743,6 +743,31 @@ public:
     }
 
     /**
+     * Flush collection for a replica VB, this is for receiving
+     * collection updates via DCP and the collection already has a flush
+     * seqno assigned.
+     *
+     * @param vb The vbucket to drop collection from
+     * @param manifestUid the uid of the manifest which made the change
+     * @param cid CollectionID to drop
+     * @param flushUid uid of the flush
+     * @param flushSeqno This is the flushSeqno, which will be the new start
+     */
+    void replicaFlush(::VBucket& vb,
+                      ManifestUid manifestUid,
+                      CollectionID cid,
+                      ManifestUid flushUid,
+                      int64_t flushSeqno) {
+        manifest.flushCollection(vbStateLock,
+                                 *this,
+                                 vb,
+                                 manifestUid,
+                                 cid,
+                                 flushUid,
+                                 OptionalSeqno{flushSeqno});
+    }
+
+    /**
      * Drop collection for a replica VB, this is for receiving
      * collection updates via DCP and the collection already has an end
      * seqno assigned.

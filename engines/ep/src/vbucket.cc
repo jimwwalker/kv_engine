@@ -1836,6 +1836,14 @@ void VBucket::replicaModifyCollection(Collections::ManifestUid uid,
             *this, uid, cid, maxTtl, metered, canDeduplicate, bySeqno);
 }
 
+void VBucket::replicaFlushCollection(Collections::ManifestUid uid,
+                                     CollectionID cid,
+                                     Collections::ManifestUid flushUid,
+                                     int64_t bySeqno) {
+    folly::SharedMutex::ReadHolder rlh(stateLock);
+    manifest->wlock(rlh).replicaFlush(*this, uid, cid, flushUid, bySeqno);
+}
+
 void VBucket::replicaDropCollection(Collections::ManifestUid uid,
                                     CollectionID cid,
                                     bool isSystemCollection,

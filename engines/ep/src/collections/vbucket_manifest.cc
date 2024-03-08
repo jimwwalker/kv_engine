@@ -217,6 +217,29 @@ std::optional<Manifest::CollectionModification> Manifest::applyModifications(
     return rv;
 }
 
+std::optional<Manifest::CollectionFlush> Manifest::applyFlush(
+        VBucketStateLockRef vbStateLock,
+        const WriteHandle& wHandle,
+        ::VBucket& vb,
+        std::vector<CollectionFlush>& changes) {
+    std::optional<CollectionFlush> rv;
+    if (!changes.empty()) {
+        rv = changes.back();
+        changes.pop_back();
+    }
+    for (const auto& flush : changes) {
+        flushCollection(vbStateLock,
+                        wHandle,
+                        vb,
+                        manifestUid,
+                        flush.cid,
+                        flush.flushUid,
+                        OptionalSeqno{/*no-seqno*/});
+    }
+    changes.clear();
+    return rv;
+}
+
 std::optional<ScopeID> Manifest::applyScopeDrops(
         VBucketStateLockRef vbStateLock,
         const WriteHandle& wHandle,
@@ -418,6 +441,18 @@ void Manifest::completeUpdate(VBucketStateLockRef vbStateLock,
                          finalModification.value().metered,
                          finalModification.value().canDeduplicate,
                          OptionalSeqno{/*no-seqno*/});
+    }
+
+    auto finalFlush =
+            applyFlush(vbStateLock, wHandle, vb, changeset.collectionsToFlush);
+    if (finalFlush) {
+        flushCollection(vbStateLock,
+                        wHandle,
+                        vb,
+                        changeset.getUidForChange(manifestUid),
+                        finalFlush.value().cid,
+                        finalFlush.value().flushUid,
+                        OptionalSeqno{/*no-seqno*/});
     }
 
     // This is done last so the scope deletion follows any collection
@@ -709,6 +744,51 @@ void Manifest::modifyCollection(VBucketStateLockRef vbStateLock,
             optionalSeqno.has_value() ? ", replica" : "");
 }
 
+void Manifest::flushCollection(VBucketStateLockRef vbStateLock,
+                               const WriteHandle& wHandle,
+                               ::VBucket& vb,
+                               ManifestUid newManUid,
+                               CollectionID cid,
+                               ManifestUid flushUid,
+                               OptionalSeqno optionalSeqno) {
+    auto itr = map.find(cid);
+    if (itr == map.end()) {
+        throwException<std::logic_error>(
+                __func__, "did not find collection:" + cid.to_string());
+    }
+
+    // record the uid of the manifest which modified the collection
+    updateUid(newManUid, optionalSeqno.has_value());
+
+    // Update the flushUid so the system-event can read it from the entry
+    itr->second.setFlushUid(flushUid);
+
+    auto seqno = queueCollectionSystemEvent(vbStateLock,
+                                            wHandle,
+                                            vb,
+                                            cid,
+                                            itr->second.getName(),
+                                            itr->second,
+                                            SystemEventType::Flush,
+                                            optionalSeqno,
+                                            {/*no callback*/});
+
+    // Flush works by moving the start-seqno. All items of the collection below
+    // this seqno are now logically deleted
+    itr->second.setStartSeqno(seqno);
+
+    EP_LOG_DEBUG(
+            "{} flush collection:id:{} from scope:{}, flushUid:{}, "
+            "startSeq:{}, manifest:{:#x}{}",
+            vb.getId(),
+            cid,
+            itr->second.getScopeID(),
+            flushUid,
+            seqno,
+            newManUid,
+            optionalSeqno.has_value() ? ", replica" : "");
+}
+
 void Manifest::collectionDropPersisted(CollectionID cid, uint64_t seqno) {
     // As soon as we get notification that a dropped collection was flushed
     // successfully, mark this flag so subsequent flushes can maintain stats
@@ -851,15 +931,23 @@ Manifest::ManifestChanges Manifest::processManifest(
         if (itr == manifest.end()) {
             // Not found, so this collection should be dropped.
             rv.collectionsToDrop.push_back(cid);
-        } else if (entry.getCanDeduplicate() != itr->second.canDeduplicate ||
-                   entry.getMaxTtl() != itr->second.maxTtl ||
-                   entry.isMetered() != itr->second.metered) {
-            // Found the collection and history/TTL/metered was modified, save
-            // the new state
-            rv.collectionsToModify.push_back({cid,
-                                              itr->second.canDeduplicate,
-                                              itr->second.maxTtl,
-                                              itr->second.metered});
+        } else {
+            // Collection exists - check if it has been modified. We could see
+            // manifest that includes modifications and a flush
+            if (entry.getFlushUid() < itr->second.flushUid) {
+                rv.collectionsToFlush.push_back({cid, itr->second.flushUid});
+            }
+
+            if (entry.getCanDeduplicate() != itr->second.canDeduplicate ||
+                entry.getMaxTtl() != itr->second.maxTtl ||
+                entry.isMetered() != itr->second.metered) {
+                // Found the collection and history/TTL/metered was modified,
+                // save the new state
+                rv.collectionsToModify.push_back({cid,
+                                                  itr->second.canDeduplicate,
+                                                  itr->second.maxTtl,
+                                                  itr->second.metered});
+            }
         }
     }
 
@@ -941,6 +1029,7 @@ bool Manifest::isLogicallyDeleted(const DocKeyView& key, int64_t seqno) const {
         switch (SystemEventFactory::getSystemEventType(key).first) {
         case SystemEvent::Collection:
         case SystemEvent::ModifyCollection:
+        case SystemEvent::FlushCollection:
             lookup = getCollectionIDFromKey(key);
             break;
         case SystemEvent::Scope:
@@ -1031,6 +1120,17 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
         builder.Finish(collection);
         break;
     }
+    case SystemEventType::Flush: {
+        auto collection =
+                CreateFlushCollection(builder,
+                                      uid,
+                                      uint32_t(entry.getScopeID()),
+                                      uint32_t(cid),
+                                      entry.getFlushUid(),
+                                      isSystemCollection(entry.getName(), cid));
+        builder.Finish(collection);
+        break;
+    }
     }
 
     std::unique_ptr<Item> item;
@@ -1043,6 +1143,11 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
     }
     case SystemEventType::Modify: {
         item = SystemEventFactory::makeModifyCollectionEvent(
+                cid, {builder.GetBufferPointer(), builder.GetSize()}, seq);
+        break;
+    }
+    case SystemEventType::Flush: {
+        item = SystemEventFactory::makeFlushCollectionEvent(
                 cid, {builder.GetBufferPointer(), builder.GetSize()}, seq);
         break;
     }
@@ -1293,6 +1398,20 @@ const Collection& Manifest::getCollectionFlatbuffer(std::string_view view) {
             reinterpret_cast<const uint8_t*>(view.data()));
 }
 
+const FlushCollection& Manifest::getFlushCollectionFlatbuffer(
+        const Item& item) {
+    Expects(!cb::mcbp::datatype::is_snappy(item.getDataType()));
+    return getFlushCollectionFlatbuffer(item.getValueViewWithoutXattrs());
+}
+
+const FlushCollection& Manifest::getFlushCollectionFlatbuffer(
+        std::string_view view) {
+    verifyFlatbuffersData<FlushCollection>(view,
+                                           "getFlushCollectionFlatbuffer");
+    return *flatbuffers::GetRoot<FlushCollection>(
+            reinterpret_cast<const uint8_t*>(view.data()));
+}
+
 const Scope* Manifest::getScopeFlatbuffer(std::string_view view) {
     verifyFlatbuffersData<Scope>(view, "getScopeFlatbuffer");
     return flatbuffers::GetRoot<Scope>(
@@ -1363,6 +1482,16 @@ DropScopeEventData Manifest::getDropScopeEventData(
     return {ManifestUid(droppedScope->uid()),
             droppedScope->scopeId(),
             droppedScope->systemScope()};
+}
+
+FlushEventData Manifest::getFlushEventData(std::string_view flatbufferData) {
+    const auto& flushedCollection =
+            getFlushCollectionFlatbuffer(flatbufferData);
+    return {ManifestUid{flushedCollection.uid()},
+            flushedCollection.scopeId(),
+            flushedCollection.collectionId(),
+            ManifestUid{flushedCollection.flushUid()},
+            flushedCollection.systemCollection()};
 }
 
 std::string Manifest::getExceptionString(const std::string& thrower,

@@ -1596,6 +1596,7 @@ bool ActiveStream::shouldProcessItem(const Item& item) {
         case SystemEvent::Scope:
             return true;
         case SystemEvent::ModifyCollection:
+        case SystemEvent::FlushCollection:
             // Modify cannot be transmitted unless opted-in
             return flatBuffersSystemEventsEnabled;
         }

@@ -36,7 +36,8 @@ getCollectionEventAndCollectionID(const DocKeyView& key) {
         auto [event, id] = SystemEventFactory::getTypeAndID(key);
         switch (event) {
         case SystemEvent::ModifyCollection:
-        case SystemEvent::Collection: {
+        case SystemEvent::Collection:
+        case SystemEvent::FlushCollection: {
             return {event, CollectionID(id)};
         }
         case SystemEvent::Scope:

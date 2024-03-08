@@ -42,6 +42,27 @@ struct DropEventData {
     bool isSystemCollection{false}; // The dropped collection, was system?
 };
 
+struct FlushEventData {
+    FlushEventData(ManifestUid manifestUid,
+                   ScopeID sid,
+                   CollectionID cid,
+                   ManifestUid flushUid,
+                   bool isSystemCollection)
+        : manifestUid(manifestUid),
+          sid(sid),
+          cid(cid),
+          flushUid(flushUid),
+          isSystemCollection(isSystemCollection) {
+    }
+    ManifestUid manifestUid; // The Manifest which generated the event
+    ScopeID sid; // The scope that the collection belonged to
+    CollectionID cid; // The collection the event belongs to
+    ManifestUid flushUid; // The value of the flushUid from the manifest
+                          // which generated the event (not necessarily the
+                          // same as manifestUid if manifest was skipped).
+    bool isSystemCollection{false}; // The flushed collection, was system?
+};
+
 struct CreateScopeEventData {
     CreateScopeEventData(ManifestUid manifestUid, ScopeMetaData metaData)
         : manifestUid(manifestUid), metaData(std::move(metaData)) {
@@ -61,6 +82,7 @@ struct DropScopeEventData {
 
 std::string to_string(const CreateEventData& event);
 std::string to_string(const DropEventData& event);
+std::string to_string(const FlushEventData& event);
 std::string to_string(const CreateScopeEventData& event);
 std::string to_string(const DropScopeEventData& event);
 

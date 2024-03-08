@@ -840,6 +840,20 @@ public:
                                  int64_t bySeqno);
 
     /**
+     * Flush a collection from this vbucket with a pre-assigned seqno. I.e.
+     * this VB is a replica.
+     *
+     * @param uid the uid of the manifest which made the change
+     * @param cid CollectionID to drop
+     * @param flushUid uid of the flush
+     * @param bySeqno The seqno assigned to the collection drop event.
+     */
+    void replicaFlushCollection(Collections::ManifestUid uid,
+                                CollectionID cid,
+                                Collections::ManifestUid flushUid,
+                                int64_t bySeqno);
+
+    /**
      * Drop a collection from this vbucket with a pre-assigned seqno. I.e.
      * this VB is a replica.
      *

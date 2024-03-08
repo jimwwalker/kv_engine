@@ -580,6 +580,10 @@ static std::string getSystemEventsValueFromStoredValue(const StoredValue& sv) {
         }
         break;
     }
+    case SystemEvent::FlushCollection: {
+        auto eventData = Manifest::getFlushEventData(itemValue);
+        return to_string(eventData);
+    }
     }
 
     throw std::invalid_argument(

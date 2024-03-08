@@ -87,5 +87,7 @@ std::ostream& Collections::VB::operator<<(
         os << ", maxTtl:none";
     }
 
+    os << ", flushUid:" << manifestEntry.getFlushUid();
+
     return os;
 }
