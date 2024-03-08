@@ -55,6 +55,14 @@ std::unique_ptr<Item> SystemEventFactory::makeModifyCollectionEvent(
                 seqno);
 }
 
+std::unique_ptr<Item> SystemEventFactory::makeFlushCollectionEvent(
+        CollectionID cid, cb::const_byte_buffer data, OptionalSeqno seqno) {
+    return make(makeCollectionEventKey(cid, SystemEvent::FlushCollection),
+                SystemEvent::FlushCollection,
+                data,
+                seqno);
+}
+
 std::unique_ptr<Item> SystemEventFactory::makeScopeEvent(
         ScopeID sid, cb::const_byte_buffer data, OptionalSeqno seqno) {
     // Make a key which is:
@@ -203,6 +211,12 @@ std::unique_ptr<SystemEventProducerMessage> SystemEventProducerMessage::make(
                             {item->getData(), item->getNBytes()}),
                     sid);
         }
+    }
+    case SystemEvent::FlushCollection: {
+        // @todo: Add DCP support
+        throw std::logic_error(
+                "SystemEventProducerMessage::make no "
+                "FlushCollection DCP support yet");
     }
     }
 

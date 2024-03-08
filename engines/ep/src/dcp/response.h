@@ -965,6 +965,8 @@ public:
                                      : mcbp::systemevent::id::CreateCollection;
         case SystemEvent::ModifyCollection:
             return mcbp::systemevent::id::ModifyCollection;
+        case SystemEvent::FlushCollection:
+            return mcbp::systemevent::id::FlushCollection;
         case SystemEvent::Scope:
             return item->isDeleted() ? mcbp::systemevent::id::DropScope
                                      : mcbp::systemevent::id::CreateScope;

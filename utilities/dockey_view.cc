@@ -155,6 +155,7 @@ std::string DocKeyView::to_string() const {
         case SystemEvent::Collection:
         case SystemEvent::Scope:
         case SystemEvent::ModifyCollection:
+        case SystemEvent::FlushCollection:
             // Get the string view to the remaining string part of the key
             remainingKey = {reinterpret_cast<const char*>(keySuffix.data()),
                             keySuffix.size()};

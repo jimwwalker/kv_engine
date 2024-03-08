@@ -54,7 +54,18 @@ enum class SystemEvent : uint32_t {
      * Added in 7.2
      *
      */
-    ModifyCollection = 2
+    ModifyCollection = 2,
+
+    /**
+     * The FlushCollection system event represents a flush of the collection.
+     * All collection items with a seqno less than the flush event, are now
+     * gone.
+     *
+     * Added in 8.0
+     *
+     */
+    FlushCollection = 3
+
 };
 
 static inline std::string to_string(const SystemEvent se) {
@@ -65,7 +76,10 @@ static inline std::string to_string(const SystemEvent se) {
         return "Scope";
     case SystemEvent::ModifyCollection:
         return "ModifyCollection";
+    case SystemEvent::FlushCollection:
+        return "FlushCollection";
     }
+
     throw std::invalid_argument("to_string(SystemEvent) unknown " +
                                 std::to_string(int(se)));
 }

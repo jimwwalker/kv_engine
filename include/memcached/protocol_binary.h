@@ -1229,7 +1229,7 @@ namespace mcbp::systemevent {
 enum class id : uint32_t {
     CreateCollection = 0, // Since 7.0 (epoch of SystemEvents)
     DeleteCollection = 1, // Since 7.0 (epoch of SystemEvents)
-    FlushCollection = 2, // Defined but never used
+    FlushCollection = 2, // Since 8.0 (requires opt-in on DCP)
     CreateScope = 3, // Since 7.0 (epoch of SystemEvents)
     DropScope = 4, // Since 7.0 (epoch of SystemEvents)
     ModifyCollection = 5 // Since 7.2 (requires opt-in on DCP)
