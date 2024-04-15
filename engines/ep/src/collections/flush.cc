@@ -420,7 +420,7 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
                                         : cb::NoExpiryLimit,
                                 getCanDeduplicateFromHistory(entry->history()),
                                 Collections::getMetered(entry->metered()),
-                                ManifestUid{}});
+                                Collections::ManifestUid{entry->flushUid()}});
 
                 exclusiveInsertCollection(
                         entry->collectionId(),
