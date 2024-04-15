@@ -36,12 +36,18 @@ table Collection {
     // of a Collection structure it is defaulted to false.
     history:bool = false;
 
-    // All fields after here are added from 7.5
+    // All fields after here are added from 7.6
     //
     // metered: MB-51979: The default is false - for all collections which exist
     // and didn't define this value, metering must be enabled only by a change
     // pushed from ns_server
     metered:bool = false;
+
+    // All fields after here are added from 8.0
+    //
+    // flush_uid: The default is 0 - the collection has not been flushed and is
+    // correct for all collections created before 8.0.
+    flushUid:ulong = 0;
 }
 
 // All of the open collections
