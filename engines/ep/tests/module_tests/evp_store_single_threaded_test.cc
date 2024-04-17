@@ -1209,7 +1209,8 @@ cb::engine_errc STParameterizedBucketTest::createCollection(
             fb.CreateString(collection.name.data(), collection.name.size()),
             false, /*history*/
             0, /*max visible seqno, default collection*/
-            false /*metered*/);
+            false /*metered*/,
+            0 /* flush_uid*/);
     fb.Finish(fbPayload);
     return consumer.systemEvent(
             opaque,
