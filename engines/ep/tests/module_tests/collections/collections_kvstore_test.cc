@@ -605,6 +605,15 @@ TEST_P(CollectionsKVStoreTest, flush_default_epoch) {
     applyAndCheck(cm);
 }
 
+// Add and flush in one manifest update. The correct flush_uid makes it do disk
+// but no flush should be triggered as the collection did not exist
+TEST_P(CollectionsKVStoreTest, add_flush_in_single_update) {
+    CollectionsManifest cm;
+    cm.add(CollectionEntry::vegetable, std::chrono::seconds{1});
+    cm.flush(CollectionEntry::vegetable);
+    applyAndCheck(cm);
+}
+
 // Related to MB-44098 test that we fail to generate 'corrupt' collection or
 // scope metadata (i.e duplicate entries). This is not the sequence of steps
 // that lead to warmup failure seen in the MB, but tests that we can detect

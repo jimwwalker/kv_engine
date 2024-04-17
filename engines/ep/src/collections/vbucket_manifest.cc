@@ -591,7 +591,7 @@ ManifestEntry& Manifest::addNewCollectionEntry(ScopeCollectionPair identifiers,
             canDeduplicate,
             maxTtl,
             metered,
-            ManifestUid{}); // @todo: Pass the flushUid from update paths
+            flushUid);
 
     if (!inserted) {
         throwException<std::logic_error>(
@@ -1106,7 +1106,8 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
                 getHistoryFromCanDeduplicate(entry.getCanDeduplicate()),
                 cid.isDefaultCollection() ? defaultCollectionMaxLegacyDCPSeqno
                                           : 0,
-                getMeteredFromEnum(entry.isMetered()));
+                getMeteredFromEnum(entry.isMetered()),
+                entry.getFlushUid());
         builder.Finish(collection);
         break;
     }
@@ -1457,8 +1458,6 @@ CreateEventData Manifest::getCreateEventData(const Collection& collection) {
     if (collection.ttlValid()) {
         maxTtl = std::chrono::seconds(collection.maxTtl());
     }
-    // Creating a collection - flush_uid is currently just set to epoch (0) to
-    // make it clearer that no flush has yet occurred.
     return {ManifestUid(collection.uid()),
             {collection.scopeId(),
              collection.collectionId(),
@@ -1466,7 +1465,7 @@ CreateEventData Manifest::getCreateEventData(const Collection& collection) {
              maxTtl,
              getCanDeduplicateFromHistory(collection.history()),
              getMetered(collection.metered()),
-             ManifestUid{}}};
+             ManifestUid{collection.flushUid()}}};
 }
 
 CreateScopeEventData Manifest::getCreateScopeEventData(

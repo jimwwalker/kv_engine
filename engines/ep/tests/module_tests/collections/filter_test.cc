@@ -1568,7 +1568,8 @@ TEST_F(CollectionsVBFilterAccessControlTest, system_filter) {
                 builder.CreateString(CollectionName::systemCollection),
                 true, // history false
                 0,
-                false /*metered*/);
+                false, // metered
+                0 /* flush_uid */);
         builder.Finish(collection);
         EXPECT_FALSE(f.checkAndUpdate(*SystemEventFactory::makeCollectionEvent(
                 CollectionUid::systemCollection,
@@ -1622,7 +1623,8 @@ TEST_F(CollectionsVBFilterAccessControlTest, system_filter) {
                 builder.CreateString(CollectionName::vegetable),
                 true, // history false
                 0,
-                false /*metered*/);
+                false, // metered
+                0 /*flush_uid*/);
         builder.Finish(collection);
         EXPECT_TRUE(f.checkAndUpdate(*SystemEventFactory::makeCollectionEvent(
                 CollectionUid::vegetable,

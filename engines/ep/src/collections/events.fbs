@@ -45,6 +45,13 @@ table Collection {
     // pushed from ns_server
     metered:bool = false;
 
+    // All fields after here are added from 8.0
+    //
+    // metered: MB-41351 The default is 0 - for all collections which existed
+    // and didn't define this value they could not be flushed and 0 is the
+    // correct default to detect subsequent flushes.
+    flushUid:ulong = 0;
+
     // Warning: When merging/changing the tables. Always check all callers to
     // Collections::VB::CreateCollection and check that parameters are ordered
     // correctly - this is critical if inserting a field before another and when
