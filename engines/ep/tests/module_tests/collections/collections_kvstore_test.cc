@@ -598,6 +598,13 @@ TEST_P(CollectionsKVStoreTest, add_flush) {
     applyAndCheck(cm);
 }
 
+// Flush the default collection only, this hits a specific case in flush.cc
+TEST_P(CollectionsKVStoreTest, flush_default_epoch) {
+    CollectionsManifest cm;
+    cm.flush(CollectionEntry::defaultC);
+    applyAndCheck(cm);
+}
+
 // Related to MB-44098 test that we fail to generate 'corrupt' collection or
 // scope metadata (i.e duplicate entries). This is not the sequence of steps
 // that lead to warmup failure seen in the MB, but tests that we can detect

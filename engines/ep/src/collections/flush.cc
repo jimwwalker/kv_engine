@@ -482,17 +482,23 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
     } else if (flushAccounting.getDroppedCollections().count(
                        CollectionID::Default) == 0) {
         // Default construct metadata yields the default collection epoch state
-        // if the default collection was modified, this will return the modded
-        // state or just the epoch input state.
+        // if the default collection was modified, this will return the modified
+        // state or the "epoch" input state.
         auto meta = getMaybeModifiedCollectionMetaData(
                 CollectionID::Default, 0, CollectionMetaData{});
+
+        // Default collection may also of been flushed in the batch. Check for
+        // a flush which may adjust the startSeqno and flushUid. This function
+        // will return the inputs if no flush occurred.
+        auto [startSeqno, flushUid] = getMaybeFlushedMetaData(
+                CollectionID::Default, 0, meta.flushUid);
 
         // Nothing on disk - and not dropped assume the default collection lives
         exclusiveInsertCollection(
                 CollectionID::Default,
                 Collections::KVStore::CreateCollection(
                         builder,
-                        0,
+                        startSeqno,
                         ScopeID::Default,
                         CollectionID::Default,
                         meta.maxTtl.has_value(),
@@ -502,7 +508,8 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
                                 Collections::DefaultCollectionIdentifier
                                         .data()),
                         getHistoryFromCanDeduplicate(meta.canDeduplicate),
-                        Collections::getMeteredFromEnum(meta.metered)));
+                        Collections::getMeteredFromEnum(meta.metered),
+                        flushUid));
     }
 
     auto collectionsVector = builder.CreateVector(finalisedOpenCollection);
