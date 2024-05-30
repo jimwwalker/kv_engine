@@ -354,7 +354,27 @@ public:
      * @returns FlushEventData which carries all of the data which needs to be
      *          marshalled into a DCP system event message.
      */
+    static FlushEventData getFlushEventData(const Item& item);
+
+    /**
+     * Get the system event collection flush data from a string_view that points
+     * to FlatBuffer data for a flush
+     *
+     * @param string_view buffer storing flatbuffer
+     *        Collections.VB.FlushCollection
+     * @returns FlushEventData which carries all of the data which needs to be
+     *          marshalled into a DCP system event message.
+     */
     static FlushEventData getFlushEventData(std::string_view flatbufferData);
+
+    /**
+     * Get the system event collection flush data from a FlatBuffer object
+     *
+     * @param flushed reference to FlushCollection (FlatBuffer object)
+     * @returns FlushEventData which carries all of the data which needs to be
+     *          marshalled into a DCP system event message.
+     */
+    static FlushEventData getFlushEventData(const FlushCollection& flushed);
 
     /**
      * Get the system event collection drop data from a SystemEvent

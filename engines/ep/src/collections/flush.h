@@ -189,7 +189,7 @@ public:
     // @return if the set of open collections is changing
     bool isOpenCollectionsChanged() const {
         return !collections.empty() || !collectionMods.empty() ||
-               isDroppedCollectionsChanged();
+               !collectionFlushes.empty() || isDroppedCollectionsChanged();
     }
 
     // @return if the set of dropped collections is changing
@@ -235,6 +235,11 @@ public:
      * Record that a collection was modified in a commit batch
      */
     void recordModifyCollection(const Item& item);
+
+    /**
+     * Record that a collection was flushed in a commit batch
+     */
+    void recordFlushCollection(const Item& item);
 
     /**
      * Record that a drop collection was present in a commit batch
@@ -368,6 +373,9 @@ private:
             uint64_t seqno,
             const CollectionMetaData& orginalMeta) const;
 
+    std::pair<uint64_t, ManifestUid> getMaybeFlushedMetaData(
+            CollectionID cid, uint64_t startSeqno, ManifestUid flushUid) const;
+
     /**
      * For each collection created in the batch, we record meta data of the
      * first and last (high/low by-seqno). If the collection was created once,
@@ -384,6 +392,13 @@ private:
      * greatest by-seqno
      */
     std::unordered_map<CollectionID, KVStore::OpenCollection> collectionMods;
+
+    /**
+     * For each flush in the batch we record the flushUid for the event with
+     * the greatest seqno.
+     */
+    std::unordered_map<CollectionID, std::pair<uint64_t, ManifestUid>>
+            collectionFlushes;
 
     /**
      * For each scope created in the batch, we record meta data for the greatest

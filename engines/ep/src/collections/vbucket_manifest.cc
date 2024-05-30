@@ -1484,9 +1484,21 @@ DropScopeEventData Manifest::getDropScopeEventData(
             droppedScope->systemScope()};
 }
 
+FlushEventData Manifest::getFlushEventData(const Item& item) {
+    const auto& collection = getFlushCollectionFlatbuffer(item);
+    return getFlushEventData(collection);
+}
+
+// string_view of raw FlatBuffer in, struct FlushEventData out
 FlushEventData Manifest::getFlushEventData(std::string_view flatbufferData) {
     const auto& flushedCollection =
             getFlushCollectionFlatbuffer(flatbufferData);
+    return getFlushEventData(flushedCollection);
+}
+
+// FlatBuffer in, struct FlushEventData out
+FlushEventData Manifest::getFlushEventData(
+        const FlushCollection& flushedCollection) {
     return {ManifestUid{flushedCollection.uid()},
             flushedCollection.scopeId(),
             flushedCollection.collectionId(),

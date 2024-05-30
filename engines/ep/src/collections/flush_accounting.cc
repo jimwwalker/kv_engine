@@ -191,12 +191,13 @@ bool FlushAccounting::checkAndMaybeProcessSystemEvent(
         // Modify event - no processing
         return false;
     case SystemEvent::Collection:
-        // Collection create/drop - break and process
+    case SystemEvent::FlushCollection:
+        // Collection create/flush/drop - break and process
         break;
     default:
         // E.g. Scope
         throw std::logic_error(
-                "checkAndMaybeProcessSystemEvent unexpected event" +
+                "checkAndMaybeProcessSystemEvent unexpected event " +
                 std::to_string(int(event)));
     }
 
@@ -211,8 +212,8 @@ bool FlushAccounting::checkAndMaybeProcessSystemEvent(
     }
 
     // caller stops processing if this function returns true - DropCollection
-    // stops the processing.
-    return isDelete == IsDeleted::Yes;
+    // stops the processing and so does FlushCollection
+    return isDelete == IsDeleted::Yes || event == SystemEvent::FlushCollection;
 }
 
 bool FlushAccounting::updateStats(const DocKeyView& key,

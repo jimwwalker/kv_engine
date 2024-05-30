@@ -144,6 +144,9 @@ public:
         EXPECT_EQ(cm.getUid(), md.manifestUid);
     }
 
+    // Function convert the test CollectionsManifest JSON into a vector of
+    // CollectionMetaData objects. These objects are more convenient for test
+    // comparisons
     static std::vector<Collections::CollectionMetaData> getCreateEventVector(
             const CollectionsManifest& cm) {
         std::vector<Collections::CollectionMetaData> rv;
@@ -172,13 +175,20 @@ public:
                     historyValue = history->get<bool>();
                 }
 
+                Collections::ManifestUid flushUidValue;
+                auto flushUid = collection.find("flush_uid");
+                if (flushUid != collection.end()) {
+                    flushUidValue = Collections::makeManifestUid(
+                            flushUid->get<std::string>());
+                }
+
                 rv.emplace_back(sid,
                                 cid,
                                 name,
                                 maxTtl,
                                 getCanDeduplicateFromHistory(historyValue),
                                 metered,
-                                Collections::ManifestUid{});
+                                flushUidValue);
             }
         }
         return rv;
@@ -383,6 +393,19 @@ TEST(CollectionsKVStoreTest, test_KVStore_comparison) {
     c3.maxTtl = std::chrono::seconds(1);
     m2.collections.emplace_back(0, c3);
     EXPECT_NE(m1, m2);
+
+    // Check flush_uid difference is detected
+    auto c4 = Collections::CollectionMetaData{ScopeID{88},
+                                              CollectionID{103},
+                                              "c3",
+                                              cb::NoExpiryLimit,
+                                              CanDeduplicate::Yes,
+                                              Collections::Metered::No,
+                                              Collections::ManifestUid{}};
+    m1.collections.emplace_back(0, c3);
+    c3.flushUid += 1;
+    m2.collections.emplace_back(0, c3);
+    EXPECT_NE(m1, m2);
 }
 
 TEST_P(CollectionsKVStoreTest, initial_meta) {
@@ -561,6 +584,17 @@ TEST_P(CollectionsKVStoreTest, max_ttl_changes) {
 TEST_P(CollectionsKVStoreTest, epoch_default_ttl) {
     CollectionsManifest cm;
     cm.update(CollectionEntry::defaultC, std::chrono::seconds{1});
+    applyAndCheck(cm);
+}
+
+// Test that the flush_uid is updated in the open-collection state
+TEST_P(CollectionsKVStoreTest, add_flush) {
+    CollectionsManifest cm;
+    cm.add(CollectionEntry::vegetable);
+    applyAndCheck(cm);
+
+    // Flush the collection, apply system events and check the KVStore state
+    cm.flush(CollectionEntry::vegetable);
     applyAndCheck(cm);
 }
 

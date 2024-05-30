@@ -199,6 +199,10 @@ void Flush::recordSystemEvent(const Item& item) {
         recordModifyCollection(item);
         break;
     }
+    case SystemEvent::FlushCollection: {
+        recordFlushCollection(item);
+        break;
+    }
     case SystemEvent::Scope: {
         if (item.isDeleted()) {
             recordDropScope(item);
@@ -251,6 +255,24 @@ void Flush::recordModifyCollection(const Item& item) {
         }
     }
     setManifestUid(createEvent.manifestUid);
+}
+
+void Flush::recordFlushCollection(const Item& item) {
+    // Modify and Create carry the same data - all of the collection meta, hence
+    // call to getCreateEventData
+    auto flushEventData = Collections::VB::Manifest::getFlushEventData(item);
+    auto [itr, emplaced] =
+            collectionFlushes.try_emplace(flushEventData.cid,
+                                          uint64_t(item.getBySeqno()),
+                                          flushEventData.flushUid);
+    if (!emplaced) {
+        // Collection already in the map, only keep this event if > sequence
+        if (uint64_t(item.getBySeqno()) > itr->second.first) {
+            itr->second = std::make_pair(uint64_t(item.getBySeqno()),
+                                         flushEventData.flushUid);
+        }
+    }
+    setManifestUid(flushEventData.manifestUid);
 }
 
 void Flush::recordDropCollection(const Item& item) {
@@ -378,12 +400,18 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
         auto meta = getMaybeModifiedCollectionMetaData(
                 cid, span.high.startSeqno, span.high.metaData);
 
+        // Finally check if a flush occurred for this collection
+        // A flush sets the start-seqno to the flush-point. This function will
+        // return the inputs if no flush occurred or the adjusted values.
+        auto [startSeqno, flushUid] = getMaybeFlushedMetaData(
+                cid, span.high.startSeqno, meta.flushUid);
+
         // generate
         exclusiveInsertCollection(
                 meta.cid,
                 Collections::KVStore::CreateCollection(
                         builder,
-                        span.high.startSeqno,
+                        startSeqno,
                         uint32_t{meta.sid},
                         uint32_t(meta.cid),
                         meta.maxTtl.has_value(),
@@ -392,7 +420,8 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
                         builder.CreateString(meta.name.data(),
                                              meta.name.size()),
                         getHistoryFromCanDeduplicate(meta.canDeduplicate),
-                        Collections::getMeteredFromEnum(meta.metered)));
+                        Collections::getMeteredFromEnum(meta.metered),
+                        flushUid));
     }
 
     // And 'merge' with the data we read
@@ -422,11 +451,16 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
                                 Collections::getMetered(entry->metered()),
                                 Collections::ManifestUid{entry->flushUid()}});
 
+                // If the collection is modified, this will return the correct
+                // state of the collection, or just the input state
+                auto [startSeqno, flushUid] = getMaybeFlushedMetaData(
+                entry->collectionId(), entry->startSeqno(), meta.flushUid);
+
                 exclusiveInsertCollection(
                         entry->collectionId(),
                         Collections::KVStore::CreateCollection(
                                 builder,
-                                entry->startSeqno(),
+                                startSeqno,
                                 entry->scopeId(),
                                 entry->collectionId(),
                                 meta.maxTtl.has_value(),
@@ -436,7 +470,8 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
                                 builder.CreateString(entry->name()),
                                 getHistoryFromCanDeduplicate(
                                         meta.canDeduplicate),
-                                Collections::getMeteredFromEnum(meta.metered)));
+                                Collections::getMeteredFromEnum(meta.metered),
+                                flushUid));
 
             } else {
                 // Here we maintain the startSeqno of the dropped collection
@@ -755,6 +790,17 @@ CollectionMetaData Flush::getMaybeModifiedCollectionMetaData(
     }
     // No modification, or it was before the create - return input value.
     return orginalMeta;
+}
+
+std::pair<uint64_t, ManifestUid> Flush::getMaybeFlushedMetaData(
+        CollectionID cid, uint64_t startSeqno, ManifestUid flushUid) const {
+    auto flushed = collectionFlushes.find(cid);
+    if (flushed != collectionFlushes.end() &&
+        flushed->second.first > startSeqno) {
+        return {flushed->second.first, flushed->second.second};
+    }
+    // No flush found that affects the current collection, return input values
+    return {startSeqno, flushUid};
 }
 
 } // namespace Collections::VB
