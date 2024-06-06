@@ -163,7 +163,7 @@ void Flush::notifyManifestOfAnyDroppedCollections() {
 }
 
 void Flush::checkAndTriggerPurge(Vbid vbid, EPBucket& bucket) const {
-    if (nonEmptyDroppedCollections != 0) {
+    if (nonEmptyDroppedCollections != 0 || !collectionFlushes.empty()) {
         triggerPurge(vbid, bucket);
     }
 }

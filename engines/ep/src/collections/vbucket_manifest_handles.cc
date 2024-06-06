@@ -49,7 +49,7 @@ cb::engine_errc CachingReadHandle::handleWriteStatus(
     return cb::engine_errc::success;
 }
 
-void CachingReadHandle::dump() {
+void CachingReadHandle::dump() const {
     std::cerr << *manifest << std::endl;
 }
 

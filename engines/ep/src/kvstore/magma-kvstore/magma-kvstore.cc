@@ -2836,7 +2836,7 @@ CompactDBStatus MagmaKVStore::compactDBInternal(
     }
 
     ctx->eraserContext =
-            std::make_unique<Collections::VB::EraserContext>(dropped);
+            std::make_unique<Collections::VB::EraserContext>(nullptr, dropped);
 
     auto diskState = readVBStateFromDisk(vbid);
     if (diskState.status != ReadVBStateStatus::Success) {

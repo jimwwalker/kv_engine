@@ -548,7 +548,7 @@ public:
     /**
      * Dump this VB::Manifest to std::cerr
      */
-    void dump();
+    void dump() const;
 
 protected:
     friend std::ostream& operator<<(std::ostream& os,

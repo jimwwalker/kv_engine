@@ -23,9 +23,10 @@ namespace Collections::VB {
 class EraserContext : public ScanContext {
 public:
     explicit EraserContext(
+            const std::vector<Collections::KVStore::OpenCollection>*
+                    openCollections,
             const std::vector<Collections::KVStore::DroppedCollection>&
                     droppedCollections);
-
     /**
      * Called by kvstore for deleted keys, when the deleted key is a drop of a
      * collection, the set of dropped collections is updated.

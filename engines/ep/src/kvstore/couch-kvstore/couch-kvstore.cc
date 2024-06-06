@@ -1532,7 +1532,7 @@ CompactDBStatus CouchKVStore::compactDBInternal(
 
                     hook_ctx->eraserContext =
                             std::make_unique<Collections::VB::EraserContext>(
-                                    droppedCollections);
+                                    nullptr, droppedCollections);
                     return COUCHSTORE_SUCCESS;
                 },
                 [this, &vbid, &prepareStats, &purge_seqno](Db& db) {
@@ -1585,10 +1585,23 @@ CompactDBStatus CouchKVStore::compactDBInternal(
             return CompactDBStatus::Failed;
         }
         hook_ctx->stats.collectionsPurged = droppedCollections.size();
+        auto openCollections = getOpenCollections(*sourceDb);
 
-        hook_ctx->eraserContext =
-                std::make_unique<Collections::VB::EraserContext>(
-                        droppedCollections);
+        if (std::holds_alternative<couchstore_error_t>(openCollections)) {
+            logger.warn(
+                    "CouchKVStore::compactDBInternal {} failed to get "
+                    "open collections - status:{}",
+                    vbid,
+                    couchstore_strerror(
+                            std::get<couchstore_error_t>(openCollections)));
+            return CompactDBStatus::Failed;
+        }
+
+        hook_ctx->eraserContext = std::make_unique<
+                Collections::VB::EraserContext>(
+                &std::get<std::vector<Collections::KVStore::OpenCollection>>(
+                        openCollections),
+                droppedCollections);
         errCode = cb::couchstore::compact(
                 *sourceDb,
                 compact_file.c_str(),
@@ -4209,6 +4222,25 @@ CouchKVStore::getDroppedCollections(Db& db) const {
     return {COUCHSTORE_SUCCESS,
             Collections::KVStore::decodeDroppedCollections(
                     droppedRes.doc.getBuffer())};
+}
+
+std::variant<couchstore_error_t,
+             std::vector<Collections::KVStore::OpenCollection>>
+CouchKVStore::getOpenCollections(Db& db) const {
+    auto result = readLocalDoc(db, LocalDocKey::openCollections);
+
+    if (result.status == COUCHSTORE_ERROR_DOC_NOT_FOUND) {
+        // Doc not found case, remap to success as that means there are no
+        // collections and this is not an error.
+        return std::vector<Collections::KVStore::OpenCollection>{};
+    }
+
+    if (result.status != COUCHSTORE_SUCCESS) {
+        // Error case, return status up
+        return result.status;
+    }
+
+    return Collections::KVStore::decodeOpenCollections(result.doc.getBuffer());
 }
 
 couchstore_error_t CouchKVStore::updateCollectionsMeta(
