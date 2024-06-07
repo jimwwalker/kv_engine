@@ -2987,10 +2987,29 @@ CompactDBStatus MagmaKVStore::compactDBInternal(
                                                    SystemEvent::Collection);
 
             // This collection purged successfully, save this for later so that
-            // we can update the droppedCollections local doc
-            purgedCollections.insert(dc.collectionId);
-            purgedCollectionsEndSeqno =
-                    std::max(dc.endSeqno, purgedCollectionsEndSeqno);
+            // we can update the droppedCollections local doc.
+            // Note for CDC we only update the dropped metadata once fully
+            // purged.
+
+            // Other idea to check... iirc when CDC is enabled the drop event
+            // won't be visible to the standard compaction path whilst in the
+            // cdc window? (to check)
+
+            // Final part of this puzzle is to ensure that normal compaction
+            // tidies up the dropped collection doc - or at least some other
+            // path does once the drop is out of CDC window.
+
+            // Other question on this change is about calling
+            // GetOldestHistorySeqno - this doesn't look like it will be
+            // consistent with CompactKVStore call? Ideally compact a snapshot
+            // and use the history start for that snapshot
+
+            auto hss = magma->GetOldestHistorySeqno(vbid.get());
+            if (hss == 0  || dc.endSeqno < hss) {
+                purgedCollections.insert(dc.collectionId);
+                purgedCollectionsEndSeqno =
+                        std::max(dc.endSeqno, purgedCollectionsEndSeqno);
+            }
         }
 
         // Also need to compact the prepare namespace as this is disjoint from
