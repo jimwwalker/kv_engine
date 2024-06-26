@@ -215,7 +215,8 @@ bool FlushAccounting::checkAndMaybeProcessSystemEvent(
 
     // caller stops processing if this function returns true - DropCollection
     // stops the processing and so does FlushCollection
-    return isDelete == IsDeleted::Yes || event == SystemEvent::FlushCollection;
+    return isDelete ==
+           IsDeleted::Yes; // || event == SystemEvent::FlushCollection;
 }
 
 bool FlushAccounting::updateStats(const DocKeyView& key,

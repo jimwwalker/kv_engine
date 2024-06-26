@@ -22,12 +22,17 @@ EraserContext::EraserContext(
 }
 
 void EraserContext::processSystemEvent(const DocKeyView& key, SystemEvent se) {
-    if (se == SystemEvent::Collection) {
+    std::cerr << "EraserContext::processSystemEvent key:" << key.to_string()
+              << " se:" << (int)se << std::endl;
+
+    if (se == SystemEvent::Collection || se == SystemEvent::FlushCollection) {
         // The system event we are processing could be:
         // 1) A deleted collection (so represents the end of dropped collection)
         // 2) A create event which came after a drop (collection resurrection)
         //    In this case we still need to look in the drop list so we know
         //    that the old generation of the collection was fully visited.
+        // 3) A flush collection, which is the "new" start of an existing
+        //    collection.
         // If the ID is in the drop list, then we remove it and set the
         // 'removed' flag.
         auto itr = dropped.find(getCollectionIDFromKey(key));

@@ -87,7 +87,10 @@ bool ScanContext::isLogicallyDeleted(CollectionID cid,
                                      bool isDeleted,
                                      uint64_t seqno) const {
     // Is the key in a range which contains dropped collections and in the set?
-    return (seqno >= startSeqno && seqno <= endSeqno) && dropped.count(cid) > 0;
+    std::cerr << "ScanContext::isLogicallyDeleted() cid:" << cid.to_string()
+              << ", seqno:" << seqno << " s:" << startSeqno << " e:" << endSeqno
+              << std::endl;
+    return (seqno >= startSeqno && seqno < endSeqno) && dropped.count(cid) > 0;
 }
 
 std::ostream& operator<<(std::ostream& os, const ScanContext& scanContext) {

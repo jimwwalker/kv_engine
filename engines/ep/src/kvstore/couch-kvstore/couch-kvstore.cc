@@ -946,6 +946,8 @@ static int time_purge_hook(Db& d,
             itr.first->second += info->getTotalSize();
         }
     };
+    std::cerr << "purge? " << info->db_seq << " " << docKey.to_string()
+              << std::endl;
 
     if (ctx.eraserContext->isLogicallyDeleted(
                 docKey, info->deleted, int64_t(info->db_seq))) {
@@ -4211,6 +4213,25 @@ CouchKVStore::getDroppedCollections(Db& db) const {
     return {COUCHSTORE_SUCCESS,
             Collections::KVStore::decodeDroppedCollections(
                     droppedRes.doc.getBuffer())};
+}
+
+std::variant<couchstore_error_t,
+             std::vector<Collections::KVStore::OpenCollection>>
+CouchKVStore::getOpenCollections(Db& db) const {
+    auto result = readLocalDoc(db, LocalDocKey::openCollections);
+
+    if (result.status == COUCHSTORE_ERROR_DOC_NOT_FOUND) {
+        // Doc not found case, remap to success as that means there are no
+        // collections and this is not an error.
+        return std::vector<Collections::KVStore::OpenCollection>{};
+    }
+
+    if (result.status != COUCHSTORE_SUCCESS) {
+        // Error case, return status up
+        return result.status;
+    }
+
+    return Collections::KVStore::decodeOpenCollections(result.doc.getBuffer());
 }
 
 couchstore_error_t CouchKVStore::updateCollectionsMeta(

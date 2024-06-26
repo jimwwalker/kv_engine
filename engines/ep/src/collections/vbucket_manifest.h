@@ -555,7 +555,7 @@ protected:
 
     std::optional<CollectionFlush> applyFlush(
             VBucketStateLockRef vbStateLock,
-            const WriteHandle& wHandle,
+            WriteHandle& wHandle,
             ::VBucket& vb,
             std::vector<CollectionFlush>& changes);
 
@@ -666,7 +666,7 @@ protected:
      *        seqno).
      */
     void flushCollection(VBucketStateLockRef vbStateLock,
-                         const WriteHandle& wHandle,
+                         WriteHandle& wHandle,
                          ::VBucket& vb,
                          ManifestUid newManUid,
                          CollectionID cid,

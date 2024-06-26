@@ -117,7 +117,8 @@ CollectionID SystemEventFactory::getCollectionIDFromKey(const DocKeyView& key) {
     auto se = getSystemEventType(key);
     // expected Collection/ModifyCollection event
     Expects(se.first == SystemEvent::Collection ||
-            se.first == SystemEvent::ModifyCollection);
+            se.first == SystemEvent::ModifyCollection ||
+            se.first == SystemEvent::FlushCollection);
     return cb::mcbp::unsigned_leb128<CollectionIDType>::decode(se.second).first;
 }
 

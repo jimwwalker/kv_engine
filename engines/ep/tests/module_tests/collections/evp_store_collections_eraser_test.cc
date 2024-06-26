@@ -1993,29 +1993,32 @@ TEST_P(CollectionsEraserPersistentOnly,
                0,
                {cb::engine_errc::success},
                PROTOCOL_BINARY_DATATYPE_JSON,
-               {},
-               true);
+               {});
     flushVBucketToDiskIfPersistent(vbid, 1);
 
     // Collection Drop
     setCollections(cookie, cm.remove(CollectionEntry::fruit));
-    flushVBucketToDiskIfPersistent(vbid, 1);
+    // flushVBucketToDiskIfPersistent(vbid, 1);
 
     // Collection Create
     setCollections(cookie, cm.add(CollectionEntry::fruit));
+    std::cerr << "Flushing the recreate\n";
     flushVBucketToDiskIfPersistent(vbid, 1);
+    throw 1;
+    EXPECT_EQ(0, vb->lockCollections().getItemCount(CollectionEntry::fruit));
+    /**
 
     // DocDelete
-    store_item(vbid,
-               StoredDocKey{"apple", CollectionEntry::fruit},
-               "green",
-               0,
-               {cb::engine_errc::success},
-               PROTOCOL_BINARY_DATATYPE_JSON,
-               {},
-               true);
-    flushVBucketToDiskIfPersistent(vbid, 1);
-    EXPECT_EQ(0, vb->getNumItems());
+    // store_item(vbid,
+    //            StoredDocKey{"apple", CollectionEntry::fruit},
+    //            "green",
+    //            0,
+    //            {cb::engine_errc::success},
+    //            PROTOCOL_BINARY_DATATYPE_JSON,
+    //            {},
+    //            true);
+    // flushVBucketToDiskIfPersistent(vbid, 1);
+    //EXPECT_EQ(0, vb->getNumItems());
 
     auto [status, manifest] =
             store->getRWUnderlying(vbid)->getCollectionsManifest(vbid);
@@ -2028,6 +2031,8 @@ TEST_P(CollectionsEraserPersistentOnly,
             (*task_executor->getLpTaskQ(TaskType::AuxIO)).getFutureQueueSize());
     runCollectionsEraser(vbid);
     EXPECT_EQ(0, vb->getNumItems());
+     EXPECT_EQ(1, vb->lockCollections().getItemCount(CollectionEntry::fruit));
+*/
 }
 
 /**
@@ -2369,6 +2374,64 @@ TEST_P(CollectionsEraserTest, drop_after_modify) {
         // modify was purged
         EXPECT_EQ(2, vb->ht.getNumSystemItems());
     }
+}
+
+TEST_P(CollectionsEraserTest, flush_basic) {
+    // add two collections
+    CollectionsManifest cm;
+    auto key = StoredDocKey{"apple", CollectionEntry::fruit};
+    setCollections(
+            cookie,
+            cm.add(CollectionEntry::vegetable).add(CollectionEntry::fruit));
+    flushVBucketToDiskIfPersistent(vbid, 2 /* 2 x system */);
+    store_item(vbid, StoredDocKey{"carrot", CollectionEntry::vegetable}, "1");
+    store_item(vbid, StoredDocKey{"turnip", CollectionEntry::vegetable}, "2");
+    store_item(vbid, key, "1");
+    store_item(vbid, StoredDocKey{"apricot", CollectionEntry::fruit}, "2");
+    flushVBucketToDiskIfPersistent(vbid, 4);
+
+    EXPECT_EQ(2,
+              vb->lockCollections().getItemCount(CollectionEntry::vegetable));
+    EXPECT_EQ(2, vb->lockCollections().getItemCount(CollectionEntry::fruit));
+
+    // Can read a fruit key
+    EXPECT_EQ(cb::engine_errc::success,
+              store->get(key, vbid, cookie, get_options_t::NONE).getStatus());
+    setCollections(cookie, cm.flush(CollectionEntry::fruit));
+
+    // In-memory state changed
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::vegetable));
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::fruit));
+
+    // Current implementation is to only update item counts from eraser. Thus
+    // the flushed collection still shows 2 items, which from a "how much
+    // memory/resource is a collection using" perspective, is accurate.
+    EXPECT_EQ(2,
+              vb->lockCollections().getItemCount(CollectionEntry::vegetable));
+    // No change in item count at this point
+    EXPECT_EQ(4, vb->getNumItems());
+
+    // Fail to read the as key is now below the new startSeqno
+    EXPECT_EQ(cb::engine_errc::no_such_key,
+              store->get(key, vbid, cookie, get_options_t::NONE).getStatus());
+
+    EXPECT_EQ(2,
+              vb->lockCollections().getItemCount(
+                      CollectionEntry::fruit)); // hmm should fix from flush
+    // Now persist the flush
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // Should see stat update happen at flush, vbucket total iirc happens at
+    // erase (along with say memory reduction)
+    EXPECT_EQ(0,
+              vb->lockCollections().getItemCount(
+                      CollectionEntry::fruit)); // hmm should fix from flush
+
+    // runCollectionsEraser(vbid);
+
+    // EXPECT_EQ(2, vb->getNumItems());
+
+    // EXPECT_EQ(0, vb->lockCollections().getItemCount(CollectionEntry::fruit));
 }
 
 // Test cases which run for persistent and ephemeral buckets

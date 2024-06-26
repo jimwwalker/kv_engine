@@ -219,7 +219,7 @@ std::optional<Manifest::CollectionModification> Manifest::applyModifications(
 
 std::optional<Manifest::CollectionFlush> Manifest::applyFlush(
         VBucketStateLockRef vbStateLock,
-        const WriteHandle& wHandle,
+        WriteHandle& wHandle,
         ::VBucket& vb,
         std::vector<CollectionFlush>& changes) {
     std::optional<CollectionFlush> rv;
@@ -745,7 +745,7 @@ void Manifest::modifyCollection(VBucketStateLockRef vbStateLock,
 }
 
 void Manifest::flushCollection(VBucketStateLockRef vbStateLock,
-                               const WriteHandle& wHandle,
+                               WriteHandle& wHandle,
                                ::VBucket& vb,
                                ManifestUid newManUid,
                                CollectionID cid,
@@ -762,16 +762,18 @@ void Manifest::flushCollection(VBucketStateLockRef vbStateLock,
 
     // Update the flushUid so the system-event can read it from the entry
     itr->second.setFlushUid(flushUid);
+    itr->second.setItemCount(0);
 
-    auto seqno = queueCollectionSystemEvent(vbStateLock,
-                                            wHandle,
-                                            vb,
-                                            cid,
-                                            itr->second.getName(),
-                                            itr->second,
-                                            SystemEventType::Flush,
-                                            optionalSeqno,
-                                            {/*no callback*/});
+    auto seqno = queueCollectionSystemEvent(
+            vbStateLock,
+            wHandle,
+            vb,
+            cid,
+            itr->second.getName(),
+            itr->second,
+            SystemEventType::Flush,
+            optionalSeqno,
+            vb.getSaveDroppedCollectionCallback(cid, wHandle, itr->second));
 
     // Flush works by moving the start-seqno. All items of the collection below
     // this seqno are now logically deleted
@@ -1342,12 +1344,15 @@ StatsForFlush Manifest::getStatsForFlush(CollectionID cid,
         // Collection (id) exists, is it the correct 'generation'. If the given
         // seqno is equal or greater than the start, then it is a match
         if (seqno >= mapItr->second.getStartSeqno()) {
+            std::cerr << "Return new stats " << cid << " seq:" << seqno
+                      << " \n";
             return StatsForFlush{mapItr->second.getItemCount(),
                                  mapItr->second.getDiskSize(),
                                  mapItr->second.getPersistedHighSeqno()};
         }
     }
 
+    std::cerr << "get dropped " << cid << " " << seqno << std::endl;
     // Not open or open is not the correct generation
     // It has to be in this droppedCollections
     return droppedCollections.rlock()->get(cid, seqno);
@@ -1902,6 +1907,9 @@ StatsForFlush Manifest::DroppedCollections::get(CollectionID cid,
                                                 uint64_t seqno) const {
     const auto& droppedInfo =
             findInfo("Manifest::DroppedCollections::get", cid, seqno);
+    std::cerr << "Asking for droppedCollection stats cid:" << cid
+              << " seq:" << seqno << " ic:" << droppedInfo.itemCount
+              << std::endl;
     return StatsForFlush{
             droppedInfo.itemCount, droppedInfo.diskSize, droppedInfo.highSeqno};
 }

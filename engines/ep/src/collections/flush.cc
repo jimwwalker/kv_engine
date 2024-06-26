@@ -48,12 +48,16 @@ void Flush::saveCollectionStats(
                 cid, flushStats.getPersistedHighSeqno());
 
         try {
+            std::cerr << "Save cid:" << cid << " items "
+                      << flushStats.getItemCount() << std::endl;
             // Generate new stats, add the deltas from this flush batch for
             // count and size and set the high-seqno (which includes prepares)
             PersistedStats ps(
                     collsFlushStats.itemCount + flushStats.getItemCount(),
                     flushStats.getPersistedHighSeqno(),
                     collsFlushStats.diskSize + flushStats.getDiskSize());
+            std::cerr << "Callback " << cid << " Item Count " << ps.itemCount
+                      << std::endl;
             cb(cid, ps);
         } catch (const std::exception& e) {
             EP_LOG_CRITICAL(
@@ -262,17 +266,46 @@ void Flush::recordFlushCollection(const Item& item) {
     // Modify and Create carry the same data - all of the collection meta, hence
     // call to getCreateEventData
     auto flushEventData = Collections::VB::Manifest::getFlushEventData(item);
-    auto [itr, emplaced] =
-            collectionFlushes.try_emplace(flushEventData.cid,
-                                          uint64_t(item.getBySeqno()),
-                                          flushEventData.flushUid);
+
+    // hack into create
+    KVStore::OpenCollection collection{
+            uint64_t(item.getBySeqno()),
+            CollectionMetaData{
+                    ScopeID::Default,
+                    flushEventData.cid,
+                    "jww",
+                    {},
+                    CanDeduplicate::Yes,
+                    Metered::No,
+                    flushEventData.manifestUid}}; // createEvent.metaData};
+    auto [itr, emplaced] = collections.try_emplace(
+            flushEventData.cid, CollectionSpan{collection, collection});
     if (!emplaced) {
-        // Collection already in the map, only keep this event if > sequence
-        if (uint64_t(item.getBySeqno()) > itr->second.first) {
-            itr->second = std::make_pair(uint64_t(item.getBySeqno()),
-                                         flushEventData.flushUid);
+        // Collection already in the map, we must set this new create as the
+        // high or low (or ignore)
+        if (uint64_t(item.getBySeqno()) > itr->second.high.startSeqno) {
+            itr->second.high = collection;
+        } else if (uint64_t(item.getBySeqno()) < itr->second.low.startSeqno) {
+            itr->second.low = collection;
         }
     }
+
+    auto [itr2, emplaced2] =
+            flushAccounting.getDroppedCollections().try_emplace(
+                    flushEventData.cid,
+                    KVStore::DroppedCollection{0,
+                                               uint64_t(item.getBySeqno()),
+                                               flushEventData.cid});
+
+    if (!emplaced2) {
+        // Collection already in the map, we must set this new drop if the
+        // highest or ignore
+        if (uint64_t(item.getBySeqno()) > itr2->second.endSeqno) {
+            itr2->second = KVStore::DroppedCollection{
+                    0, uint64_t(item.getBySeqno()), flushEventData.cid};
+        }
+    }
+
     setManifestUid(flushEventData.manifestUid);
 }
 

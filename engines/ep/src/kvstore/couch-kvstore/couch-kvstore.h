@@ -706,6 +706,10 @@ protected:
               std::vector<Collections::KVStore::DroppedCollection>>
     getDroppedCollections(Db& db) const;
 
+    std::variant<couchstore_error_t,
+                 std::vector<Collections::KVStore::OpenCollection>>
+    getOpenCollections(Db& db) const;
+
     /**
      * Unlink selected couch file, which will be removed by the OS,
      * once all its references close.
