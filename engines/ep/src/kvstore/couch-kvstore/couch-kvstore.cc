@@ -3061,6 +3061,7 @@ static void saveDocsCallback(const DocInfo* oldInfo,
             newKey.isCommitted() ? IsCommitted::Yes : IsCommitted::No;
     auto isDeleted = newInfo->deleted ? IsDeleted::Yes : IsDeleted::No;
     if (oldInfo) {
+        std::cerr << "update " << newInfo->db_seq << std::endl;
         auto oldIsDeleted = oldInfo->deleted ? IsDeleted::Yes : IsDeleted::No;
         cbCtx->commitData.collections.updateStats(newKey.getDocKey(),
                                                   newInfo->db_seq,
@@ -3076,6 +3077,8 @@ static void saveDocsCallback(const DocInfo* oldInfo,
             static_cast<CouchRequest*>(kvReq)->setUpdate();
         }
     } else {
+        std::cerr << "insert " << newInfo->db_seq << std::endl;
+
         cbCtx->commitData.collections.updateStats(newKey.getDocKey(),
                                                   newInfo->db_seq,
                                                   isCommitted,

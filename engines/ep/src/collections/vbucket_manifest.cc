@@ -763,7 +763,10 @@ void Manifest::flushCollection(VBucketStateLockRef vbStateLock,
     // Update the flushUid so the system-event can read it from the entry
     itr->second.setFlushUid(flushUid);
     itr->second.setItemCount(0);
+    itr->second.setDiskSize(0);
 
+    // Regenerate the Collection "create" event - which is more accurate to just
+    // now think of as the Collection start marker
     auto seqno = queueCollectionSystemEvent(
             vbStateLock,
             wHandle,
@@ -771,7 +774,7 @@ void Manifest::flushCollection(VBucketStateLockRef vbStateLock,
             cid,
             itr->second.getName(),
             itr->second,
-            SystemEventType::Flush,
+            SystemEventType::Create,
             optionalSeqno,
             vb.getSaveDroppedCollectionCallback(cid, wHandle, itr->second));
 

@@ -242,6 +242,26 @@ void Flush::recordCreateCollection(const Item& item) {
             itr->second.low = collection;
         }
     }
+
+    if (createEvent.metaData.flushUid != 0) {
+        auto [itr, emplaced] =
+                flushAccounting.getDroppedCollections().try_emplace(
+                        createEvent.metaData.cid,
+                        KVStore::DroppedCollection{0,
+                                                   uint64_t(item.getBySeqno()),
+                                                   createEvent.metaData.cid});
+
+        if (!emplaced) {
+            // Collection already in the map, we must set this new drop if the
+            // highest or ignore
+            if (uint64_t(item.getBySeqno()) > itr->second.endSeqno) {
+                itr->second =
+                        KVStore::DroppedCollection{0,
+                                                   uint64_t(item.getBySeqno()),
+                                                   createEvent.metaData.cid};
+            }
+        }
+    }
     setManifestUid(createEvent.manifestUid);
 }
 
@@ -389,7 +409,7 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
     // The 'array' of collections must be exclusive. Generating a collection
     // vector with duplicates means the data will 'crash' decode. This set and
     // function will prevent bad data being placed on disk.
-    std::unordered_set<CollectionID> outputIds;
+    std::unordered_map<CollectionID, ManifestUid> outputIds;
 
     flatbuffers::FlatBufferBuilder builder;
     std::vector<flatbuffers::Offset<Collections::KVStore::Collection>>
@@ -398,15 +418,23 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
     auto exclusiveInsertCollection =
             [&outputIds, &finalisedOpenCollection](
                     CollectionID cid,
+                    ManifestUid flushUid,
                     flatbuffers::Offset<Collections::KVStore::Collection>
                             newEntry) {
-                auto result = outputIds.emplace(cid);
-                if (!result.second) {
-                    throw std::logic_error(
-                            "encodeOpenCollections: duplicate collection "
-                            "detected cid:" +
-                            cid.to_string());
+                auto [itr, emplaced] = outputIds.try_emplace(cid, flushUid);
+
+                if (!emplaced) {
+                    if (itr->second != flushUid) {
+                        // finalisedOpenCollection stores the flushed metadata
+                        return;
+                    } else {
+                        throw std::logic_error(
+                                "encodeOpenCollections: duplicate collection "
+                                "detected cid:" +
+                                cid.to_string());
+                    }
                 }
+
                 finalisedOpenCollection.push_back(newEntry);
             };
 
@@ -443,6 +471,7 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
         // generate
         exclusiveInsertCollection(
                 meta.cid,
+                meta.flushUid,
                 Collections::KVStore::CreateCollection(
                         builder,
                         startSeqno,
@@ -455,7 +484,7 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
                                              meta.name.size()),
                         getHistoryFromCanDeduplicate(meta.canDeduplicate),
                         Collections::getMeteredFromEnum(meta.metered),
-                        flushUid));
+                        meta.flushUid));
     }
 
     // And 'merge' with the data we read
@@ -492,6 +521,7 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
 
                 exclusiveInsertCollection(
                         entry->collectionId(),
+                        ManifestUid{entry->flushUid()},
                         Collections::KVStore::CreateCollection(
                                 builder,
                                 startSeqno,
@@ -529,6 +559,7 @@ flatbuffers::DetachedBuffer Flush::encodeOpenCollections(
         // Nothing on disk - and not dropped assume the default collection lives
         exclusiveInsertCollection(
                 CollectionID::Default,
+                meta.flushUid,
                 Collections::KVStore::CreateCollection(
                         builder,
                         startSeqno,

@@ -316,6 +316,13 @@ FlushAccounting::UpdateStatsResult FlushAccounting::updateStats(
         result.logicalInsert = true;
     }
 
+    if (isSystemEvent == IsSystem::Yes) {
+        std::cerr << oldSize << " " << size << std::endl;
+    }
+    //     std::cerr << "update sysev\n";
+    //     size*=2;
+    // }
+
     // Of interest next is the state of old vs new. An update can become an
     // insert or remove.
     //
@@ -422,7 +429,7 @@ bool FlushAccounting::isLogicallyDeleted(CollectionID cid,
                                          uint64_t seqno) const {
     auto itr = droppedCollections.find(cid);
     if (itr != droppedCollections.end()) {
-        return seqno <= itr->second.endSeqno;
+        return seqno < itr->second.endSeqno;
     }
     return false;
 }

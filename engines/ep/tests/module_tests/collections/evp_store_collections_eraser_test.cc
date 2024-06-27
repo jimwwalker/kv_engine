@@ -2384,6 +2384,9 @@ TEST_P(CollectionsEraserTest, flush_basic) {
             cookie,
             cm.add(CollectionEntry::vegetable).add(CollectionEntry::fruit));
     flushVBucketToDiskIfPersistent(vbid, 2 /* 2 x system */);
+    std::cerr << vb->getManifest().lock(CollectionEntry::fruit).getDiskSize()
+              << std::endl;
+
     store_item(vbid, StoredDocKey{"carrot", CollectionEntry::vegetable}, "1");
     store_item(vbid, StoredDocKey{"turnip", CollectionEntry::vegetable}, "2");
     store_item(vbid, key, "1");
@@ -2415,9 +2418,13 @@ TEST_P(CollectionsEraserTest, flush_basic) {
     EXPECT_EQ(cb::engine_errc::no_such_key,
               store->get(key, vbid, cookie, get_options_t::NONE).getStatus());
 
-    EXPECT_EQ(2,
+    EXPECT_EQ(0,
               vb->lockCollections().getItemCount(
                       CollectionEntry::fruit)); // hmm should fix from flush
+
+    std::cerr << vb->getManifest().lock(CollectionEntry::fruit).getDiskSize()
+              << std::endl;
+
     // Now persist the flush
     flushVBucketToDiskIfPersistent(vbid, 1);
 
@@ -2427,9 +2434,15 @@ TEST_P(CollectionsEraserTest, flush_basic) {
               vb->lockCollections().getItemCount(
                       CollectionEntry::fruit)); // hmm should fix from flush
 
-    // runCollectionsEraser(vbid);
+    std::cerr << vb->getManifest().lock(CollectionEntry::fruit).getDiskSize()
+              << std::endl;
+    EXPECT_EQ(4, vb->getNumItems());
 
-    // EXPECT_EQ(2, vb->getNumItems());
+    runCollectionsEraser(vbid);
+    std::cerr << vb->getManifest().lock(CollectionEntry::fruit).getDiskSize()
+              << std::endl;
+
+    EXPECT_EQ(2, vb->getNumItems());
 
     // EXPECT_EQ(0, vb->lockCollections().getItemCount(CollectionEntry::fruit));
 }
