@@ -344,7 +344,7 @@ TEST_P(HistoryScanTest, stream_start_within_history_window_duplicate_keys) {
     EXPECT_TRUE(replica);
     replica->checkpointManager->createSnapshot(
             1, 1, 0, CheckpointType::Memory, 1);
-    replica->replicaCreateCollection(
+    replica->replicaCreateOrFlushCollection(
             Collections::ManifestUid(cm.getUid()),
             {ScopeID::Default, CollectionEntry::vegetable},
             "vegetable",
@@ -515,8 +515,7 @@ TEST_P(HistoryScanTest, OSOThenHistory) {
     stepAndExpect(ClientOpcode::DcpSystemEvent);
     EXPECT_EQ(CollectionUid::vegetable, producers->last_collection_id);
     EXPECT_EQ("vegetable", producers->last_key);
-    EXPECT_EQ(mcbp::systemevent::id::CreateCollection,
-              producers->last_system_event);
+    EXPECT_EQ(mcbp::systemevent::id::Collection, producers->last_system_event);
 
     std::array<std::string, 4> keys = {{"a", "b", "c", "d"}};
 
@@ -547,8 +546,7 @@ TEST_P(HistoryScanTest, OSOThenHistory) {
               producers->last_snapshot_marker_flags);
 
     stepAndExpect(ClientOpcode::DcpSystemEvent);
-    EXPECT_EQ(mcbp::systemevent::id::CreateCollection,
-              producers->last_system_event);
+    EXPECT_EQ(mcbp::systemevent::id::Collection, producers->last_system_event);
     EXPECT_EQ(CollectionUid::vegetable, producers->last_collection_id);
 
     // And all keys in seq order. writeTwoCollectios created in order b, d, a, c

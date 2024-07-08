@@ -124,9 +124,9 @@ Manifest::Manifest(Manifest& other) : manager(other.manager) {
 }
 
 //
-// applyDrops (and applyCreates et'al) all follow a similar pattern and are
-// tightly coupled with completeUpdate. As input the function is given a set of
-// changes to process (non const reference). The set could have 0, 1 or n
+// applyDrops (and applyCreatesOrFlushes et'al) all follow a similar pattern and
+// are tightly coupled with completeUpdate. As input the function is given a set
+// of changes to process (non const reference). The set could have 0, 1 or n
 // entries to process. An input 'changes' of zero length means nothing happens.
 // The function just skips and returns an empty optional.
 //
@@ -165,7 +165,7 @@ std::optional<CollectionID> Manifest::applyDrops(
     return rv;
 }
 
-std::optional<Manifest::CollectionCreation> Manifest::applyCreates(
+std::optional<Manifest::CollectionCreation> Manifest::applyCreatesOrFlushes(
         VBucketStateLockRef vbStateLock,
         const WriteHandle& wHandle,
         ::VBucket& vb,
@@ -176,17 +176,17 @@ std::optional<Manifest::CollectionCreation> Manifest::applyCreates(
         changes.pop_back();
     }
     for (const auto& creation : changes) {
-        createCollection(vbStateLock,
-                         wHandle,
-                         vb,
-                         manifestUid,
-                         creation.identifiers,
-                         creation.name,
-                         creation.maxTtl,
-                         creation.metered,
-                         creation.canDeduplicate,
-                         creation.flushUid,
-                         OptionalSeqno{/*no-seqno*/});
+        createCollectionOrFlush(vbStateLock,
+                                wHandle,
+                                vb,
+                                manifestUid,
+                                creation.identifiers,
+                                creation.name,
+                                creation.maxTtl,
+                                creation.metered,
+                                creation.canDeduplicate,
+                                creation.flushUid,
+                                OptionalSeqno{/*no-seqno*/});
     }
     changes.clear();
     return rv;
@@ -389,21 +389,21 @@ void Manifest::completeUpdate(VBucketStateLockRef vbStateLock,
                     OptionalSeqno{/*no-seqno*/});
     }
 
-    auto finalAddition = applyCreates(
+    auto finalAddition = applyCreatesOrFlushes(
             vbStateLock, wHandle, vb, changeset.collectionsToCreate);
 
     if (finalAddition) {
-        createCollection(vbStateLock,
-                         wHandle,
-                         vb,
-                         changeset.getUidForChange(manifestUid),
-                         finalAddition.value().identifiers,
-                         finalAddition.value().name,
-                         finalAddition.value().maxTtl,
-                         finalAddition.value().metered,
-                         finalAddition.value().canDeduplicate,
-                         finalAddition.value().flushUid,
-                         OptionalSeqno{/*no-seqno*/});
+        createCollectionOrFlush(vbStateLock,
+                                wHandle,
+                                vb,
+                                changeset.getUidForChange(manifestUid),
+                                finalAddition.value().identifiers,
+                                finalAddition.value().name,
+                                finalAddition.value().maxTtl,
+                                finalAddition.value().metered,
+                                finalAddition.value().canDeduplicate,
+                                finalAddition.value().flushUid,
+                                OptionalSeqno{/*no-seqno*/});
     }
 
     auto finalModification = applyModifications(
@@ -420,22 +420,20 @@ void Manifest::completeUpdate(VBucketStateLockRef vbStateLock,
                          OptionalSeqno{/*no-seqno*/});
     }
 
-    // @todo rename applyCreates
-    auto finalFlush = applyCreates(
+    auto finalFlush = applyCreatesOrFlushes(
             vbStateLock, wHandle, vb, changeset.collectionsToFlush);
     if (finalFlush) {
-        // @todo: rename createCollection
-        createCollection(vbStateLock,
-                         wHandle,
-                         vb,
-                         changeset.getUidForChange(manifestUid),
-                         finalFlush.value().identifiers,
-                         finalFlush.value().name,
-                         finalFlush.value().maxTtl,
-                         finalFlush.value().metered,
-                         finalFlush.value().canDeduplicate,
-                         finalFlush.value().flushUid,
-                         OptionalSeqno{/*no-seqno*/});
+        createCollectionOrFlush(vbStateLock,
+                                wHandle,
+                                vb,
+                                changeset.getUidForChange(manifestUid),
+                                finalFlush.value().identifiers,
+                                finalFlush.value().name,
+                                finalFlush.value().maxTtl,
+                                finalFlush.value().metered,
+                                finalFlush.value().canDeduplicate,
+                                finalFlush.value().flushUid,
+                                OptionalSeqno{/*no-seqno*/});
     }
 
     // This is done last so the scope deletion follows any collection
@@ -498,29 +496,31 @@ ManifestUpdateStatus Manifest::canUpdate(
     return ManifestUpdateStatus::Success;
 }
 
-void Manifest::createCollection(VBucketStateLockRef vbStateLock,
-                                const WriteHandle& wHandle,
-                                ::VBucket& vb,
-                                ManifestUid newManUid,
-                                ScopeCollectionPair identifiers,
-                                std::string_view collectionName,
-                                cb::ExpiryLimit maxTtl,
-                                Metered metered,
-                                CanDeduplicate canDeduplicate,
-                                ManifestUid flushUid,
-                                OptionalSeqno optionalSeqno) {
+void Manifest::createCollectionOrFlush(VBucketStateLockRef vbStateLock,
+                                       const WriteHandle& wHandle,
+                                       ::VBucket& vb,
+                                       ManifestUid newManUid,
+                                       ScopeCollectionPair identifiers,
+                                       std::string_view collectionName,
+                                       cb::ExpiryLimit maxTtl,
+                                       Metered metered,
+                                       CanDeduplicate canDeduplicate,
+                                       ManifestUid flushUid,
+                                       OptionalSeqno optionalSeqno) {
     auto mapEntry = map.find(identifiers.second);
 
-    // 1. Update the manifest, adding or updating an entry in the collections
-    // map. The start-seqno is 0 here and is patched up once we've created and
-    // queued the system-event Item (step 2 and 3)
     ManifestEntry* entry = nullptr;
     bool flushing{false};
     if (mapEntry != map.end()) {
+        // 1. Known collection, flush. Update the existing entry. Change the
+        // flushUid and later at step 3 update the start-seqno.
         flushing = true;
         entry = &mapEntry->second;
         entry->setFlushUid(flushUid);
     } else {
+        // 1. Unknown collection, create. Add a new entry into the collection
+        // map. The start-seqno is 0, but this is patched up once we've created
+        // and queued the system-event Item (step 2 and 3)
         entry = &addNewCollectionEntry(identifiers,
                                        collectionName,
                                        maxTtl,
@@ -541,7 +541,7 @@ void Manifest::createCollection(VBucketStateLockRef vbStateLock,
                                             identifiers.second,
                                             collectionName,
                                             *entry,
-                                            SystemEventType::Create,
+                                            SystemEventType::CreateOrFlush,
                                             optionalSeqno,
                                             {/*no callback*/});
 
@@ -1043,9 +1043,11 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
     flatbuffers::FlatBufferBuilder builder;
 
     switch (type) {
-    case SystemEventType::Create:
+    case SystemEventType::CreateOrFlush:
     // Modify carries the current collection metadata (same as data as create)
     case SystemEventType::Modify: {
+        // Create is a prefix added by FlatBuffers. This Creates a Collection
+        // FlatBuffer structure used by Create, Flush and Modify
         auto collection = CreateCollection(
                 builder,
                 uid,
@@ -1078,7 +1080,7 @@ std::unique_ptr<Item> Manifest::makeCollectionSystemEvent(
 
     std::unique_ptr<Item> item;
     switch (type) {
-    case SystemEventType::Create:
+    case SystemEventType::CreateOrFlush:
     case SystemEventType::Delete: {
         item = SystemEventFactory::makeCollectionEvent(
                 cid, {builder.GetBufferPointer(), builder.GetSize()}, seq);

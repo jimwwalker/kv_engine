@@ -54,7 +54,7 @@ cb::engine_errc CollectionsDcpTestProducers::system_event(
     last_byseqno = bySeqno;
 
     switch (event) {
-    case mcbp::systemevent::id::CreateCollection: {
+    case mcbp::systemevent::id::Collection: {
         last_collection_id =
                 reinterpret_cast<const Collections::CreateEventDcpData*>(
                         eventData.data())
@@ -382,7 +382,7 @@ cb::engine_errc CollectionsDcpTestProducers::systemEventVersion2(
     std::string_view eventView{reinterpret_cast<const char*>(eventData.data()),
                                eventData.size()};
     switch (event) {
-    case mcbp::systemevent::id::CreateCollection:
+    case mcbp::systemevent::id::Collection:
     case mcbp::systemevent::id::ModifyCollection: {
         const auto& collection =
                 Collections::VB::Manifest::getCollectionFlatbuffer(eventView);

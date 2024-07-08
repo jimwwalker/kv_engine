@@ -266,7 +266,7 @@ void CollectionsDcpTest::testDcpCreateDelete(
     while (producer->step(false, *producers) == cb::engine_errc::success) {
         if (producers->last_op == cb::mcbp::ClientOpcode::DcpSystemEvent) {
             switch (producers->last_system_event) {
-            case mcbp::systemevent::id::CreateCollection:
+            case mcbp::systemevent::id::Collection:
                 ASSERT_NE(createItr, expectedCreates.end())
                         << "Found a create collection, but expected vector is "
                            "now at the end";
@@ -428,7 +428,7 @@ void CollectionsDcpTest::createCollectionOnConsumer(
               consumer->systemEvent(
                       opaque,
                       id,
-                      mcbp::systemevent::id::CreateCollection,
+                      mcbp::systemevent::id::Collection,
                       /*seqno*/ seqno,
                       mcbp::systemevent::version::version0,
                       {reinterpret_cast<const uint8_t*>(entry.name.data()),

@@ -704,17 +704,17 @@ public:
                        CanDeduplicate canDeduplicate,
                        ManifestUid flushUid,
                        int64_t startSeqno) {
-        manifest.createCollection(vbStateLock,
-                                  *this,
-                                  vb,
-                                  manifestUid,
-                                  identifiers,
-                                  collectionName,
-                                  maxTtl,
-                                  metered,
-                                  canDeduplicate,
-                                  flushUid,
-                                  OptionalSeqno{startSeqno});
+        manifest.createCollectionOrFlush(vbStateLock,
+                                         *this,
+                                         vb,
+                                         manifestUid,
+                                         identifiers,
+                                         collectionName,
+                                         maxTtl,
+                                         metered,
+                                         canDeduplicate,
+                                         flushUid,
+                                         OptionalSeqno{startSeqno});
     }
 
     /**

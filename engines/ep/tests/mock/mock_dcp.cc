@@ -370,7 +370,7 @@ cb::engine_errc MockDcpMessageProducers::system_event(
             last_system_event_data.begin(), eventData.begin(), eventData.end());
     last_system_event_version = version;
 
-    if (event == mcbp::systemevent::id::CreateCollection) {
+    if (event == mcbp::systemevent::id::Collection) {
         last_collection_id =
                 reinterpret_cast<const Collections::CreateEventDcpData*>(
                         eventData.data())

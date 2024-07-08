@@ -635,8 +635,8 @@ cb::engine_errc PassiveStream::processSystemEvent(
     // The specific handler will know how to interpret.
     using mcbp::systemevent::id;
     switch (event.getSystemEvent()) {
-    case id::CreateCollection:
-        return processCreateCollection(vb, CreateCollectionEvent(event));
+    case id::Collection:
+        return processCreateOrFlushCollection(vb, CreateCollectionEvent(event));
     case id::DeleteCollection:
         return processDropCollection(vb, DropCollectionEvent(event));
     case id::CreateScope:
@@ -657,8 +657,8 @@ cb::engine_errc PassiveStream::processSystemEventFlatBuffers(
     // The specific handler will know how to interpret.
     using mcbp::systemevent::id;
     switch (event.getSystemEvent()) {
-    case id::CreateCollection:
-        return processCreateCollection(vb, event);
+    case id::Collection:
+        return processCreateOrFlushCollection(vb, event);
     case id::DeleteCollection:
         return processDropCollection(vb, event);
     case id::CreateScope:
@@ -671,7 +671,7 @@ cb::engine_errc PassiveStream::processSystemEventFlatBuffers(
     folly::assume_unreachable();
 }
 
-cb::engine_errc PassiveStream::processCreateCollection(
+cb::engine_errc PassiveStream::processCreateOrFlushCollection(
         VBucket& vb, const CreateCollectionEvent& event) {
     try {
         // This creation event comes from a node which didn't support
@@ -682,7 +682,7 @@ cb::engine_errc PassiveStream::processCreateCollection(
         // - No metering
         // - De-duplication is enabled
         // - FlushUid is 0
-        vb.replicaCreateCollection(
+        vb.replicaCreateOrFlushCollection(
                 event.getManifestUid(),
                 {event.getScopeID(), event.getCollectionID()},
                 event.getKey(),
@@ -693,7 +693,7 @@ cb::engine_errc PassiveStream::processCreateCollection(
                 event.getBySeqno());
     } catch (std::exception& e) {
         log(spdlog::level::level_enum::warn,
-            "PassiveStream::processCreateCollection {} exception {}",
+            "PassiveStream::processCreateOrFlushCollection {} exception {}",
             vb.getId(),
             e.what());
         return cb::engine_errc::invalid_arguments;
@@ -756,7 +756,7 @@ cb::engine_errc PassiveStream::processDropScope(VBucket& vb,
     return cb::engine_errc::success;
 }
 
-cb::engine_errc PassiveStream::processCreateCollection(
+cb::engine_errc PassiveStream::processCreateOrFlushCollection(
         VBucket& vb, const SystemEventConsumerMessage& event) {
     try {
         // Decompose the FlatBuffers data.
@@ -771,7 +771,7 @@ cb::engine_errc PassiveStream::processCreateCollection(
             maxTtl = std::chrono::seconds(collection.maxTtl());
         }
 
-        vb.replicaCreateCollection(
+        vb.replicaCreateOrFlushCollection(
                 Collections::ManifestUid{collection.uid()},
                 {collection.scopeId(), collection.collectionId()},
                 event.getKey(),
@@ -782,7 +782,8 @@ cb::engine_errc PassiveStream::processCreateCollection(
                 *event.getBySeqno());
     } catch (std::exception& e) {
         log(spdlog::level::level_enum::warn,
-            "PassiveStream::processCreateCollection FlatBuffers {} exception "
+            "PassiveStream::processCreateOrFlushCollection FlatBuffers {} "
+            "exception "
             "{}",
             vb.getId(),
             e.what());

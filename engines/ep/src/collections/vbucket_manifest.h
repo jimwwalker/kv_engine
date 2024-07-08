@@ -362,7 +362,7 @@ public:
     static DropScopeEventData getDropScopeEventData(
             std::string_view flatbufferData);
 
-    enum SystemEventType { Create, Modify, Delete };
+    enum SystemEventType { CreateOrFlush, Modify, Delete };
 
     /**
      * @return an Item that represent a collection create or delete
@@ -468,7 +468,7 @@ protected:
 
     /**
      * Sub-functions used by update.
-     * applyCreates/applyDrops/applyModifications and
+     * applyCreatesOrFlushes/applyDrops/applyModifications and
      * applyScopeCreates/applyScopeDrops follow a similar pattern as follows.
      *
      * Given a 'changeset' (vector of changes) remove the last entry of the
@@ -485,7 +485,7 @@ protected:
      * @param changes a vector of CollectionIDs to add/delete (based on update)
      * @return the last element which has been removed from the changes vector
      */
-    std::optional<CollectionCreation> applyCreates(
+    std::optional<CollectionCreation> applyCreatesOrFlushes(
             VBucketStateLockRef vbStateLock,
             const WriteHandle& wHandle,
             ::VBucket& vb,
@@ -514,7 +514,7 @@ protected:
                                            std::vector<ScopeID>& scopesToDrop);
 
     /**
-     * Create a collection in the vbucket
+     * Create or flush a collection in the vbucket
      *
      * @param wHandle The manifest write handle under which this operation is
      *        currently locked. Required to ensure we lock correctly around
@@ -530,17 +530,17 @@ protected:
      * @param optionalSeqno Either a seqno to assign to the new collection or
      *        none (none means the checkpoint will assign a seqno).
      */
-    void createCollection(VBucketStateLockRef vbStateLock,
-                          const WriteHandle& wHandle,
-                          ::VBucket& vb,
-                          ManifestUid newManUid,
-                          ScopeCollectionPair identifiers,
-                          std::string_view collectionName,
-                          cb::ExpiryLimit maxTtl,
-                          Metered metered,
-                          CanDeduplicate canDeduplicate,
-                          ManifestUid flushUid,
-                          OptionalSeqno optionalSeqno);
+    void createCollectionOrFlush(VBucketStateLockRef vbStateLock,
+                                 const WriteHandle& wHandle,
+                                 ::VBucket& vb,
+                                 ManifestUid newManUid,
+                                 ScopeCollectionPair identifiers,
+                                 std::string_view collectionName,
+                                 cb::ExpiryLimit maxTtl,
+                                 Metered metered,
+                                 CanDeduplicate canDeduplicate,
+                                 ManifestUid flushUid,
+                                 OptionalSeqno optionalSeqno);
 
     /**
      * Drop the collection from the vbucket

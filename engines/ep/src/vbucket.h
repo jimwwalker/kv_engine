@@ -816,14 +816,14 @@ public:
      * @param flushUid uid of any flush
      * @param bySeqno The seqno assigned to the collection event.
      */
-    void replicaCreateCollection(Collections::ManifestUid uid,
-                                 ScopeCollectionPair identifiers,
-                                 std::string_view collectionName,
-                                 cb::ExpiryLimit maxTtl,
-                                 Collections::Metered metered,
-                                 CanDeduplicate canDeduplicate,
-                                 Collections::ManifestUid flushUid,
-                                 int64_t bySeqno);
+    void replicaCreateOrFlushCollection(Collections::ManifestUid uid,
+                                        ScopeCollectionPair identifiers,
+                                        std::string_view collectionName,
+                                        cb::ExpiryLimit maxTtl,
+                                        Collections::Metered metered,
+                                        CanDeduplicate canDeduplicate,
+                                        Collections::ManifestUid flushUid,
+                                        int64_t bySeqno);
 
     /**
      * Modify a collection in this vbucket with a pre-assigned seqno. I.e.

@@ -3094,7 +3094,7 @@ TEST_P(CollectionsParameterizedTest, GetScopeIdForGivenKeyAndVbucket) {
             0, 2, std::nullopt, CheckpointType::Memory, 2);
     replicaVb->replicaCreateScope(
             Collections::ManifestUid(1), ScopeUid::shop1, ScopeName::shop1, 1);
-    replicaVb->replicaCreateCollection(
+    replicaVb->replicaCreateOrFlushCollection(
             Collections::ManifestUid(2),
             {ScopeUid::shop1, CollectionEntry::meat.getId()},
             CollectionEntry::meat.name,

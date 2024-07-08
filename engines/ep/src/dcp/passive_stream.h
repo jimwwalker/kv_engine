@@ -194,8 +194,8 @@ protected:
      * @param vb Vbucket onto which the collection is created.
      * @param event The collection system event creating the collection.
      */
-    cb::engine_errc processCreateCollection(VBucket& vb,
-                                            const CreateCollectionEvent& event);
+    cb::engine_errc processCreateOrFlushCollection(
+            VBucket& vb, const CreateCollectionEvent& event);
 
     /**
      * Process a begin delete collection event.
@@ -229,7 +229,7 @@ protected:
      * @param vb Vbucket which we apply the create to
      * @param event The system event to process
      */
-    cb::engine_errc processCreateCollection(
+    cb::engine_errc processCreateOrFlushCollection(
             VBucket& vb, const SystemEventConsumerMessage& event);
 
     /**

@@ -2043,14 +2043,15 @@ TEST_P(CollectionsEraserPersistentOnly, DropDuringFlush) {
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_replica);
     vb->checkpointManager->createSnapshot(0, 3, 0, CheckpointType::Disk, 3);
     uint64_t uid = 0;
-    vb->replicaCreateCollection(Collections::ManifestUid(uid++),
-                                {ScopeID::Default, CollectionEntry::dairy},
-                                "dairy",
-                                {},
-                                Collections::Metered::Yes,
-                                CanDeduplicate::Yes,
-                                Collections::ManifestUid{},
-                                1);
+    vb->replicaCreateOrFlushCollection(
+            Collections::ManifestUid(uid++),
+            {ScopeID::Default, CollectionEntry::dairy},
+            "dairy",
+            {},
+            Collections::Metered::Yes,
+            CanDeduplicate::Yes,
+            Collections::ManifestUid{},
+            1);
     ASSERT_EQ(0, vb->getNumItems());
 
     // Test: Store two more items to the collection, open a new memory snapshot,

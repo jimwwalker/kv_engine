@@ -962,7 +962,7 @@ public:
         switch (SystemEvent(item->getFlags())) {
         case SystemEvent::Collection:
             return item->isDeleted() ? mcbp::systemevent::id::DeleteCollection
-                                     : mcbp::systemevent::id::CreateCollection;
+                                     : mcbp::systemevent::id::Collection;
         case SystemEvent::ModifyCollection:
             return mcbp::systemevent::id::ModifyCollection;
         case SystemEvent::Scope:
