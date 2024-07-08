@@ -1103,6 +1103,58 @@ TEST_P(CollectionsEraserTest, DeleteExpiryResurrectionTest) {
     EXPECT_EQ(expectedHighSeqno, vb->getHighSeqno());
 }
 
+TEST_P(CollectionsEraserTest, flush_basic) {
+    // add two collections
+    CollectionsManifest cm;
+    auto key = StoredDocKey{"apple", CollectionEntry::fruit};
+    setCollections(
+            cookie,
+            cm.add(CollectionEntry::vegetable).add(CollectionEntry::fruit));
+    flushVBucketToDiskIfPersistent(vbid, 2 /* 2 x system */);
+    store_item(vbid, StoredDocKey{"carrot", CollectionEntry::vegetable}, "1");
+    store_item(vbid, StoredDocKey{"turnip", CollectionEntry::vegetable}, "2");
+    store_item(vbid, key, "1");
+    store_item(vbid, StoredDocKey{"apricot", CollectionEntry::fruit}, "2");
+    flushVBucketToDiskIfPersistent(vbid, 4);
+
+    EXPECT_EQ(2,
+              vb->lockCollections().getItemCount(CollectionEntry::vegetable));
+    EXPECT_EQ(2, vb->lockCollections().getItemCount(CollectionEntry::fruit));
+
+    // Can read a fruit key
+    EXPECT_EQ(cb::engine_errc::success,
+              store->get(key, vbid, cookie, get_options_t::NONE).getStatus());
+    setCollections(cookie, cm.flush(CollectionEntry::fruit));
+
+    // Collections still exist
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::vegetable));
+    EXPECT_TRUE(vb->lockCollections().exists(CollectionEntry::fruit));
+
+    EXPECT_EQ(2,
+              vb->lockCollections().getItemCount(CollectionEntry::vegetable));
+    // No change in item count at this point
+    EXPECT_EQ(4, vb->getNumItems());
+
+    // Fail to read the as key is now below the new startSeqno
+    EXPECT_EQ(cb::engine_errc::no_such_key,
+              store->get(key, vbid, cookie, get_options_t::NONE).getStatus());
+
+    // Collection item count was reset when flush is seen by VB::Manifest
+    EXPECT_EQ(0,
+              vb->lockCollections().getItemCount(
+                      CollectionEntry::fruit)); // hmm should fix from flush
+
+    // Total VB item count is adjusted as we erase items from async purge.
+    EXPECT_EQ(4, vb->getNumItems());
+
+    // Now persist the flush
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    runCollectionsEraser(vbid);
+
+    EXPECT_EQ(2, vb->getNumItems());
+}
+
 class CollectionsEraserSyncWriteTest : public CollectionsEraserTest {
 public:
     void SetUp() override {

@@ -514,9 +514,12 @@ void Manifest::createCollectionOrFlush(VBucketStateLockRef vbStateLock,
     if (mapEntry != map.end()) {
         // 1. Known collection, flush. Update the existing entry. Change the
         // flushUid and later at step 3 update the start-seqno.
+        // The item count is also reset to 0, but diskSize/memory is adjusted
+        // from as and when those items are purged.
         flushing = true;
         entry = &mapEntry->second;
         entry->setFlushUid(flushUid);
+        entry->setItemCount(0);
     } else {
         // 1. Unknown collection, create. Add a new entry into the collection
         // map. The start-seqno is 0, but this is patched up once we've created

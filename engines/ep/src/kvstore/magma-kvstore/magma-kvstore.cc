@@ -474,10 +474,10 @@ std::pair<Status, bool> MagmaKVStore::compactionCore(
         // As such use the docKey (i.e. without any DurabilityPrepare
         // namespace) when checking if logically deleted;
         auto diskKey = makeDiskDocKey(keySlice);
-
         if (cbCtx.canPurge(diskKey.getDocKey().getCollectionID()) &&
             cbCtx.ctx->eraserContext->isLogicallyDeleted(
                     diskKey.getDocKey(), docMeta.isDeleted(), seqno)) {
+            std::cerr << "Dropping\n";
             try {
                 // Inform vb that the key@seqno is dropped
                 cbCtx.ctx->droppedKeyCb(diskKey,

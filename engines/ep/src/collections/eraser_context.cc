@@ -33,6 +33,7 @@ void EraserContext::processSystemEvent(const DocKeyView& key, SystemEvent se) {
         auto itr = dropped.find(getCollectionIDFromKey(key));
         if (itr != dropped.end()) {
             seenEndOfCollection = true;
+            std::cerr << *this << std::endl;
         }
     }
 }
