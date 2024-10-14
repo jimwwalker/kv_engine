@@ -903,10 +903,6 @@ public:
 
     [[nodiscard]] cb::engine_errc setActiveEncryptionKeys(
             const nlohmann::json& json);
-    [[nodiscard]] cb::engine_errc prepareSnapshot(
-            CookieIface& cookie,
-            Vbid vbid,
-            const std::function<void(const nlohmann::json&)>& callback);
     [[nodiscard]] cb::engine_errc downloadSnapshot(CookieIface& cookie,
                                                    std::string_view metadata);
     [[nodiscard]] cb::engine_errc getSnapshotFileInfo(
@@ -914,8 +910,6 @@ public:
             std::string_view uuid,
             std::size_t file_id,
             const std::function<void(const nlohmann::json&)>& callback);
-    [[nodiscard]] cb::engine_errc releaseSnapshot(CookieIface& cookie,
-                                                  std::string_view uuid);
     /**
      * Create an Item with the following parameters if the mutation watermark
      * will not be exceeded. If successful, the engine error code is set to

@@ -15,6 +15,7 @@
 #include "kvstore/kvstore_iface.h"
 
 #include <logger/logger.h>
+#include <memcached/cookie_iface.h>
 #include <platform/dirutils.h>
 #include <platform/strerror.h>
 #include <platform/uuid.h>

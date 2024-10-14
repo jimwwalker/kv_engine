@@ -937,6 +937,30 @@ public:
         return cb::engine_errc::success;
     };
 
+    [[nodiscard]] virtual cb::engine_errc prepareSnapshot(
+            CookieIface& cookie,
+            Vbid vbid,
+            const std::function<void(const nlohmann::json&)>& callback) {
+        return cb::engine_errc::not_supported;
+    }
+
+    /**
+     * Release a snapshot for either the uuid or vbid.
+     * if uuid.empty then release is done with the vbid
+     */
+    [[nodiscard]] virtual cb::engine_errc releaseSnapshot(
+            CookieIface& cookie, Vbid vbid, std::string_view uuid) {
+        return cb::engine_errc::not_supported;
+    }
+
+    [[nodiscard]] virtual cb::engine_errc getSnapshotFileInfo(
+            CookieIface& cookie,
+            std::string_view uuid,
+            std::size_t file_id,
+            const std::function<void(const nlohmann::json&)>& callback) {
+        return cb::engine_errc::not_supported;
+    }
+
     /**
      * Result of the loadPreparedSyncWrites function
      */

@@ -11,6 +11,9 @@
 
 #pragma once
 
+#include <memcached/engine_error.h>
+#include <memcached/vbucket.h>
+
 class CookieIface;
 class KVStoreIface;
 
