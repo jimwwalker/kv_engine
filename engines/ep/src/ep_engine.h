@@ -903,10 +903,6 @@ public:
 
     [[nodiscard]] cb::engine_errc setActiveEncryptionKeys(
             const nlohmann::json& json);
-    [[nodiscard]] cb::engine_errc prepareSnapshot(
-            CookieIface& cookie,
-            Vbid vbid,
-            const std::function<void(const nlohmann::json&)>& callback);
     [[nodiscard]] cb::engine_errc downloadSnapshot(CookieIface& cookie,
                                                    std::string_view metadata);
     [[nodiscard]] cb::engine_errc getSnapshotFileInfo(

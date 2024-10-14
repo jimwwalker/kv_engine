@@ -14,6 +14,7 @@
 #include "kv_bucket.h"
 #include "kvstore/kvstore.h"
 #include "range_scans/range_scan_owner.h"
+#include "snapshots/cache.h"
 #include "utilities/testing_hook.h"
 
 class BgFetcher;
@@ -397,6 +398,15 @@ public:
 
     bool disconnectReplicationAtOOM() const override;
 
+    [[nodiscard]] cb::engine_errc prepareSnapshot(
+            CookieIface& cookie,
+            Vbid vbid,
+            const std::function<void(const nlohmann::json&)>& callback)
+            override;
+
+    [[nodiscard]] cb::engine_errc releaseSnapshot(
+            CookieIface& cookie, std::string_view uuid) override;
+
     /// Hook that gets called from prepareForPause. Phase of prepareForPause()
     /// specified by the single string_view arg
     TestingHook<std::string_view> prepareForPauseTestingHook;
@@ -587,6 +597,11 @@ protected:
      * client
      */
     ReadyRangeScans rangeScans;
+
+    /**
+     * Snapshot ownership and management.
+     */
+    Snapshots::Cache snapshots;
 };
 
 std::ostream& operator<<(std::ostream& os, const EPBucket::FlushResult& res);

@@ -15,6 +15,7 @@
 #include "kvstore/kvstore_iface.h"
 
 #include <logger/logger.h>
+#include <memcached/cookie_iface.h>
 #include <platform/dirutils.h>
 #include <platform/strerror.h>
 #include <platform/uuid.h>
@@ -118,7 +119,7 @@ std::variant<cb::engine_errc, nlohmann::json> Snapshots::prepare(
     return cb::engine_errc::failed;
 }
 
-cb::engine_errc Snapshots::release(CookieIface& cookie,
+cb::engine_errc Snapshots::release(std::string_view connectionId,
                                    std::string_view path,
                                    std::string_view uuid) {
     const auto snapshot = std::filesystem::path{path} / snapdir / uuid;
@@ -144,7 +145,7 @@ cb::engine_errc Snapshots::release(CookieIface& cookie,
         remove_all(snapshot);
     } catch (const std::exception& exception) {
         EP_LOG_WARN_CTX("Failed to remove snapshot",
-                        {"conn_id", cookie.getConnectionId()},
+                        {"conn_id", connection},
                         {"uuid", uuid},
                         {"exception", exception.what()});
         return cb::engine_errc::failed;

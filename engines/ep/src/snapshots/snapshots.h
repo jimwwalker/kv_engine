@@ -11,6 +11,9 @@
 
 #pragma once
 
+#include <memcached/engine_error.h>
+#include <memcached/vbucket.h>
+
 class CookieIface;
 class KVStoreIface;
 
@@ -54,7 +57,7 @@ std::variant<cb::engine_errc, nlohmann::json> prepare(CookieIface& cookie,
                                                       std::string_view path,
                                                       Vbid vbid);
 
-cb::engine_errc release(CookieIface& cookie,
+cb::engine_errc release(std::string_view connectionId,
                         std::string_view path,
                         std::string_view uuid);
 

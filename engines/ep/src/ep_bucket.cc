@@ -2839,3 +2839,37 @@ void EPBucket::setupWarmupConfig(std::string_view behavior) {
                 "EPBucket::setupWarmupConfig: Unknown behavior:{}", behavior));
     }
 }
+
+// This is running on AUXIO
+cb::engine_errc EPBucket::prepareSnapshot(
+        CookieIface& cookie,
+        Vbid vbid,
+        const std::function<void(const nlohmann::json&)>& callback) {
+    // Perform validation.
+    auto vb = getVBucket(vbid);
+    if (!vb) {
+        ++stats.numNotMyVBuckets;
+        return cb::engine_errc::not_my_vbucket;
+    }
+
+    // Obtain exclusive access to vbucket
+    // 1. Serialise with state changes.
+    // 2. One consistent prepare per vbucket
+    // Note: current impl this function is called on single concurrency AUXIO
+    // task meaning there is no concurrent exec, but let's not assume that
+    // holds.
+    std::unique_lock rlh(vb->getStateLock());
+
+    // Create/Fail or return existing.
+    return snapshots.getOrPrepare(cookie,
+                                  vbid,
+                                  getConfiguration().getDbname(),
+                                  *getRWUnderlying(vbid),
+                                  callback);
+}
+
+// This is running on AUXIO
+cb::engine_errc EPBucket::releaseSnapshot(CookieIface& cookie,
+                                          std::string_view uuid) {
+    return snapshots.releaseSnapshot(cookie, uuid);
+}
