@@ -389,6 +389,7 @@ ADD_LIBRARY(ep STATIC
             src/seqlist.cc
             src/seqno_persistence_notify_task.cc
             src/serialised_dockey.cc
+            src/snapshots/snapshots.cc
             src/stats.cc
             src/string_utils.cc
             src/stored-value.cc

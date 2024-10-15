@@ -43,6 +43,7 @@
 #include "kvstore/kvstore.h"
 #include "quota_sharing_item_pager.h"
 #include "range_scans/range_scan_callbacks.h"
+#include "snapshots/snapshots.h"
 #include "stats-info.h"
 #include "string_utils.h"
 #include "trace_helpers.h"
@@ -77,7 +78,6 @@
 #include <platform/scope_timer.h>
 #include <platform/strerror.h>
 #include <platform/string_hex.h>
-#include <platform/uuid.h>
 #include <serverless/config.h>
 #include <statistics/cbstat_collector.h>
 #include <statistics/collector.h>
@@ -7792,80 +7792,23 @@ cb::engine_errc EventuallyPersistentEngine::prepareSnapshot(
         return cb::engine_errc::not_my_vbucket;
     }
 
-    const auto manifest_file =
-            std::filesystem::path{configuration.getDbname()} / "snapshots" /
-            std::to_string(vbid.get()) / "manifest.json";
-
-    if (exists(manifest_file)) {
-        try {
-            auto manifest =
-                    nlohmann::json::parse(cb::io::loadFile(manifest_file));
-            callback(manifest);
-            return cb::engine_errc::success;
-        } catch (std::exception& exception) {
-            // an error occurred..
-            LOG_WARNING_CTX("Failed to read existing manifest",
-                            {"conn_id", cookie.getConnectionId()},
-                            {"error", exception.what()});
-            return cb::engine_errc::failed;
-        }
-    }
-    std::string uuid = ::to_string(cb::uuid::random());
-    auto snapshotDirectory = std::filesystem::path(configuration.getDbname()) /
-                             "snapshots" / uuid;
-    std::optional<std::filesystem::path> linkFile;
-
-    try {
-        create_directories(snapshotDirectory);
-        create_symlink("." / snapshotDirectory.filename(),
-                       std::filesystem::path{configuration.getDbname()} /
-                               "snapshots" / std::to_string(vbid.get()));
-        linkFile = std::filesystem::path{configuration.getDbname()} /
-                   "snapshots" / std::to_string(vbid.get());
-        auto [rv, files] = kvBucket->getRWUnderlying(vbid)->prepareSnapshot(
-                snapshotDirectory, vbid);
-        if (rv == cb::engine_errc::success) {
-            nlohmann::json array = nlohmann::json::array();
-            int ii = 0;
-            for (const auto& info : files) {
-                array.emplace_back(
-                        nlohmann::json{{"id", ++ii},
-                                       {"path", info.path.string()},
-                                       {"size", std::to_string(info.size)},
-                                       {"deks", info.deks}});
-                ;
-            }
-            nlohmann::json manifest = {{"uuid", uuid},
-                                       {"files", std::move(array)}};
-            FILE* fp = fopen(manifest_file.string().c_str(), "w");
-            if (!fp) {
-                EP_LOG_WARN_CTX("Failed to save vbucket snapshot manifest",
-                                {"conn_id", cookie.getConnectionId()},
-                                {"file", manifest_file.string().c_str()},
-                                {"error", cb_strerror()});
-                return cb::engine_errc::failed;
-            }
-            fprintf(fp, "%s\n", manifest.dump().c_str());
-            fclose(fp);
-            callback(manifest);
-        } else {
-            std::error_code ec;
-            remove_all(snapshotDirectory, ec);
-            remove_all(linkFile.value(), ec);
-        }
-        return rv;
-    } catch (const std::exception& exception) {
-        LOG_WARNING_CTX("Failed to prepare snapshot",
-                        {"conn_id", cookie.getConnectionId()},
-                        {"error", exception.what()});
-        std::error_code ec;
-        remove_all(snapshotDirectory, ec);
-        if (linkFile.has_value()) {
-            remove_all(linkFile.value(), ec);
-        }
+    // @todo: push down to ep bucket and via a snapshot cache
+    auto* epBucket = dynamic_cast<EPBucket*>(getKVBucket());
+    if (!epBucket) {
+        return cb::engine_errc::not_supported;
     }
 
-    return cb::engine_errc::failed;
+    auto rv = Snapshots::prepare(cookie,
+                                 *epBucket->getRWUnderlying(vbid),
+                                 getConfiguration().getDbname(),
+                                 vbid);
+
+    if (std::holds_alternative<cb::engine_errc>(rv)) {
+        return std::get<cb::engine_errc>(rv);
+    }
+
+    callback(std::get<nlohmann::json>(rv));
+    return cb::engine_errc::success;
 }
 
 cb::engine_errc EventuallyPersistentEngine::downloadSnapshot(
@@ -7929,34 +7872,7 @@ cb::engine_errc EventuallyPersistentEngine::getSnapshotFileInfo(
 
 cb::engine_errc EventuallyPersistentEngine::releaseSnapshot(
         CookieIface& cookie, std::string_view uuid) {
-    const auto snapshot = std::filesystem::path{configuration.getDbname()} /
-                          "snapshots" / uuid;
-    if (!exists(snapshot)) {
-        return cb::engine_errc::no_such_key;
-    }
-    try {
-        // find the link pointing to the snapshot:
-        std::error_code ec;
-        for (const auto& p :
-             std::filesystem::directory_iterator(snapshot.parent_path(), ec)) {
-            if (is_symlink(p.path(), ec)) {
-                auto target = read_symlink(p.path(), ec);
-                if (target.filename().string() == uuid) {
-                    remove_all(p.path(), ec);
-                    break;
-                }
-            }
-        }
-        // finally remove the actual snapshot
-        remove_all(snapshot);
-    } catch (const std::exception& exception) {
-        EP_LOG_WARN_CTX("Failed to remove snapshot",
-                        {"conn_id", cookie.getConnectionId()},
-                        {"uuid", uuid},
-                        {"exception", exception.what()});
-        return cb::engine_errc::failed;
-    }
-    return cb::engine_errc::success;
+    return Snapshots::release(cookie, getConfiguration().getDbname(), uuid);
 }
 
 void EventuallyPersistentEngine::setDcpConsumerBufferRatio(float ratio) {
