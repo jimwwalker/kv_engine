@@ -61,7 +61,9 @@ protected:
     void recreateProducerAndStream(
             VBucket& vb,
             cb::mcbp::DcpOpenFlag flags,
-            std::optional<std::string_view> jsonFilter = {});
+            std::optional<std::string_view> jsonFilter = {},
+            const std::vector<std::pair<std::string, std::string>>& controls =
+                    {});
 
     /**
      * @param vb

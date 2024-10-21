@@ -102,6 +102,10 @@ public:
         supportsSyncReplication = value;
     }
 
+    void setSendMarkerV2_2(SendMarkerV2_2 value) {
+        sendMarkerV2_2 = value;
+    }
+
     /**
      * Create the ActiveStreamCheckpointProcessorTask and assign to
      * checkpointCreator->task
@@ -178,8 +182,7 @@ public:
             IncludeDeletedUserXattrs includeDeleteUserXattrs =
                     IncludeDeletedUserXattrs::No,
             std::optional<std::string_view> jsonFilter = {},
-            std::function<void(MockActiveStream&)> preSetActiveHook = {},
-            uint64_t purge_seqno = 0);
+            std::function<void(MockActiveStream&)> preSetActiveHook = {});
 
     std::shared_ptr<MockActiveStream> mockActiveStreamRequest(
             cb::mcbp::DcpAddStreamFlag flags,
@@ -193,10 +196,9 @@ public:
             IncludeValue includeValue,
             IncludeXattrs includeXattrs,
             IncludeDeletedUserXattrs,
-            IncludePurgeSeqno includePurgeSeqno,
+            SendMarkerV2_2 sendMarkerV2_2,
             std::optional<std::string_view> jsonFilter,
-            std::function<void(MockActiveStream&)> preSetActiveHook = {},
-            uint64_t purge_seqno = 0);
+            std::function<void(MockActiveStream&)> preSetActiveHook = {});
 
     /**
      * Step the producer and expect the opcode to be returned
@@ -262,8 +264,8 @@ public:
         return includeXattrs;
     }
 
-    IncludePurgeSeqno public_getIncludePurgeSeqno() const {
-        return includePurgeSeqno;
+    SendMarkerV2_2 public_getSendMarkerV2_2() const {
+        return sendMarkerV2_2;
     }
 
     IncludeDeletedUserXattrs public_getIncludeDeletedUserXattrs() const {

@@ -67,6 +67,12 @@ invalid and will be rejected.
 snapshots in DCP streams. A configuration of `false` is invalid and will be
 rejected.
 
+* `marker_v2_2` = `true` - Enables the DCP connection to send the V2.2 DCP
+snapshot marker. This message format will include the most information from the
+vbucket, some of which may not be required by all clients. Primarily this marker
+exists to send the current purge_seqno which can be used to mitigate rollbacks
+on disconnect see [stream-request-value.md](./stream-request-value.md).
+
 The following example shows the breakdown of the message:
 
       Byte/     0       |       1       |       2       |       3       |

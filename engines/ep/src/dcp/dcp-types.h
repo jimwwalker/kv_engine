@@ -97,7 +97,10 @@ enum class IncludeDeletedUserXattrs : bool {
     No,
 };
 
-enum class IncludePurgeSeqno : bool { Yes, No };
+/**
+ * Should DCP send marker v2.2?
+ */
+enum class SendMarkerV2_2 : bool { Yes, No };
 
 /**
  * SnappyEnabled is used to state whether an active stream supports snappy
@@ -169,5 +172,8 @@ constexpr std::string_view FlatBuffersSystemEvents =
 
 /// Control key to enable history on a DCP connection
 constexpr std::string_view ChangeStreams = "change_streams";
+
+/// Control key to enable snapshot marker capable of purge-seqno
+constexpr std::string_view SendSnapshotMarkerV2_2 = "marker_v2_2";
 
 } // namespace DcpControlKeys

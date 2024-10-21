@@ -270,7 +270,6 @@ public:
                                uint64_t vbucket_uuid,
                                uint64_t snap_start_seqno,
                                uint64_t snap_end_seqno,
-                               uint64_t purge_seqno,
                                uint64_t* rollback_seqno,
                                dcp_add_failover_log callback,
                                std::optional<std::string_view> json) override;
@@ -1408,7 +1407,6 @@ cb::engine_errc EWB_Engine::stream_req(CookieIface& cookie,
                                        uint64_t vbucket_uuid,
                                        uint64_t snap_start_seqno,
                                        uint64_t snap_end_seqno,
-                                       uint64_t purge_seqno,
                                        uint64_t* rollback_seqno,
                                        dcp_add_failover_log callback,
                                        std::optional<std::string_view> json) {
@@ -1424,7 +1422,6 @@ cb::engine_errc EWB_Engine::stream_req(CookieIface& cookie,
                                        vbucket_uuid,
                                        snap_start_seqno,
                                        snap_end_seqno,
-                                       purge_seqno,
                                        rollback_seqno,
                                        callback,
                                        json);

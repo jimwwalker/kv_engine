@@ -243,10 +243,6 @@ DcpProducer::DcpProducer(EventuallyPersistentEngine& e,
             isFlagSet(flags, cb::mcbp::DcpOpenFlag::IncludeDeletedUserXattrs)
                     ? IncludeDeletedUserXattrs::Yes
                     : IncludeDeletedUserXattrs::No;
-    includePurgeSeqno =
-            isFlagSet(flags, cb::mcbp::DcpOpenFlag::SendSnapshotMarkerV2_2)
-                    ? IncludePurgeSeqno::Yes
-                    : IncludePurgeSeqno::No;
 }
 
 DcpProducer::~DcpProducer() {
@@ -290,7 +286,6 @@ cb::engine_errc DcpProducer::streamRequest(
         uint64_t vbucket_uuid,
         uint64_t snap_start_seqno,
         uint64_t snap_end_seqno,
-        uint64_t purge_seqno,
         uint64_t* rollback_seqno,
         dcp_add_failover_log callback,
         std::optional<std::string_view> json) {
@@ -300,8 +295,7 @@ cb::engine_errc DcpProducer::streamRequest(
                           start_seqno,
                           end_seqno,
                           snap_start_seqno,
-                          snap_end_seqno,
-                          purge_seqno};
+                          snap_end_seqno};
     auto ret = cb::engine_errc::failed;
     VBucketPtr vb;
 
@@ -360,12 +354,11 @@ cb::engine_errc DcpProducer::streamRequest(
                                                 req.vbucket_uuid,
                                                 req.snap_start_seqno,
                                                 req.snap_end_seqno,
-                                                req.purge_seqno,
                                                 includeValue,
                                                 includeXattrs,
                                                 includeDeleteTime,
                                                 includeDeletedUserXattrs,
-                                                includePurgeSeqno,
+                                                sendMarkerV2_2,
                                                 std::move(filter));
     } catch (const cb::engine_error& e) {
         logger->warn(
@@ -565,7 +558,7 @@ cb::engine_errc DcpProducer::checkStreamRequestNeedsRollback(
             req.snap_start_seqno,
             req.snap_end_seqno,
             purgeSeqno,
-            req.purge_seqno,
+            filter.getRemotePurgeSeqno(),
             isFlagSet(req.flags, cb::mcbp::DcpAddStreamFlag::StrictVbUuid),
             getHighSeqnoOfCollections(filter, vb));
 
@@ -1357,6 +1350,10 @@ cb::engine_errc DcpProducer::control(uint32_t opaque,
 
         changeStreams = true;
         return cb::engine_errc::success;
+    } else if (key == DcpControlKeys::SendSnapshotMarkerV2_2 &&
+               valueStr == "true") {
+        sendMarkerV2_2 = SendMarkerV2_2::Yes;
+        return cb::engine_errc::success;
     }
 
     logger->warn("Invalid ctrl parameter '{}' for {}", valueStr, keyStr);
@@ -1742,6 +1739,7 @@ void DcpProducer::addStats(const AddStatFn& add_stat, CookieIface& c) {
             c);
     addStat("synchronous_replication", isSyncReplicationEnabled(), add_stat, c);
     addStat("synchronous_writes", isSyncWritesEnabled(), add_stat, c);
+    addStat("marker_v2_2", sendMarkerV2_2 == SendMarkerV2_2::Yes, add_stat, c);
 
     // Possible that the producer has had its streams closed and hence doesn't
     // have a backfill manager anymore.
