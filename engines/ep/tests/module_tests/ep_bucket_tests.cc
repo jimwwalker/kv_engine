@@ -775,7 +775,8 @@ TEST_F(SingleThreadedEPBucketTest,
                                        10,
                                        DcpSnapshotMarkerFlag::Checkpoint,
                                        {} /*HCS*/,
-                                       {} /*maxVisibleSeqno*/));
+                                       {} /*maxVisibleSeqno*/,
+                                       {} /*purgeSeqno*/));
     ASSERT_EQ(cb::engine_errc::success, consumer->closeStream(opaque, vbid));
 
     // Test: Have the producer send further messages on the stream (before the
@@ -854,7 +855,8 @@ TEST_F(SingleThreadedEPBucketTest,
                                            11,
                                            DcpSnapshotMarkerFlag::Checkpoint,
                                            {} /*HCS*/,
-                                           {} /*maxVisibleSeqno*/));
+                                           {} /*maxVisibleSeqno*/,
+                                           {} /*purgeSeqno*/));
     };
     testAllStreamLevelMessages(cb::engine_errc::success);
 

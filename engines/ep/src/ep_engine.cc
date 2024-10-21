@@ -1457,7 +1457,8 @@ cb::engine_errc EventuallyPersistentEngine::snapshot_marker(
         uint64_t end_seqno,
         cb::mcbp::request::DcpSnapshotMarkerFlag flags,
         std::optional<uint64_t> high_completed_seqno,
-        std::optional<uint64_t> max_visible_seqno) {
+        std::optional<uint64_t> max_visible_seqno,
+        std::optional<uint64_t> purge_seqno) {
     auto engine = acquireEngine(this);
     auto& conn = engine->getConnHandler(cookie);
     return conn.snapshotMarker(opaque,
@@ -1466,7 +1467,8 @@ cb::engine_errc EventuallyPersistentEngine::snapshot_marker(
                                end_seqno,
                                flags,
                                high_completed_seqno,
-                               max_visible_seqno);
+                               max_visible_seqno,
+                               purge_seqno);
 }
 
 cb::engine_errc EventuallyPersistentEngine::mutation(

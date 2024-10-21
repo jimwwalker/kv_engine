@@ -2834,7 +2834,8 @@ void SingleThreadedPassiveStreamTest::testConsumerRejectsBodyInDeletion(
                                        1 /*endSeqno*/,
                                        DcpSnapshotMarkerFlag::Checkpoint,
                                        {} /*HCS*/,
-                                       {} /*maxVisibleSeqno*/));
+                                       {} /*maxVisibleSeqno*/,
+                                       {} /*purgeSeqno*/));
 
     const auto verifyDCPFailure =
             [this, &durReqs](const cb::const_byte_buffer& value,
@@ -2921,7 +2922,8 @@ void SingleThreadedPassiveStreamTest::testConsumerSanitizesBodyInDeletion(
                                        initialEndSeqno,
                                        DcpSnapshotMarkerFlag::Checkpoint,
                                        {} /*HCS*/,
-                                       {} /*maxVisibleSeqno*/));
+                                       {} /*maxVisibleSeqno*/,
+                                       {} /*purgeSeqno*/));
 
     const auto key = makeStoredDocKey("key");
     const auto verifyDCPSuccess = [this, &key, &durReqs](
@@ -3007,7 +3009,8 @@ void SingleThreadedPassiveStreamTest::testConsumerSanitizesBodyInDeletion(
                                            newStartSeqno + 10 /*endSeqno*/,
                                            DcpSnapshotMarkerFlag::Checkpoint,
                                            {} /*HCS*/,
-                                           {} /*maxVisibleSeqno*/));
+                                           {} /*maxVisibleSeqno*/,
+                                           {} /*purgeSeqno*/));
         nextSeqno = newStartSeqno;
     }
 
@@ -3074,7 +3077,8 @@ void SingleThreadedPassiveStreamTest::testConsumerReceivesUserXattrsInDelete(
                                        bySeqno,
                                        DcpSnapshotMarkerFlag::Checkpoint,
                                        {} /*HCS*/,
-                                       {} /*maxVisibleSeqno*/));
+                                       {} /*maxVisibleSeqno*/,
+                                       {} /*purgeSeqno*/));
 
     // Build up a value composed of:
     // - no body
@@ -5019,7 +5023,8 @@ TEST_P(SingleThreadedPassiveStreamTest, MB42780_DiskToMemoryFromPre65) {
                                      DcpSnapshotMarkerFlag::Disk |
                                              DcpSnapshotMarkerFlag::Checkpoint,
                                      {} /*HCS*/,
-                                     {} /*maxVisibleSeqno*/));
+                                     {} /*maxVisibleSeqno*/,
+                                     {} /*purgeSeqno*/));
     ASSERT_EQ(1, ckptList.size());
     ASSERT_TRUE(ckptList.front()->isDiskCheckpoint());
     ASSERT_EQ(1, ckptList.front()->getSnapshotStartSeqno());
@@ -5084,7 +5089,8 @@ TEST_P(SingleThreadedPassiveStreamTest, MB42780_DiskToMemoryFromPre65) {
                                        3 /*snapEnd*/,
                                        DcpSnapshotMarkerFlag::Memory,
                                        {} /*HCS*/,
-                                       {} /*maxVisibleSeqno*/));
+                                       {} /*maxVisibleSeqno*/,
+                                       {} /*purgeSeqno*/));
 
     // 6.6.1 PassiveStream is resilient to any Active misbehaviour with regard
     // to DcpSnapshotMarkerFlag::Checkpoint. Even if Active
@@ -5146,7 +5152,8 @@ TEST_P(SingleThreadedPassiveStreamTest, MB42780_DiskToMemoryFromPre65) {
                                        4 /*snapEnd*/,
                                        DcpSnapshotMarkerFlag::Memory,
                                        {} /*HCS*/,
-                                       {} /*maxVisibleSeqno*/));
+                                       {} /*maxVisibleSeqno*/,
+                                       {} /*purgeSeqno*/));
     // The new snapshot will be queued into the existing checkpoint.
     // Note: It is important that Memory snapshots still are queued into the
     //  same checkpoint if the active requires so. Otherwise, by generating
@@ -5235,6 +5242,7 @@ TEST_P(SingleThreadedPassiveStreamTest, GetSnapshotInfo) {
                                      DcpSnapshotMarkerFlag::Memory |
                                              DcpSnapshotMarkerFlag::Checkpoint,
                                      {},
+                                     {},
                                      {}));
 
     const auto key = makeStoredDocKey("key");
@@ -5314,6 +5322,7 @@ TEST_P(SingleThreadedPassiveStreamTest, GetSnapshotInfo) {
                                      DcpSnapshotMarkerFlag::Memory |
                                              DcpSnapshotMarkerFlag::Checkpoint,
                                      {},
+                                     {},
                                      {}));
 
     // No mutation in the new empty checkpoint, snapshot info is from the
@@ -5386,6 +5395,7 @@ TEST_P(SingleThreadedPassiveStreamTest, BackfillSnapshotFromPartialReplica) {
                                      2, // end
                                      DcpSnapshotMarkerFlag::Memory |
                                              DcpSnapshotMarkerFlag::Checkpoint,
+                                     {},
                                      {},
                                      {}));
     ASSERT_EQ(0, underlying.getLastPersistedSeqno(vbid));
@@ -5489,6 +5499,7 @@ TEST_P(SingleThreadedPassiveStreamTest, MemorySnapshotFromPartialReplica) {
                                      2, // end
                                      DcpSnapshotMarkerFlag::Memory |
                                              DcpSnapshotMarkerFlag::Checkpoint,
+                                     {},
                                      {},
                                      {}));
 
@@ -5617,6 +5628,7 @@ TEST_P(SingleThreadedPassiveStreamTest,
                                      2, // end
                                      DcpSnapshotMarkerFlag::Disk |
                                              DcpSnapshotMarkerFlag::Checkpoint,
+                                     {},
                                      {},
                                      {}));
 
@@ -8202,7 +8214,8 @@ void CDCPassiveStreamTest::createHistoricalCollection(CheckpointType snapType,
                       snapEnd,
                       snapSource | DcpSnapshotMarkerFlag::Checkpoint |
                               DcpSnapshotMarkerFlag::History,
-                      {0},
+                      0,
+                      {},
                       {}));
 
     const auto& vb = *store->getVBucket(vbid);
@@ -8499,6 +8512,7 @@ TEST_P(CDCPassiveStreamTest, TouchedByExpelCheckpointNotReused) {
                                              DcpSnapshotMarkerFlag::Checkpoint |
                                              DcpSnapshotMarkerFlag::History,
                                      {},
+                                     {},
                                      {}));
     // We never reuse a checkpoint.
     // Note that at this point the open checkpoint is empty as it stores only
@@ -8545,6 +8559,7 @@ TEST_P(CDCPassiveStreamTest, TouchedByExpelCheckpointNotReused) {
                                      DcpSnapshotMarkerFlag::Memory |
                                              DcpSnapshotMarkerFlag::Checkpoint |
                                              DcpSnapshotMarkerFlag::History,
+                                     {},
                                      {},
                                      {}));
     // Again, we can never reuse a checkpoint. That applies to touched-by-expel
@@ -9107,6 +9122,7 @@ TEST_P(SingleThreadedPassiveStreamTest,
                                      2, // end
                                      DcpSnapshotMarkerFlag::Memory |
                                              DcpSnapshotMarkerFlag::Checkpoint,
+                                     {},
                                      {},
                                      {}));
 

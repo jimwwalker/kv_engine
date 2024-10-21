@@ -289,7 +289,8 @@ public:
             uint64_t end_seqno,
             cb::mcbp::request::DcpSnapshotMarkerFlag flags,
             std::optional<uint64_t> high_completed_seqno,
-            std::optional<uint64_t> max_visible_seqno) override;
+            std::optional<uint64_t> max_visible_seqno,
+            std::optional<uint64_t> purge_seqno) override;
     cb::engine_errc mutation(CookieIface& cookie,
                              uint32_t opaque,
                              const DocKeyView& key,
@@ -1475,7 +1476,8 @@ cb::engine_errc EWB_Engine::snapshot_marker(
         uint64_t end_seqno,
         cb::mcbp::request::DcpSnapshotMarkerFlag flags,
         std::optional<uint64_t> high_completed_seqno,
-        std::optional<uint64_t> max_visible_seqno) {
+        std::optional<uint64_t> max_visible_seqno,
+        std::optional<uint64_t> purge_seqno) {
     if (!real_engine_dcp) {
         return cb::engine_errc::not_supported;
     }
@@ -1486,7 +1488,8 @@ cb::engine_errc EWB_Engine::snapshot_marker(
                                             end_seqno,
                                             flags,
                                             high_completed_seqno,
-                                            max_visible_seqno);
+                                            max_visible_seqno,
+                                            purge_seqno);
 }
 
 cb::engine_errc EWB_Engine::mutation(CookieIface& cookie,

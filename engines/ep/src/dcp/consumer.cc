@@ -844,12 +844,16 @@ cb::engine_errc DcpConsumer::snapshotMarker(
         uint64_t end_seqno,
         cb::mcbp::request::DcpSnapshotMarkerFlag flags,
         std::optional<uint64_t> high_completed_seqno,
-        std::optional<uint64_t> max_visible_seqno) {
+        std::optional<uint64_t> max_visible_seqno,
+        std::optional<uint64_t> purge_seqno) {
     lastMessageTime = ep_uptime_now();
     uint32_t bytes = SnapshotMarker::baseMsgBytes;
     if (high_completed_seqno || max_visible_seqno) {
         bytes += sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
                  sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_0Value);
+    } else if (purge_seqno) {
+        bytes += sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
+                 sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_2Value);
     } else {
         bytes += sizeof(cb::mcbp::request::DcpSnapshotMarkerV1Payload);
     }
@@ -872,7 +876,7 @@ cb::engine_errc DcpConsumer::snapshotMarker(
                                                 flags,
                                                 high_completed_seqno,
                                                 max_visible_seqno,
-                                                std::nullopt,
+                                                purge_seqno,
                                                 cb::mcbp::DcpStreamId{});
     return lookupStreamAndDispatchMessage(ufc, vbucket, opaque, std::move(msg));
 }
