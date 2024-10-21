@@ -461,10 +461,19 @@ protected:
     cb::engine_errc handleChangeStreams(DcpMessageProducersIface& producers);
 
     /**
+<<<<<<< HEAD
      * Process the current DCP control negoiation.
      */
     cb::engine_errc handleCurrentControlNegotiation(
             DcpMessageProducersIface& producers);
+=======
+     * Handles the negotiation of marker V2_2 (for purge-seqno).
+     *
+     * @param producers Pointers to message producers
+     * @return engine_errc
+     */
+    cb::engine_errc handleMarkerV2_2(DcpMessageProducersIface& producers);
+>>>>>>> b974aec3e (Consumer enable markerV2_2 WIP)
 
     void notifyVbucketReady(Vbid vbucket);
 
@@ -693,6 +702,12 @@ protected:
      * enables history snapshots.
      */
     BlockingDcpControlNegotiation changeStreamsNegotiation;
+
+    /**
+     * Handles the negotiation for MarkerV2_2. If the producer supports this
+     * we can ensure the purge-seqno is synced on initial disk snapshot.
+     */
+    BlockingDcpControlNegotiation markerV2_2Negotiation;
 
     friend UpdateFlowControl;
 

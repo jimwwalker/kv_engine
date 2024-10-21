@@ -247,6 +247,8 @@ DcpConsumer::DcpConsumer(EventuallyPersistentEngine& engine,
     pendingControls.emplace_back(DcpControlKeys::ChangeStreams,
                                  "true",
                                  [this]() { changeStreams = true; });
+
+    pendingControls.emplace_back(DcpControlKeys::SendSnapshotMarkerV2_2, "true");
 }
 
 void DcpConsumer::addNoopSecondsNegotiate() {
