@@ -2836,6 +2836,21 @@ size_t MagmaKVStore::getItemCount(Vbid vbid) {
     return dbStats->docCount;
 }
 
+uint64_t MagmaKVStore::getPurgeSeqno(Vbid vbid) {
+    const auto readState = readVBStateFromDisk(vbid);
+
+    if (readState.status != ReadVBStateStatus::Success) {
+        logger->warn(
+                "MagmaKVStore::getPurgeSeqno {} failed to read "
+                "vbstate from disk. Status:{}",
+                vbid,
+                to_string(readState.status));
+        return 0;
+    }
+
+    return readState.state.purgeSeqno;
+}
+
 cb::engine_errc MagmaKVStore::getAllKeys(
         Vbid vbid,
         const DiskDocKey& startKey,
