@@ -3227,6 +3227,64 @@ TEST_P(SingleThreadedPassiveStreamTest, InvalidMarkerVisibleSnapEndThrows) {
     FAIL();
 }
 
+TEST_P(SingleThreadedPassiveStreamTest, MB_63977) {
+    if (!isCouchstore()) {
+        // Not sure how we can set the purge-seq on magma
+        GTEST_SKIP();
+    }
+    // Setup a disk snapshot
+    SnapshotMarker marker(0 /*opaque*/,
+                          vbid,
+                          1 /*snapStart*/,
+                          10,
+                          DcpSnapshotMarkerFlag::Disk,
+                          0 /*HCS*/,
+                          10, /*MVS*/
+                          5, /* purge */
+                          cb::mcbp::DcpStreamId{});
+    stream->processMarker(&marker);
+    const auto keyA = makeStoredDocKey("keyA");
+    EXPECT_EQ(cb::engine_errc::success,
+              consumer->mutation(1,
+                                 keyA,
+                                 {},
+                                 0,
+                                 1,
+                                 vbid,
+                                 0,
+                                 4, // seqno:4 < purge
+                                 0,
+                                 0,
+                                 0,
+                                 {},
+                                 0));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    // disk purge should be capped at 4
+    EXPECT_EQ(4, store->getVBucket(vbid)->getPurgeSeqno());
+    EXPECT_EQ(4, store->getRWUnderlying(vbid)->getPurgeSeqno(vbid));
+
+    const auto keyB = makeStoredDocKey("keyB");
+    EXPECT_EQ(cb::engine_errc::success,
+              consumer->mutation(1,
+                                 keyB,
+                                 {},
+                                 0,
+                                 1,
+                                 vbid,
+                                 0,
+                                 10, // seqno:4 < purge
+                                 0,
+                                 0,
+                                 0,
+                                 {},
+                                 0));
+    flushVBucketToDiskIfPersistent(vbid, 1);
+
+    EXPECT_EQ(5, store->getVBucket(vbid)->getPurgeSeqno());
+    EXPECT_EQ(5, store->getRWUnderlying(vbid)->getPurgeSeqno(vbid));
+}
+
 /**
  * Fixture for tests which start out as active and switch to replica to assert
  * we setup the PassiveStream correctly.

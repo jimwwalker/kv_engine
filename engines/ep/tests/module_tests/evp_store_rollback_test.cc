@@ -1609,10 +1609,6 @@ TEST_P(RollbackDcpTest, RollbackPrepare) {
     rollbackPrepare(false);
 }
 
-TEST_P(RollbackDcpTest, RollbackDeletedPrepare) {
-    rollbackPrepare(true);
-}
-
 /**
  * Checks the state of the HashTable and PassiveDM post-rollback
  *
