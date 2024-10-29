@@ -815,6 +815,8 @@ protected:
                 vbid, state, {}, TransferVB::Yes);
     }
 
+    void testConsumerDcpControlSyncRepl(const std::string& name);
+
     /* vbucket associated with this connection */
     Vbid vbid;
 };
@@ -1455,56 +1457,42 @@ TEST_P(ConnectionTest, test_mb20716_connmap_notify_on_delete_consumer) {
     destroy_mock_cookie(cookie);
 }
 
-TEST_P(ConnectionTest, ConsumerWithoutConsumerNameDoesNotEnableSyncRepl) {
+void ConnectionTest::testConsumerDcpControlSyncRepl(const std::string& name) {
     MockDcpConnMap connMap(*engine);
     connMap.initialize();
     auto* cookie = create_mock_cookie(engine);
     // Create a new Dcp consumer
     auto& consumer = dynamic_cast<MockDcpConsumer&>(
-            *connMap.newConsumer(*cookie, "consumer"));
+            *connMap.newConsumer(*cookie, "consumer", name));
     consumer.setPendingAddStream(false);
     EXPECT_FALSE(consumer.isSyncReplicationEnabled());
-    EXPECT_EQ(DcpConsumer::BlockingDcpControlNegotiation::State::Completed,
-              consumer.public_getSyncReplNegotiation().state);
 
+    // Loop through ALL dcp.control commands, then check the sync-repl config
+    MockDcpMessageProducers producers;
+    do {
+        EXPECT_EQ(cb::engine_errc::success, consumer.step(false, producers));
+        handleProducerResponseIfStepBlocked(consumer, producers);
+    } while (consumer.public_getPendingControlSize() > 0);
+
+    if (name.empty()) {
+        // When there is no name, sync-replication does not enable.
+        EXPECT_FALSE(consumer.isSyncReplicationEnabled());
+        EXPECT_TRUE(producers.consumer_name.empty());
+    } else {
+        // When there is a name, expect that SyncReplication is enabled and the
+        // producer has the name
+        EXPECT_TRUE(consumer.isSyncReplicationEnabled());
+        EXPECT_EQ("replica1", producers.consumer_name);
+    }
     destroy_mock_cookie(cookie);
 }
 
 TEST_P(ConnectionTest, ConsumerWithConsumerNameEnablesSyncRepl) {
-    MockDcpConnMap connMap(*engine);
-    connMap.initialize();
-    auto* cookie = create_mock_cookie(engine);
-    // Create a new Dcp consumer
-    auto& consumer = dynamic_cast<MockDcpConsumer&>(
-            *connMap.newConsumer(*cookie, "consumer", "replica1"));
-    consumer.setPendingAddStream(false);
-    EXPECT_FALSE(consumer.isSyncReplicationEnabled());
-    using State = DcpConsumer::BlockingDcpControlNegotiation::State;
-    auto syncReplNeg = consumer.public_getSyncReplNegotiation();
-    EXPECT_EQ(State::PendingRequest, syncReplNeg.state);
+    testConsumerDcpControlSyncRepl("replica1");
+}
 
-    // Move consumer into paused state (aka EWOULDBLOCK) by stepping through the
-    // DCP_CONTROL logic.
-    MockDcpMessageProducers producers;
-    cb::engine_errc result;
-    do {
-        result = consumer.step(false, producers);
-        handleProducerResponseIfStepBlocked(consumer, producers);
-        syncReplNeg = consumer.public_getSyncReplNegotiation();
-    } while (syncReplNeg.state != State::Completed);
-    EXPECT_EQ(cb::engine_errc::success, result);
-
-    // Last step - send the consumer name
-    ASSERT_TRUE(consumer.public_getPendingSendConsumerName());
-    EXPECT_EQ(cb::engine_errc::success, consumer.step(false, producers));
-
-    // SyncReplication negotiation is now completed, SyncReplication is enabled
-    // on this consumer, and we have sent the consumer name to the producer.
-    EXPECT_TRUE(consumer.isSyncReplicationEnabled());
-    EXPECT_FALSE(consumer.public_getPendingSendConsumerName());
-    EXPECT_EQ("replica1", producers.last_value);
-
-    destroy_mock_cookie(cookie);
+TEST_P(ConnectionTest, ConsumerWithoutConsumerNameDoesNotEnableSyncRepl) {
+    testConsumerDcpControlSyncRepl({});
 }
 
 /// Verify that a DcpConsumer correctly handles a matched version setup where
@@ -1536,6 +1524,7 @@ TEST_P(ConnectionTest, MillisecondNoopIntervalAcceptedByProducer) {
         }
         handleProducerResponseIfStepBlocked(consumer, producers);
     }
+
     EXPECT_EQ(State::PendingMillisecondsResponse, noopRegState.state);
     // Have producer respond to consumer with success.
     auto sendDcpControlResponse = [&producers](auto& consumer, auto status) {

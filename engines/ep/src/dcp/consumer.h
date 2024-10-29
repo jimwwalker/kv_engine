@@ -57,6 +57,48 @@ public:
         uint32_t opaque{0};
     };
 
+    struct BlockingDcpControlNegotiation2 {
+        BlockingDcpControlNegotiation2(std::string_view key,
+                                       std::string value,
+                                       std::function<void()> success,
+                                       std::function<bool()> failure)
+            : key(key),
+              value(std::move(value)),
+              success(std::move(success)),
+              failure(std::move(failure)) {
+        }
+
+        BlockingDcpControlNegotiation2(std::string_view key, std::string value)
+            : key(key),
+              value(std::move(value)),
+              success([]() {}),
+              failure([]() { return false; }) {
+        }
+
+        BlockingDcpControlNegotiation2(std::string_view key,
+                                       std::string value,
+                                       std::function<void()> success)
+
+            : key(key),
+              value(std::move(value)),
+              success(std::move(success)),
+              failure([]() { return false; }) {
+        }
+        enum class State : uint8_t {
+            PendingRequest,
+            PendingResponse,
+        } state{State::PendingRequest};
+        // Used to identify the specific response from Producer.
+        uint32_t opaque{0};
+        std::string key;
+        std::string value;
+        std::function<void()> success;
+        // callback returns true if failure should then disconnect
+        std::function<bool()> failure;
+    };
+
+    std::deque<BlockingDcpControlNegotiation2> pendingControls;
+
     /**
      * State of the noop interval negotiation. As of v7.6 we support sub-second
      * DCP no-op intervals to facilitate ns_server performing faster failover,
@@ -418,6 +460,12 @@ protected:
      */
     cb::engine_errc handleChangeStreams(DcpMessageProducersIface& producers);
 
+    /**
+     * Process the current DCP control negoiation.
+     */
+    cb::engine_errc handleCurrentControlNegotiation(
+            DcpMessageProducersIface& producers);
+
     void notifyVbucketReady(Vbid vbucket);
 
     /**
@@ -509,8 +557,6 @@ protected:
      */
     std::shared_ptr<PassiveStream> removeStream(Vbid vbid);
 
-
-
     /**
      * Helper method to lookup the correct stream for the given
      * vbid / opaque pair, and then dispatch the message to that stream.
@@ -533,6 +579,11 @@ protected:
      * @return
      */
     cb::engine_errc getOpaqueMissMatchErrorCode() const;
+
+    /**
+     * Add to pendingControls the "seconds" noop control negotiate
+     */
+    void addNoopSecondsNegotiate();
 
     uint64_t opaqueCounter;
     size_t processorTaskId;

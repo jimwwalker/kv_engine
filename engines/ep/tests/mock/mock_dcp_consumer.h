@@ -87,20 +87,22 @@ public:
             uint64_t vb_high_seqno,
             const Collections::ManifestUid vb_manifest_uid) override;
 
-    /**
-     * @return the opaque sent to the Producer as part of the DCP_CONTROL
-     *     request for the Sync Replication negotiation
-     */
-    uint32_t public_getSyncReplNegotiationOpaque() const {
-        return syncReplNegotiation.opaque;
+    const BlockingDcpControlNegotiation2& public_getCurrentControlNegotiation()
+            const {
+        if (pendingControls.empty()) {
+            throw std::logic_error(
+                    "MockDcpConsumer::public_getCurrentControlNegotiation: "
+                    "pendingControls is empty");
+        }
+        return pendingControls.front();
     }
 
-    /**
-     * @return the entire SyncReplNegotiation struct used to send DCP_CONTROL
-     *         messages for testing.
-     */
-    const BlockingDcpControlNegotiation& public_getSyncReplNegotiation() const {
-        return syncReplNegotiation;
+    size_t public_getPendingControlSize() const {
+        return pendingControls.size();
+    }
+
+    const auto& public_getPendingControls() const {
+        return pendingControls;
     }
 
     bool public_getPendingSendConsumerName() const {
@@ -121,11 +123,6 @@ public:
         supportsSyncReplication = SyncReplication::No;
     }
 
-    const BlockingDcpControlNegotiation&
-    public_getFlatbuffersSysEventNegotiation() const {
-        return flatBuffersNegotiation;
-    }
-
     /**
      * @return the entire NoopIntervalNegotiation struct used to setup noop
      *         interval messages - for testing.
@@ -142,13 +139,8 @@ public:
     }
 
     bool isOpaqueBlockingDcpControl(uint64_t opaque) const {
-        for (auto blockingOpaque : {v7DcpStatusCodesNegotiation.opaque,
-                                    syncReplNegotiation.opaque,
-                                    deletedUserXattrsNegotiation.opaque,
-                                    flatBuffersNegotiation.opaque,
-                                    changeStreamsNegotiation.opaque,
-                                    noopIntervalNegotiation.opaque}) {
-            if (blockingOpaque == opaque) {
+        for (const auto& controls : pendingControls) {
+            if (controls.opaque == opaque) {
                 return true;
             }
         }
@@ -199,14 +191,6 @@ public:
     // Set FlatBuffers configuration without the full control tx/rx loop
     void enableFlatBuffersSystemEvents() {
         flatBuffersSystemEventsEnabled = true;
-    }
-
-    /**
-     * @return the ChangeStreams negotiation state of this Consumer
-     */
-    const BlockingDcpControlNegotiation& public_getChangeStreamsNegotiation()
-            const {
-        return changeStreamsNegotiation;
     }
 
     /**
