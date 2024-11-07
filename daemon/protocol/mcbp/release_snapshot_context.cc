@@ -49,7 +49,11 @@ cb::engine_errc ReleaseSnapshotContext::initialize() {
                             cookie.notifyIoComplete(
                                     connection.getBucket()
                                             .getEngine()
-                                            .release_snapshot(cookie, uuid));
+                                            .release_snapshot(
+                                                    cookie,
+                                                    cookie.getRequest()
+                                                            .getVBucket(),
+                                                    uuid));
                         } catch (const std::exception& e) {
                             cookie.setErrorContext(
                                     fmt::format("Failed: {}", e.what()));

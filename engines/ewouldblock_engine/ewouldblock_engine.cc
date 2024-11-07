@@ -251,6 +251,7 @@ public:
             const std::function<void(const nlohmann::json&)>& callback)
             override;
     cb::engine_errc release_snapshot(CookieIface& cookie,
+                                     Vbid vbid,
                                      std::string_view uuid) override;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1391,8 +1392,9 @@ cb::engine_errc EWB_Engine::get_snapshot_file_info(
     return real_engine->get_snapshot_file_info(cookie, uuid, file_id, callback);
 }
 cb::engine_errc EWB_Engine::release_snapshot(CookieIface& cookie,
+                                             Vbid vbid,
                                              std::string_view uuid) {
-    return real_engine->release_snapshot(cookie, uuid);
+    return real_engine->release_snapshot(cookie, vbid, uuid);
 }
 
 cb::engine_errc EWB_Engine::step(CookieIface& cookie,

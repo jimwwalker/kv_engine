@@ -936,14 +936,20 @@ struct EngineIface {
     }
 
     /**
-     * Request the snapshot with the UUID to be released
+     * Request the snapshot to be released
+     *
+     * The command can release by UUID (where a matching uuid must exist) or by
+     * vb. The release by vb can be considered an emergency stop and wouldn't
+     * be used by DownloadSnapshot, but allows cluster manager to release a
+     * snapshot and interupt any download and force immediate clean-up.
      *
      * @param cookie the cookie requesting the snapshot to be deleted
+     * @param vbid the vbid for the snapshot to delete
      * @param uuid the uuid for the snapshot to delete
      * @return error code for the operation
      */
     [[nodiscard]] virtual cb::engine_errc release_snapshot(
-            CookieIface& cookie, std::string_view uuid) {
+            CookieIface& cookie, Vbid vbid, std::string_view uuid) {
         return cb::engine_errc::not_supported;
     }
 };

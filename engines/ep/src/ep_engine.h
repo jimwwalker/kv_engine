@@ -323,7 +323,7 @@ public:
             const std::function<void(const nlohmann::json&)>& callback)
             override;
     [[nodiscard]] cb::engine_errc release_snapshot(
-            CookieIface& cookie, std::string_view uuid) override;
+            CookieIface& cookie, Vbid vbid, std::string_view uuid) override;
 
     /////////////////////////////////////////////////////////////
     // DcpIface implementation //////////////////////////////////

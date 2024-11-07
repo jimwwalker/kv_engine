@@ -7761,7 +7761,7 @@ cb::engine_errc EventuallyPersistentEngine::get_snapshot_file_info(
 }
 
 cb::engine_errc EventuallyPersistentEngine::release_snapshot(
-        CookieIface& cookie, std::string_view uuid) {
+        CookieIface& cookie, Vbid vbid, std::string_view uuid) {
     return acquireEngine(this)->releaseSnapshot(cookie, uuid);
 }
 
