@@ -22,14 +22,15 @@ TEST(Manifest, Conversion) {
       "id": 0,
       "path": "/foo/dek",
       "size": "1234",
-      "crc32c": "31"
+      "sha512": "31"
     }
   ],
   "files": [
     {
       "id": 0,
       "path": "/foo/bar",
-      "size": "1234"
+      "size": "1234",
+      "sha512": ""
     }
   ],
   "uuid": "UUID",
@@ -40,7 +41,7 @@ TEST(Manifest, Conversion) {
     manifest.uuid = "UUID";
     manifest.vbid = Vbid(1);
     manifest.files.emplace_back("/foo/bar", 1234, 0);
-    manifest.deks.emplace_back("/foo/dek", 1234, 0, 31);
+    manifest.deks.emplace_back("/foo/dek", 1234, 0, "31");
     nlohmann::json json = manifest;
     EXPECT_EQ(blueprint, json);
 

@@ -16,10 +16,8 @@ namespace cb::snapshot {
 void to_json(nlohmann::json& json, const FileInfo& info) {
     json = {{"id", info.id},
             {"path", info.path.string()},
-            {"size", std::to_string(info.size)}};
-    if (info.crc32c.has_value()) {
-        json["crc32c"] = std::to_string(*info.crc32c);
-    }
+            {"size", std::to_string(info.size)},
+            {"sha512", info.sha512}};
 }
 
 static bool isAllDigits(std::string_view view) {
@@ -46,13 +44,11 @@ void from_json(const nlohmann::json& json, FileInfo& info) {
                     std::stoul(json["size"].get<std::string>()),
                     json["id"].get<std::size_t>());
 
-    if (json.contains("crc32c")) {
-        if (!json["crc32c"].is_string() ||
-            !isAllDigits(json["crc32c"].get<std::string>())) {
-            throw std::invalid_argument(
-                    "from_json: crc32c must be a string of digits");
+    if (json.contains("sha512")) {
+        if (!json["sha512"].is_string()) {
+            throw std::invalid_argument("from_json: sha512 must be a string");
         }
-        info.crc32c = std::stoul(json["crc32c"].get<std::string>());
+        info.sha512 = json["sha512"].get<std::string>();
     }
 }
 
