@@ -233,4 +233,26 @@ std::filesystem::path Cache::make_absolute(
         const std::filesystem::path& relative, std::string_view uuid) const {
     return path / uuid / relative;
 }
+
+void Cache::addDebugStats(const StatCollector& collector) const {
+    // Lock the map, in general would prefer keep locking scope minimal but
+    // this stat collection is for debug usage (cbcollect) and not operational
+    snapshots.withLock([&collector](auto& map) {
+        collector.addStat("snapshots_size", map.size());
+
+        for (const auto& [uuid, entry] : map) {
+            entry.addDebugStats(collector);
+        }
+    });
+}
+
+void Cache::Entry::addDebugStats(const StatCollector& collector) const {
+    collector.addStat(
+            std::string_view{fmt::format("vb_{}:age", manifest.vbid.get())},
+            std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - timestamp)
+                    .count());
+    manifest.addDebugStats(collector);
+}
+
 } // namespace cb::snapshot

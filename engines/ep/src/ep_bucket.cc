@@ -2960,3 +2960,8 @@ cb::engine_errc EPBucket::releaseSnapshot(
     }
     return cb::engine_errc::success;
 }
+
+cb::engine_errc EPBucket::doSnapshotDebugStats(const StatCollector& collector) {
+    snapshotCache.addDebugStats(collector);
+    return cb::engine_errc::success;
+}
