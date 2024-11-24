@@ -16,7 +16,6 @@
 #include <memcached/engine_error.h>
 #include <nlohmann/json.hpp>
 #include <platform/dirutils.h>
-#include <platform/uuid.h>
 
 namespace cb::snapshot {
 
@@ -72,29 +71,6 @@ void Cache::remove(const Manifest& manifest) const {
     }
 }
 
-std::string Cache::calculateSha512sum(const std::filesystem::path& path,
-                                      std::size_t size) const {
-    try {
-        return cb::crypto::sha512sum(path, size);
-    } catch (const std::exception& e) {
-        EP_LOG_WARN_CTX("Failed calculating sha512",
-                        {"path", path.string()},
-                        {"size", size},
-                        {"error", e.what()});
-    }
-    return {};
-}
-
-void Cache::maybeUpdateSha512Sum(const std::filesystem::path& root,
-                                 FileInfo& info) const {
-    if (info.sha512.empty()) {
-        auto sum = calculateSha512sum(root / info.path, info.size);
-        if (!sum.empty()) {
-            info.sha512 = sum;
-        }
-    }
-}
-
 void Cache::release(const std::string& uuid) {
     snapshots.withLock([&uuid, this](auto& map) {
         auto iter = map.find(uuid);
@@ -134,54 +110,31 @@ void Cache::purge(std::chrono::seconds age) {
         }
     });
 }
+
 std::variant<cb::engine_errc, Manifest> Cache::prepare(
         Vbid vbid,
-        const std::function<cb::engine_errc(
-                const std::filesystem::path&, Vbid, Manifest&)>& executor) {
+        const std::function<std::variant<cb::engine_errc, Manifest>(
+                const std::filesystem::path&, Vbid)>& prepare) {
     auto existing = lookup(vbid);
     if (existing.has_value()) {
         return *existing;
     }
 
-    Manifest manifest;
-
-    manifest.uuid = ::to_string(cb::uuid::random());
-    manifest.vbid = vbid;
-    create_directories(path / manifest.uuid);
-    cb::engine_errc rv;
-    try {
-        rv = executor(path / manifest.uuid, vbid, manifest);
-    } catch (const std::exception&) {
-        std::error_code ec;
-        remove_all(path / manifest.uuid, ec);
-        throw;
+    auto prepared = prepare(path, vbid);
+    if (std::holds_alternative<cb::engine_errc>(prepared)) {
+        return prepared;
     }
 
-    if (rv == engine_errc::success) {
-        // Add checksums for all files in the snapshot
-        for (auto& file : manifest.files) {
-            maybeUpdateSha512Sum(path / manifest.uuid, file);
-        }
-        for (auto& file : manifest.deks) {
-            maybeUpdateSha512Sum(path / manifest.uuid, file);
-        }
-
-        FILE* fp = fopen(
-                (path / manifest.uuid / "manifest.json").string().c_str(), "w");
-        if (fp) {
-            fprintf(fp, "%s\n", nlohmann::json(manifest).dump().c_str());
-            fclose(fp);
-            snapshots.withLock([&manifest](auto& map) {
-                map.emplace(manifest.uuid, Entry(manifest));
-            });
-            return manifest;
-        }
-        rv = cb::engine_errc::failed;
+    // Save the manfiest
+    const auto& manifest = std::get<cb::snapshot::Manifest>(prepared);
+    if (!snapshots.withLock([manifest](auto& map) {
+            return map.try_emplace(manifest.uuid, Entry(manifest)).second;
+        })) {
+        EP_LOG_WARN_CTX("Cache::prepare try_emplace failed",
+                        {{"uuid", manifest.uuid}});
+        return cb::engine_errc::failed;
     }
-
-    std::error_code ec;
-    remove_all(path / manifest.uuid, ec);
-    return rv;
+    return prepared;
 }
 
 std::variant<cb::engine_errc, Manifest> Cache::download(

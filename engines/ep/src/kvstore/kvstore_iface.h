@@ -22,6 +22,7 @@
 #include <memcached/engine_common.h>
 #include <memcached/engine_error.h>
 #include <memcached/thread_pool_config.h>
+#include <snapshot/manifest.h>
 
 class ByIdScanContext;
 class BySeqnoScanContext;
@@ -50,10 +51,6 @@ struct PersistedStats;
 namespace VB {
 class Commit;
 }
-
-namespace cb::snapshot {
-struct Manifest;
-} // namespace cb::snapshot
 
 /**
  * When fetching documents from disk, what form should the value be returned?
@@ -189,13 +186,12 @@ public:
      *
      * @param snapshotDirectory the destination directory for the snapshot
      * @param vb The vbucket to create the snapshot for
-     * @param manifest The snapshot manifest to populate with information
-     * @return status of the operation
+     * @return Manifest for success or status code for failure
      */
-    virtual cb::engine_errc prepareSnapshot(
-            const std::filesystem::path& snapshotDirectory,
-            Vbid vb,
-            cb::snapshot::Manifest& manifest);
+    virtual std::variant<cb::engine_errc, cb::snapshot::Manifest>
+    prepareSnapshot(const std::filesystem::path& snapshotDirectory, Vbid vb) {
+        return cb::engine_errc::not_supported;
+    }
 
     /**
      * Request the specified statistic name from the kvstore.
@@ -897,6 +893,19 @@ public:
     virtual void setHistoryRetentionSeconds(std::chrono::seconds secs) = 0;
 
     virtual std::optional<uint64_t> getHistoryStartSeqno(Vbid vbid) = 0;
+
+    /**
+     * Prepare a snapshot - backend implementation
+     *
+     * @param snapshotDirectory the destination directory for the snapshot
+     * @param vb The vbucket to create the snapshot for
+     * @return Manifest for success or status code for failure
+     */
+    virtual std::variant<cb::engine_errc, cb::snapshot::Manifest>
+    prepareSnapshotImpl(const std::filesystem::path& snapshotDirectory,
+                        Vbid vb) {
+        return cb::engine_errc::not_supported;
+    }
 };
 
 std::string to_string(KVStoreIface::ReadVBStateStatus status);

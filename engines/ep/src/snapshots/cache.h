@@ -78,8 +78,8 @@ public:
      */
     std::variant<cb::engine_errc, Manifest> prepare(
             Vbid vb,
-            const std::function<cb::engine_errc(
-                    const std::filesystem::path&, Vbid, Manifest&)>& executor);
+            const std::function<std::variant<cb::engine_errc, Manifest>(
+                    const std::filesystem::path&, Vbid)>& executor);
 
     /**
      * Prepeare a remote snapshot. This involves preparing the snapshot
@@ -132,15 +132,6 @@ protected:
 
     /// The location of the snapshots
     std::filesystem::path path;
-
-    /**
-     * Calculate the SHA-512 sum for the provided file. If an error
-     * occurs this gets logged ad an empty string is returned
-     */
-    std::string calculateSha512sum(const std::filesystem::path& path,
-                                   std::size_t size) const;
-    void maybeUpdateSha512Sum(const std::filesystem::path& root,
-                              FileInfo& info) const;
 
     struct Entry {
         explicit Entry(Manifest m) : manifest(std::move(m)) {

@@ -2061,10 +2061,9 @@ CouchKVStore::getVbucketEncryptionKeyIds(Vbid vb) const {
     return {cb::engine_errc::success, {unencrypted.getId()}};
 }
 
-cb::engine_errc CouchKVStore::prepareSnapshot(
-        const std::filesystem::path& snapshotDirectory,
-        Vbid vb,
-        cb::snapshot::Manifest& manifest) {
+std::variant<cb::engine_errc, cb::snapshot::Manifest>
+CouchKVStore::prepareSnapshotImpl(
+        const std::filesystem::path& snapshotDirectory, Vbid vb) {
     DbHolder db(*this);
     couchstore_error_t err = openDB(vb, db, COUCHSTORE_OPEN_FLAG_RDONLY);
     if (err != COUCHSTORE_SUCCESS) {
@@ -2076,6 +2075,9 @@ cb::engine_errc CouchKVStore::prepareSnapshot(
                      COUCHSTORE_OPEN_FLAG_RDONLY);
         return cb::engine_errc::failed;
     }
+
+    cb::snapshot::Manifest manifest;
+    manifest.vbid = vb;
 
     std::size_t fileid = 1;
     std::filesystem::path path = db.getFilename();
@@ -2095,7 +2097,7 @@ cb::engine_errc CouchKVStore::prepareSnapshot(
                 fmt::format("deks/{}", id), file_size(target), fileid++);
     }
 
-    return cb::engine_errc::success;
+    return manifest;
 }
 
 bool CouchKVStore::getStat(std::string_view name, size_t& value) const {
