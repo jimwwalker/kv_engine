@@ -55,11 +55,8 @@ public:
     Cache(const std::filesystem::path& path) : path(path / "snapshots") {
     }
 
-    /**
-     * Initialise instance of the snapshot cache which operates on the
-     * persistent snapshots located in ::path  directory
-     */
-    cb::engine_errc initialise();
+    /// @return true if the manifest was added to cache (fail means duplicate)
+    bool insert(Manifest manifest);
 
     /// Look up a snapshot with the provided UUID
     std::optional<Manifest> lookup(const std::string& uuid) const;

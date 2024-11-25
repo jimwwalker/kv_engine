@@ -29,6 +29,7 @@
 #include "kvstore_config.h"
 #include "mcbp/protocol/datatype.h"
 #include "persistence_callback.h"
+#include "snapshots/cache.h"
 #include "vbucket.h"
 #include "vbucket_state.h"
 
@@ -40,6 +41,7 @@
 #include <cbcrypto/digest.h>
 #include <platform/dirutils.h>
 #include <platform/uuid.h>
+#include <snapshot/manifest.h>
 #include <statistics/cbstat_collector.h>
 #include <sys/stat.h>
 #include <utilities/logtags.h>
@@ -780,6 +782,112 @@ std::variant<cb::engine_errc, cb::snapshot::Manifest> KVStore::prepareSnapshot(
                     {"vb", vbid},
                     {"path", snapshotPath});
     return cb::engine_errc::failed;
+}
+
+// Look for valid snapshots and push to cache or remove
+cb::engine_errc KVStore::processSnapshots(const std::filesystem::path& path,
+                                          cb::snapshot::Cache& cache) const {
+    if (!exists(path)) {
+        return cb::engine_errc::success;
+    }
+
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(path, ec)) {
+        if (is_directory(entry.path(), ec)) {
+            processSnapshot(entry.path(), cache);
+        } else {
+            EP_LOG_WARN_CTX("processSnapshots path is not directory",
+                            {"path", path},
+                            {"error", ec.message()});
+            remove_all(entry.path(), ec);
+            if (ec) {
+                EP_LOG_WARN_CTX(
+                        "processSnapshots failed remove_all of non directory",
+                        {"path", entry.path()},
+                        {"error", ec.message()});
+            }
+        }
+    }
+
+    if (ec) {
+        EP_LOG_WARN_CTX("processSnapshots failed directory_iterator",
+                        {"path", path},
+                        {"error", ec.message()});
+        return cb::engine_errc::failed;
+    }
+
+    return cb::engine_errc::success;
+}
+
+cb::engine_errc KVStore::processSnapshot(const std::filesystem::path& path,
+                                         cb::snapshot::Cache& cache) {
+    auto removeSnapshot = folly::makeGuard([path]() {
+        std::error_code ec;
+        remove_all(path, ec);
+        if (ec) {
+            EP_LOG_WARN_CTX("processSnapshot failed remove_all",
+                            {"path", path},
+                            {"error", ec.message()});
+        } else {
+            EP_LOG_WARN_CTX("processSnapshot removed an invalid snapshot",
+                            {"path", path});
+        }
+    });
+
+    if (exists(path / "manifest.json")) {
+        std::variant<cb::engine_errc, cb::snapshot::Manifest> m;
+        try {
+            m = getValidatedManifest(path);
+            if (std::holds_alternative<cb::engine_errc>(m)) {
+                return std::get<cb::engine_errc>(m);
+            }
+        } catch (const std::exception& e) {
+            EP_LOG_WARN_CTX("processSnapshot failed getValidatedManifest",
+                            {"path", path},
+                            {"error", e.what()});
+            return cb::engine_errc::failed;
+        }
+
+        // attempt to push to cache
+        if (cache.insert(std::get<cb::snapshot::Manifest>(m))) {
+            removeSnapshot.dismiss();
+            return cb::engine_errc::success;
+        } else {
+            EP_LOG_WARN_CTX("processSnapshot failed cache.insert",
+                            {"uuid", std::get<cb::snapshot::Manifest>(m).uuid},
+                            {"path", path});
+        }
+    }
+    return cb::engine_errc::failed;
+}
+
+std::variant<cb::engine_errc, cb::snapshot::Manifest>
+KVStore::getValidatedManifest(const std::filesystem::path& path) {
+    cb::snapshot::Manifest m =
+            nlohmann::json::parse(cb::io::loadFile(path / "manifest.json"));
+
+    // Validate all files exist and have a matching checksum
+    for (const auto& file : m.files) {
+        if (!exists(path / file.path)) {
+            return cb::engine_errc::no_such_key;
+        }
+
+        auto sha512 = calculateSha512sum(path / file.path, file.size);
+        if (sha512 != file.sha512) {
+            return cb::engine_errc::failed;
+        }
+    }
+    for (const auto& file : m.deks) {
+        if (!exists(path / file.path)) {
+            return cb::engine_errc::no_such_key;
+        }
+
+        auto sha512 = calculateSha512sum(path / file.path, file.size);
+        if (sha512 != file.sha512) {
+            return cb::engine_errc::failed;
+        }
+    }
+    return m;
 }
 
 std::string format_as(const ValueFilter vf) {

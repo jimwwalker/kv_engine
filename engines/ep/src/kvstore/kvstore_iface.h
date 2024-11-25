@@ -52,6 +52,11 @@ namespace VB {
 class Commit;
 }
 
+namespace cb::snapshot {
+
+class Cache;
+}
+
 /**
  * When fetching documents from disk, what form should the value be returned?
  */
@@ -190,6 +195,11 @@ public:
      */
     virtual std::variant<cb::engine_errc, cb::snapshot::Manifest>
     prepareSnapshot(const std::filesystem::path& snapshotDirectory, Vbid vb) {
+        return cb::engine_errc::not_supported;
+    }
+
+    virtual cb::engine_errc processSnapshots(const std::filesystem::path& path,
+                                             cb::snapshot::Cache& cache) const {
         return cb::engine_errc::not_supported;
     }
 

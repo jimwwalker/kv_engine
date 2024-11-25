@@ -62,6 +62,29 @@ TEST_P(SnapshotEngineTest, prepare_snapshot) {
     EXPECT_GT(manifest["files"][0]["size"], 0);
 }
 
+TEST_P(SnapshotEngineTest, prepare_snapshot_warmup) {
+    setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
+    nlohmann::json manifest;
+    EXPECT_EQ(cb::engine_errc::success,
+              engine->prepare_snapshot(
+                      *cookie, vbid, [&manifest](auto& m) { manifest = m; }));
+
+    resetEngineAndWarmup();
+
+    // Test harness doesn't hit EPBucket::initialize so must manually call
+    // the cache initialise.
+    getEPBucket().initialiseSnapshots();
+
+    nlohmann::json postWarmupManifest;
+    EXPECT_EQ(cb::engine_errc::success,
+              engine->prepare_snapshot(
+                      *cookie, vbid, [&postWarmupManifest](auto& m) {
+                          postWarmupManifest = m;
+                      }));
+
+    EXPECT_EQ(manifest, postWarmupManifest);
+}
+
 static std::string PrintToStringParamName(
         const testing::TestParamInfo<std::string>& info) {
     return info.param;
