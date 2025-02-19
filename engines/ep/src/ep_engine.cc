@@ -958,6 +958,8 @@ cb::engine_errc EventuallyPersistentEngine::setDcpParam(const std::string& key,
                     std::stoull(val));
         } else if (key == "dcp_takeover_max_time") {
             getConfiguration().setDcpTakeoverMaxTime(std::stoull(val));
+        } else if (key == "dcp_stuck_timeout_seconds") {
+            getConfiguration().setDcpStuckTimeoutSeconds(std::stoull(val));
         } else {
             msg = "Unknown config param";
             rv = cb::engine_errc::no_such_key;

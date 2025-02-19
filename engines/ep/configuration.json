@@ -1260,6 +1260,12 @@
             "dynamic": false,
             "type": "size_t"
         },
+        "dcp_stuck_timeout_seconds": {
+            "default": "4",
+            "descr": "How long to wait before disconnecting a DCP producer that appears to be stuck",
+            "dynamic": true,
+            "type": "size_t"
+        },
         "dcp_takeover_max_time": {
             "default": "60",
             "descr": "Max amount of time for takeover send (in seconds) after which front end ops would return ETMPFAIL",

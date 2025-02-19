@@ -59,7 +59,8 @@ DcpProducer::StreamsMap::SmartPtr makeStreamsMap(
     return DcpProducer::StreamsMap::create(maxNumVBuckets, config);
 }
 
-DcpProducer::BufferLog::State DcpProducer::BufferLog::getState_UNLOCKED() {
+DcpProducer::BufferLog::State DcpProducer::BufferLog::getState_UNLOCKED()
+        const {
     if (isEnabled_UNLOCKED()) {
         if (isFull_UNLOCKED()) {
             return Full;
@@ -108,8 +109,15 @@ bool DcpProducer::BufferLog::pauseIfFull() {
     std::shared_lock<folly::SharedMutex> rhl(logLock);
     if (getState_UNLOCKED() == Full) {
         producer.pause(PausedReason::BufferLogFull);
+        rhl.unlock(); // Don't need to be locked for the next steps.
+        if (!lastCheckedBytesOutstanding ||
+            bytesOutstanding != lastCheckedBytesOutstanding) {
+            lastCheckedBytesOutstanding = bytesOutstanding;
+            lastCheckedTime = std::chrono::steady_clock::now();
+        }
         return true;
     }
+    lastCheckedBytesOutstanding.reset();
     return false;
 }
 
@@ -164,6 +172,48 @@ void DcpProducer::BufferLog::addStats(const AddStatFn& add_stat,
     } else {
         producer.addStat("flow_control", "disabled", add_stat, c);
     }
+    rhl.unlock();
+    if (lastCheckedBytesOutstanding) {
+        producer.addStat("last_checked_bytes_outstanding",
+                         *lastCheckedBytesOutstanding,
+                         add_stat,
+                         c);
+    } else {
+        producer.addStat(
+                "last_checked_bytes_outstanding", "nullopt", add_stat, c);
+    }
+    producer.addStat("last_checked_time",
+                     lastCheckedTime.time_since_epoch().count(),
+                     add_stat,
+                     c);
+}
+
+bool DcpProducer::BufferLog::isStuck(std::chrono::seconds limit) const {
+    std::chrono::steady_clock::time_point now;
+    bool stuck = false;
+
+    if (lastCheckedBytesOutstanding) {
+        now = std::chrono::steady_clock::now();
+        stuck = lastCheckedBytesOutstanding && now - lastCheckedTime > limit;
+    }
+
+    if (stuck) {
+        std::shared_lock<folly::SharedMutex> lh(logLock);
+        EP_LOG_WARN(
+                "{} Disconnecting because bytesOutstanding has not changed for "
+                "{} seconds. lastCheckedBytesOutstanding:{} "
+                "lastCheckedTime:{} now:{} maxBytes:{} bytesOutstanding:{} "
+                "maxBytes:{}",
+                producer.logHeader(),
+                limit.count(),
+                *lastCheckedBytesOutstanding,
+                lastCheckedTime.time_since_epoch().count(),
+                now.time_since_epoch().count(),
+                maxBytes,
+                bytesOutstanding.load(),
+                ackedBytes.load());
+    }
+    return stuck;
 }
 
 /// Decode IncludeValue from DCP producer flags.
@@ -211,7 +261,10 @@ DcpProducer::DcpProducer(EventuallyPersistentEngine& e,
       createChkPtProcessorTsk(startTask),
       connectionSupportsSnappy(
               e.isDatatypeSupported(cookie, PROTOCOL_BINARY_DATATYPE_SNAPPY)),
-      collectionsEnabled(cookie->isCollectionsSupported()) {
+      collectionsEnabled(cookie->isCollectionsSupported()),
+      shouldDisconnectWhenStuck(
+              true), // name.find("test_stuck") != std::string::npos),
+      stuckTimeout(e.getConfiguration().getDcpStuckTimeoutSeconds()) {
     setSupportAck(true);
     pause(PausedReason::Initializing);
     setLogHeader("DCP (Producer) " + getName() + " -");
@@ -727,6 +780,10 @@ cb::engine_errc DcpProducer::step(DcpMessageProducersIface& producers) {
     } else {
         resp = getNextItem();
         if (!resp) {
+            if (shouldDisconnectWhenStuck && log.isStuck(stuckTimeout)) {
+                doDisconnect();
+                return cb::engine_errc::disconnect;
+            }
             return cb::engine_errc::would_block;
         }
     }
