@@ -41,6 +41,7 @@
 #include <platform/scope_timer.h>
 #include <spdlog/fmt/fmt.h>
 #include <statistics/cbstat_collector.h>
+#include <regex>
 
 const std::chrono::seconds DcpProducer::defaultDcpNoopTxInterval(20);
 
@@ -320,6 +321,14 @@ DcpProducer::DcpProducer(EventuallyPersistentEngine& e,
               cb::mcbp::request::DcpOpenPayload::IncludeDeletedUserXattrs) != 0)
                     ? IncludeDeletedUserXattrs::Yes
                     : IncludeDeletedUserXattrs::No;
+
+    auto regex = e.getConfiguration().getJww();
+    if (!regex.empty()) {
+        std::regex re(regex);
+        if (std::regex_match(name, re)) {
+            shouldDisconnectWhenStuck = true;
+        }
+    }
 }
 
 DcpProducer::~DcpProducer() {

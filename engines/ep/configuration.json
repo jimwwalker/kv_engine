@@ -391,7 +391,7 @@
             "type": "bool"
         },
         "dcp_stuck_timeout": {
-            "default": "10",
+            "default": "4",
             "descr": "How long to wait before disconnecting a DCP producer that appears to be stuck",
             "dynamic": true,
             "type": "size_t"
@@ -704,7 +704,7 @@
             }
         },
         "jww": {
-            "default": "x\\\"y",
+            "default": ":*kakfa/4.2.4.*",
             "descr": "Item eviction policy on cache, which is used by the item pager",
             "dynamic": false,
             "type": "std::string"
