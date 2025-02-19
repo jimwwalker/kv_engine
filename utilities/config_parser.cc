@@ -77,7 +77,7 @@ static int trim_copy(char *dest, size_t size, const char *src,
 int parse_config(const char *str, struct config_item *items, FILE *error) {
    const char *end;
    char key[80];
-      char value[1024];
+   char value[1024];
    int ret = 0;
    const char *ptr = str;
    int ii;
@@ -99,16 +99,71 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
       }
 
       ptr = end + 1;
-      if (trim_copy(value, sizeof(value), ptr, &end, ';') == -1) {
-         if (error != nullptr) {
-            fprintf(error, "ERROR: Invalid value, starting at: <%s>\n", ptr);
-         }
-         return -1;
-      }
-      if (*end == ';') {
-         ptr = end + 1;
+      if (*ptr == '"') {
+          std::string_view value_view(ptr + 1, strlen(ptr + 1));
+          if (value_view.empty()) {
+              if (error != nullptr) {
+                  fprintf(error, "ERROR: Empty value for key: <%s>\n", key);
+              }
+              return -1;
+          }
+          if (value_view.size() == 1) {
+              if (value_view[0] == '"') {
+                  // this is ok.
+              }
+          }
+          bool terminated = false;
+          std::cerr << "Processing value_view: " << value_view << std::endl;
+          for (int i = 0; i < value_view.size(); i++) {
+              if (value_view[i] == '"' && i > 0 && value_view[i - 1] != '\\') {
+                  if (i < value_view.size() - 1 ) {
+                      std::cerr << "Last character is a quote" << std::endl;
+                      // There must be a semicolon after the quote in this case for the next k/v pair.
+                      if (value_view[i+1] != ';') {
+
+                          std::cerr << "Last character is a quote but not followed by a semicolon" << std::endl;
+                          if (error != nullptr) {
+                              fprintf(error, "ERROR: Last character is a quote but not followed by a semicolon: <%s>\n", key);
+                          }
+                          return -1;
+                      }
+                      ptr++;
+
+                  }
+                  std::cerr << "Found terminating quote at " << i << std::endl;
+                  value_view.remove_suffix(value_view.size() - i);
+                  memcpy(value, value_view.data(), value_view.size());
+                  value[value_view.size()] = '\0';
+                  ptr += value_view.size() + 1;
+                  terminated = true;
+                  break;
+              }
+          }
+          if (!terminated) {
+              if (error != nullptr) {
+                  fprintf(error,
+                          "ERROR: Unterminated quoted string: <%s>\n",
+                          key);
+              }
+              return -1;
+          }
+
+          std::cerr << key << "value_view: " << value_view << std::endl;
       } else {
-         ptr = end;
+          // Handle unquoted value
+          if (trim_copy(value, sizeof(value), ptr, &end, ';') == -1) {
+              if (error != nullptr) {
+                  fprintf(error,
+                          "ERROR: Invalid value, starting at: <%s>\n",
+                          ptr);
+              }
+              return -1;
+          }
+          ptr = end;
+      }
+
+      if (*ptr == ';') {
+          ptr++;
       }
 
       ii = 0;

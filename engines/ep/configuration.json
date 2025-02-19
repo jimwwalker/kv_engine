@@ -390,6 +390,12 @@
             "dynamic": true,
             "type": "bool"
         },
+        "dcp_stuck_timeout": {
+            "default": "10",
+            "descr": "How long to wait before disconnecting a DCP producer that appears to be stuck",
+            "dynamic": true,
+            "type": "size_t"
+        },
         "defragmenter_enabled": {
             "default": "true",
             "descr": "True if defragmenter task is enabled",
@@ -696,6 +702,12 @@
                     "min": 1
                 }
             }
+        },
+        "jww": {
+            "default": "x\\\"y",
+            "descr": "Item eviction policy on cache, which is used by the item pager",
+            "dynamic": false,
+            "type": "std::string"
         },
         "item_eviction_policy": {
             "default": "value_only",

@@ -3249,9 +3249,15 @@ public:
     void SetUp() override {
         // This test suite specifically tests eager checkpoint removal.
         // Ensure the checkpoint config is set to that.
-        config.parseConfiguration("checkpoint_removal_mode=eager",
-                                  get_mock_server_api());
-        checkpoint_config = std::make_unique<CheckpointConfig>(config);
+        // config.parseConfiguration(
+        //         R"(jww="\"checkpoint_removal_mode=eager"checkpoint_removal_mode=eager)",
+        //         get_mock_server_api());
+        // config.parseConfiguration(
+        //         R"(jww="\"checkpoint_removal_mode=eager;";checkpoint_removal_mode=eager)",
+        //         get_mock_server_api());
+        // checkpoint_config = std::make_unique<CheckpointConfig>(config);
+        std::cout << "Final:" << config.getJww() << std::endl;
+        std::cout << "Final:" << config.getCheckpointRemovalMode() << std::endl;
         VBucketTest::SetUp();
         createManager();
     }
