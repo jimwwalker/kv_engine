@@ -365,6 +365,12 @@ protected:
      */
     void generateCacheTransferRequest(nlohmann::json& stream_req_json) const;
 
+    /**
+     * Log when the CacheTransfer has signalled out of memory condition (and log
+     * only once)
+     */
+    void maybeLogCacheTransferOutOfMemory();
+
     // The current state the stream is in.
     // Atomic to allow reads without having to acquire the streamMutex.
     std::atomic<StreamState> state_{StreamState::Pending};
@@ -445,6 +451,9 @@ protected:
 
     // True if the consumer/producer enabled FlatBuffers
     bool flatBuffersSystemEventsEnabled{false};
+
+    // Flag indicating if the CacheTransfer has logged out of memory.
+    bool hasLoggedCacheTransferOutOfMemory{false};
 
     // Set of states that the vbucket must match for a PassiveStream to attempt
     // processing messages.

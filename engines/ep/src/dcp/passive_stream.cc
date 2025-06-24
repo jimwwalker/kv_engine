@@ -342,14 +342,31 @@ cb::engine_errc PassiveStream::messageReceived(
         return forceMessage(*dcpResponse).getError();
     }
     case KVBucket::ReplicationThrottleStatus::Pause: {
-        forceMessage(*dcpResponse);
+        forceMessage(*dcpResponse).getError();
+
         // Don't ack the bytes
         unackedBytes += ufc.release();
+        // Pause but processing a CachedValue. If FullEviction request the
+        // producer to stop sending cache as we're full up.
+        if (dcpResponse->getEvent() == DcpResponse::Event::CachedValue &&
+            !engine->getKVBucket()->isValueEviction()) {
+            maybeLogCacheTransferOutOfMemory();
+            return cb::engine_errc::no_memory;
+        }
         return cb::engine_errc::temporary_failure;
     }
     }
 
     folly::assume_unreachable();
+}
+
+void PassiveStream::maybeLogCacheTransferOutOfMemory() {
+    // Log only once as there could be many messages in flight.
+    if (hasLoggedCacheTransferOutOfMemory) {
+        OBJ_LOG_INFO_CTX(
+                *this, "CacheTransfer signalling out of memory", {"vb", vb_});
+        hasLoggedCacheTransferOutOfMemory = true;
+    }
 }
 
 ProcessUnackedBytesResult PassiveStream::processUnackedBytes(
@@ -1374,15 +1391,19 @@ PassiveStream::ProcessMessageResult PassiveStream::processMessage(
         if (ret != cb::engine_errc::success) {
             // ENOMEM logging is handled by maybeLogMemoryState
             if (ret != cb::engine_errc::no_memory) {
-                OBJ_LOG_WARN_CTX(
+                OBJ_LOG_CTX(
                         *this,
-                        "PassiveStream::processMessage: Got error while trying "
-                        "to process with seqno: cid",
+                        ret == cb::engine_errc::cancelled &&
+                                        resp->getEvent() ==
+                                                DcpResponse::Event::CachedValue
+                                ? spdlog::level::level_enum::info
+                                : spdlog::level::level_enum::warn,
+                        "PassiveStream::processMessage: Not successful",
                         {"vb_", vb_},
-                        {"cb::to_stringret", cb::to_string(ret)},
-                        {"resp-to_string", resp->to_string()},
+                        {"error", cb::to_string(ret)},
+                        {"message", resp->to_string()},
                         {"*seqno", *seqno},
-                        {"collection_i_d",
+                        {"collection_id",
                          mutation->getItem()->getKey().getCollectionID()});
             }
         }
@@ -1450,6 +1471,7 @@ cb::engine_errc PassiveStream::processCachedValue(
     // upsert with no memory check. DCP should only be progressing forwards with
     // messages when memory is available (see normal mutation path for
     // equivalent where EnforceMemCheck is No)
+    // For value eviction upsert with
     const auto mutationStatus =
             vb->upsertToHashTable(*resp.getItem(),
                                   false,
@@ -1457,8 +1479,8 @@ cb::engine_errc PassiveStream::processCachedValue(
                                   false);
     switch (mutationStatus) {
     case MutationStatus::InvalidCas:
-        // CacheTransfer hit a clash...
-        return cb::engine_errc::disconnect;
+        // CacheTransfer hit a clash... cancel and switch to regular streaming.
+        return cb::engine_errc::cancelled;
     case MutationStatus::NotFound:
         // This is a success case, so we can increment the cache transfer bytes
         // read.
