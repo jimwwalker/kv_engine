@@ -6865,3 +6865,23 @@ MutationStatus STParameterizedBucketTest::public_processSet(
                         {/*no predicate*/})
             .first;
 }
+
+TEST_F(SingleThreadedKVBucketTest, ExpirationTooLarge) {
+    auto guard = folly::makeGuard(
+            [&]() { cb::time::steady_clock::use_chrono = true; });
+    cb::time::steady_clock::use_chrono = false;
+    // Set the clock to 0 and init_mock_server.
+    cb::time::steady_clock::advance(
+            -cb::time::steady_clock::now().time_since_epoch() +
+            std::chrono::seconds(1));
+    init_mock_server();
+    // Advance the clock to be out of range for expiration
+    cb::time::steady_clock::advance(
+            std::chrono::seconds(std::numeric_limits<uint32_t>::max() - 1));
+
+    // Use relative expiry so one relative to the large clock is generated
+    auto [status, item] = engine->itemAllocate(
+            makeStoredDocKey("key"), 100, 0, 0, 2, 0, vbid);
+    EXPECT_EQ(cb::engine_errc::expiration_cannot_be_stored, status);
+    EXPECT_FALSE(item);
+}

@@ -137,6 +137,8 @@ std::string cb::to_string(cb::engine_errc code) {
         return "encryption key not available";
     case engine_errc::checksum_mismatch:
         return "checksum mismatch";
+    case engine_errc::expiration_cannot_be_stored:
+        return "expiration cannot be stored in 32-bits";
     }
     throw std::invalid_argument(
         "engine_error_category::message: code does not represent a "

@@ -22,6 +22,7 @@
 #include <memcached/server_bucket_iface.h>
 #include <memcached/server_core_iface.h>
 #include <platform/atomic_duration.h>
+#include <platform/cb_time.h>
 #include <platform/platform_time.h>
 #include <utilities/engine_errc_2_mcbp.h>
 #include <xattr/blob.h>
@@ -43,7 +44,7 @@ std::atomic<time_t> process_started;     /* when the mock server was started */
 cb::AtomicTimePoint<> process_started_steady;
 
 /* Offset from 'real' time used to test time handling */
-std::atomic<rel_time_t> time_travel_offset;
+std::atomic<uint64_t> time_travel_offset;
 
 spdlog::level::level_enum log_level = spdlog::level::level_enum::info;
 
@@ -77,15 +78,13 @@ static std::chrono::steady_clock::time_point mock_get_uptime_now() {
 /* time-sensitive callers can call it by hand with this, outside the
    normal ever-1-second timer */
 static rel_time_t mock_get_current_time() {
-#ifdef WIN32
-    rel_time_t result = (rel_time_t)(time(NULL) - process_started + time_travel_offset);
-#else
-    struct timeval timer {};
-    gettimeofday(&timer, nullptr);
-    auto result =
-            (rel_time_t)(timer.tv_sec - process_started + time_travel_offset);
-#endif
-    return result;
+    // Use cb::time which offers static mode
+    auto now = cb::time::steady_clock::now();
+    auto now_seconds = gsl::narrow_cast<uint32_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                    now.time_since_epoch())
+                    .count());
+    return rel_time_t(now_seconds - process_started + time_travel_offset);
 }
 
 void mock_notify_io_complete(CookieIface& cookie, cb::engine_errc status) {
@@ -114,7 +113,10 @@ static rel_time_t mock_realtime(rel_time_t exptime) {
             rv = (rel_time_t)(exptime - process_started);
         }
     } else {
-        rv = exptime + mock_get_current_time();
+        auto current_time = mock_get_current_time();
+        std::cout << "exptime: " << exptime << " current_time: " << current_time
+                  << " result: " << (exptime + current_time) << std::endl;
+        rv = exptime + current_time;
     }
 
     return rv;
@@ -135,7 +137,7 @@ static uint32_t mock_limit_expiry_time(uint32_t t, std::chrono::seconds limit) {
     return t;
 }
 
-void mock_time_travel(int by) {
+void mock_time_travel(uint64_t by) {
     time_travel_offset += by;
 }
 
@@ -307,7 +309,10 @@ ServerApi* get_mock_server_api() {
 }
 
 void init_mock_server() {
-    process_started = time(nullptr);
+    process_started = std::chrono::duration_cast<std::chrono::seconds>(
+                              cb::time::steady_clock::now().time_since_epoch())
+                              .count();
+    std::cout << "process_started: " << process_started << std::endl;
     process_started_steady = std::chrono::steady_clock::now();
 
     time_travel_offset = 0;

@@ -85,6 +85,8 @@ enum class Status : uint16_t {
     /// The calculated checksum of the data does not match the expected
     /// checksum
     ChecksumMismatch = 0x27,
+    /// The expiration time cannot be stored
+    ExpirationCannotBeStored = 0x28,
 
     // Start error codes for rate limits. Reserve segment [0x30, 0x4f]
 
