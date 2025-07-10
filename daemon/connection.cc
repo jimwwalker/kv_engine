@@ -419,6 +419,7 @@ cb::engine_errc Connection::remapErrorCode(cb::engine_errc code) {
     case cb::engine_errc::vbuuid_not_equal:
     case cb::engine_errc::cancelled:
     case cb::engine_errc::checksum_mismatch:
+    case cb::engine_errc::expiration_cannot_be_stored:
         break;
     }
 

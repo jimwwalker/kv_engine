@@ -41,6 +41,7 @@ bool is_known(Status status) {
     case Status::NotInitialized:
     case Status::ChecksumMismatch:
     case Status::EncryptionKeyNotAvailable:
+    case Status::ExpirationCannotBeStored:
     case Status::RateLimitedNetworkIngress:
     case Status::RateLimitedNetworkEgress:
     case Status::RateLimitedMaxConnections:
@@ -139,6 +140,7 @@ bool isStatusSuccess(Status status) {
     case Status::Eaccess:
     case Status::NotInitialized:
     case Status::ChecksumMismatch:
+    case Status::ExpirationCannotBeStored:
     case Status::EncryptionKeyNotAvailable:
     case Status::RateLimitedNetworkIngress:
     case Status::RateLimitedNetworkEgress:
@@ -285,6 +287,8 @@ std::string to_string(cb::mcbp::Status status, bool shortname) {
             return "ChecksumMismatch";
         case Status::EncryptionKeyNotAvailable:
             return "EncryptionKeyNotAvailable";
+        case Status::ExpirationCannotBeStored:
+            return "ExpirationCannotBeStored";
         case Status::RateLimitedNetworkIngress:
             return "RateLimitedNetworkIngress";
         case Status::RateLimitedNetworkEgress:
@@ -455,6 +459,8 @@ std::string to_string(cb::mcbp::Status status, bool shortname) {
                    "expected checksum";
         case Status::EncryptionKeyNotAvailable:
             return "Encryption key not available";
+        case Status::ExpirationCannotBeStored:
+            return "Expiration time cannot be stored";
         case Status::RateLimitedNetworkIngress:
             return "Rate limit: Network ingress";
         case Status::RateLimitedNetworkEgress:

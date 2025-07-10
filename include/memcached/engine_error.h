@@ -174,6 +174,9 @@ enum class engine_errc {
     /// checksum
     checksum_mismatch,
 
+    /// The expiration time is too large for storage in 32-bits
+    expiration_cannot_be_stored,
+
     /// Generic failue
     failed
 };

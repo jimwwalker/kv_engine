@@ -2555,6 +2555,9 @@ cb::EngineErrorItemPair EventuallyPersistentEngine::itemAllocate(
                 cb::engine_errc::success, item, this);
     } catch (const std::bad_alloc&) {
         return cb::makeEngineErrorItemPair(memoryCondition());
+    } catch (const gsl::narrowing_error&) {
+        return cb::makeEngineErrorItemPair(
+                cb::engine_errc::expiration_cannot_be_stored);
     }
 }
 
