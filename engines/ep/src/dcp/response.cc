@@ -111,15 +111,15 @@ uint32_t MutationResponse::getHeaderSize() const {
     }
 }
 
-uint32_t MutationResponse::getMessageSize() const {
+size_t MutationResponse::getMessageSize() const {
     const uint32_t header = getHeaderSize();
-    uint32_t keySize = 0;
+    size_t keySize = 0;
     if (includeCollectionID == DocKeyEncodesCollectionId::Yes) {
         keySize = item_->getKey().size();
     } else {
         keySize = item_->getKey().makeDocKeyWithoutCollectionID().size();
     }
-    uint32_t body = keySize + item_->getNBytes();
+    size_t body = keySize + item_->getNBytes();
     body += (getStreamId() ? sizeof(cb::mcbp::DcpStreamIdFrameInfo) : 0);
     return header + body;
 }
@@ -137,8 +137,8 @@ MutationConsumerMessage::MutationConsumerMessage(MutationResponse& response)
       emd(nullptr) {
 }
 
-uint32_t MutationConsumerMessage::getMessageSize() const {
-    uint32_t body = MutationResponse::getMessageSize();
+size_t MutationConsumerMessage::getMessageSize() const {
+    auto body = MutationResponse::getMessageSize();
 
     // Check to see if we need to include the extended meta data size.
     if (emd) {
@@ -181,8 +181,8 @@ CommitSyncWriteConsumer::CommitSyncWriteConsumer(uint32_t opaque,
                       key.getEncoding()) {
 }
 
-uint32_t CommitSyncWrite::getMessageSize() const {
-    auto size = commitBaseMsgBytes;
+size_t CommitSyncWrite::getMessageSize() const {
+    size_t size = commitBaseMsgBytes;
     if (includeCollectionID == DocKeyEncodesCollectionId::Yes) {
         size += key.size();
     } else {
@@ -217,8 +217,8 @@ AbortSyncWriteConsumer::AbortSyncWriteConsumer(uint32_t opaque,
                      key.getEncoding()) {
 }
 
-uint32_t AbortSyncWrite::getMessageSize() const {
-    auto size = abortBaseMsgBytes;
+size_t AbortSyncWrite::getMessageSize() const {
+    size_t size = abortBaseMsgBytes;
     if (includeCollectionID == DocKeyEncodesCollectionId::Yes) {
         size += key.size();
     } else {
@@ -227,8 +227,8 @@ uint32_t AbortSyncWrite::getMessageSize() const {
     return size;
 }
 
-uint32_t SnapshotMarker::getMessageSize() const {
-    auto rv = baseMsgBytes;
+size_t SnapshotMarker::getMessageSize() const {
+    size_t rv = baseMsgBytes;
     if (purgeSeqno || highPreparedSeqno) {
         rv += sizeof(cb::mcbp::request::DcpSnapshotMarkerV2xPayload) +
             sizeof(cb::mcbp::request::DcpSnapshotMarkerV2_2Value);

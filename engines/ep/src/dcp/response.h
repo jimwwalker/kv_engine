@@ -115,7 +115,7 @@ public:
         return (event_ == Event::SystemEvent);
     }
 
-    virtual uint32_t getMessageSize() const = 0;
+    virtual size_t getMessageSize() const = 0;
 
     /**
      * Return approximately how many bytes this response message is using
@@ -212,7 +212,7 @@ public:
         return requestValue_;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes;
     }
 
@@ -252,7 +252,7 @@ public:
         return status_;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes;
     }
 
@@ -276,7 +276,7 @@ public:
         return status_;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes;
     }
 
@@ -299,7 +299,7 @@ public:
         return status_;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes;
     }
 
@@ -339,7 +339,7 @@ public:
         return vbucket_;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes +
                (getStreamId() ? sizeof(cb::mcbp::DcpStreamIdFrameInfo) : 0);
     }
@@ -370,7 +370,7 @@ public:
         return state_;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes;
     }
 
@@ -423,7 +423,7 @@ public:
         return flags_;
     }
 
-    uint32_t getMessageSize() const override;
+    size_t getMessageSize() const override;
 
     std::optional<uint64_t> getHighCompletedSeqno() const {
         return highCompletedSeqno;
@@ -516,7 +516,7 @@ public:
     /**
       * @return size of message to be sent over the wire to the consumer.
       */
-    uint32_t getMessageSize() const override;
+    size_t getMessageSize() const override;
 
     /**
      * @returns a size representing approximately the memory used, in this case
@@ -655,7 +655,7 @@ public:
     /**
      * @return size of message on the wire
      */
-    uint32_t getMessageSize() const override;
+    size_t getMessageSize() const override;
 
     ExtendedMetaData* getExtMetaData() {
         return emd.get();
@@ -680,7 +680,7 @@ public:
           payload(preparedSeqno) {
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return sizeof(cb::mcbp::Request) +
                sizeof(cb::mcbp::request::DcpSeqnoAcknowledgedPayload);
     }
@@ -740,7 +740,7 @@ public:
             sizeof(cb::mcbp::Request) +
             sizeof(cb::mcbp::request::DcpCommitPayload);
 
-    uint32_t getMessageSize() const override;
+    size_t getMessageSize() const override;
 
 protected:
     bool isEqual(const DcpResponse& rsp) const override;
@@ -807,7 +807,7 @@ public:
             sizeof(cb::mcbp::Request) +
             sizeof(cb::mcbp::request::DcpAbortPayload);
 
-    uint32_t getMessageSize() const override;
+    size_t getMessageSize() const override;
 
 protected:
     bool isEqual(const DcpResponse& rsp) const override;
@@ -888,8 +888,9 @@ public:
         }
     }
 
-    uint32_t getMessageSize() const override {
-        return SystemEventMessage::baseMsgBytes + key.size() + eventData.size();
+    size_t getMessageSize() const override {
+        return static_cast<uint32_t>(SystemEventMessage::baseMsgBytes +
+                                     key.size() + eventData.size());
     }
 
     mcbp::systemevent::id getSystemEvent() const override {
@@ -959,10 +960,11 @@ public:
     static std::unique_ptr<SystemEventFlatBuffers> makeWithFlatBuffersValue(
             uint32_t opaque, queued_item& item, cb::mcbp::DcpStreamId sid);
 
-    uint32_t getMessageSize() const override {
-        return SystemEventMessage::baseMsgBytes + getKey().size() +
-               getEventData().size() +
-               (getStreamId() ? sizeof(cb::mcbp::DcpStreamIdFrameInfo) : 0);
+    size_t getMessageSize() const override {
+        return static_cast<uint32_t>(
+                SystemEventMessage::baseMsgBytes + getKey().size() +
+                getEventData().size() +
+                (getStreamId() ? sizeof(cb::mcbp::DcpStreamIdFrameInfo) : 0));
     }
 
     mcbp::systemevent::id getSystemEvent() const override {
@@ -1386,7 +1388,7 @@ public:
         return !start;
     }
 
-    uint32_t getMessageSize() const override {
+    size_t getMessageSize() const override {
         return baseMsgBytes +
                (getStreamId() ? sizeof(cb::mcbp::DcpStreamIdFrameInfo) : 0);
     }
@@ -1422,7 +1424,7 @@ public:
         return {advancedSeqno};
     }
 
-    [[nodiscard]] uint32_t getMessageSize() const override {
+    [[nodiscard]] size_t getMessageSize() const override {
         return baseMsgBytes +
                (getStreamId() ? sizeof(cb::mcbp::DcpStreamIdFrameInfo) : 0);
     }
