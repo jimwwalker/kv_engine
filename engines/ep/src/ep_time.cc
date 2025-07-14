@@ -11,6 +11,7 @@
 
 #include "ep_time.h"
 
+#include <gsl/gsl-lite.hpp>
 #include <memcached/server_core_iface.h>
 
 #include <atomic>
@@ -64,4 +65,12 @@ void initialize_time_functions(ServerCoreIface* core_api) {
 
 time_t ep_real_time() {
     return ep_abs_time(ep_current_time());
+}
+
+uint32_t makeExpiryTime(uint32_t mcbpExpTime) {
+    // @todo: Remove silent cast and later detect overflow/narrowing and provide
+    // a new engine_error code to indicate as such.
+    return (mcbpExpTime == 0) ? 0
+                              : gsl::narrow_cast<uint32_t>(
+                                        ep_abs_time(ep_reltime(mcbpExpTime)));
 }
