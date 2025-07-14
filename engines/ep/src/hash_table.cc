@@ -1136,7 +1136,7 @@ HashTable::DeleteResult HashTable::unlocked_abortPrepare(
     v.setCommitted(CommittedState::PrepareAborted);
 
     // Set the completed time so we don't prematurely purge the SV
-    v.setCompletedOrDeletedTime(ep_real_time());
+    v.setCompletedOrDeletedTime(gsl::narrow<uint32_t>(ep_real_time()));
     valueStats.epilogue(hbl, preProps, &v);
     return {DeletionStatus::Success, &v};
 }
@@ -1733,7 +1733,7 @@ void HashTable::unlocked_setCommitted(const HashTable::HashBucketLock& hbl,
     const auto preProps = valueStats.prologue(hbl, &value);
     value.setCommitted(state);
     value.markDirty();
-    value.setCompletedOrDeletedTime(ep_real_time());
+    value.setCompletedOrDeletedTime(gsl::narrow<uint32_t>(ep_real_time()));
     valueStats.epilogue(hbl, preProps, &value);
 }
 

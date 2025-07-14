@@ -358,12 +358,12 @@ public:
      *
      * @return the expiration time.
      */
-    time_t getExptime() const {
+    uint32_t getExptime() const {
         return exptime;
     }
 
-    void setExptime(time_t tim) {
-        exptime = tim;
+    void setExptime(uint32_t time) {
+        exptime = time;
         markDirty();
     }
 
@@ -895,7 +895,7 @@ public:
      *
      * Only applicable for an OSV so we do nothing for a normal SV.
      */
-    void setCompletedOrDeletedTime(time_t time);
+    void setCompletedOrDeletedTime(uint32_t time);
 
 protected:
     /**
@@ -1338,7 +1338,7 @@ public:
      * Return the time the item was deleted. Only valid for completed
      * (SyncWrites) or deleted items.
      */
-    time_t getCompletedOrDeletedTime() const;
+    uint32_t getCompletedOrDeletedTime() const;
 
     /**
      * Check if the contents of the StoredValue is same as that of the other
@@ -1365,7 +1365,7 @@ public:
      * Set the time the item was completed (SyncWrite) or deleted at to the
      * specified time.
      */
-    void setCompletedOrDeletedTime(time_t time);
+    void setCompletedOrDeletedTime(uint32_t time);
 
     void setPrepareSeqno(int64_t prepareSeqno) {
         this->prepareSeqno = prepareSeqno;

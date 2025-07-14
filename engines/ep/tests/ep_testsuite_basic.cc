@@ -2106,7 +2106,7 @@ static test_result max_ttl(EngineIface* h) {
 
     cb::EngineErrorMetadataPair errorMetaPair;
     check_expression(get_meta(h, "key-abs", errorMetaPair), "Get meta failed");
-    checkne(time_t(0),
+    checkne(uint32_t(0),
             errorMetaPair.second.exptime,
             "expiry should not be zero");
 
@@ -2142,7 +2142,7 @@ static test_result max_ttl(EngineIface* h) {
             "Failed set.");
 
     check_expression(get_meta(h, "key-rel", errorMetaPair), "Get meta failed");
-    checkne(time_t(0),
+    checkne(uint32_t(0),
             errorMetaPair.second.exptime,
             "expiry should not be zero");
 
@@ -2189,7 +2189,7 @@ static test_result max_ttl_setWithMeta(EngineIface* h) {
 
     cb::EngineErrorMetadataPair errorMetaPair;
     check_expression(get_meta(h, keyAbs, errorMetaPair), "Get meta failed");
-    checkne(time_t(0),
+    checkne(uint32_t(0),
             errorMetaPair.second.exptime,
             "expiry should not be zero");
 
@@ -2216,7 +2216,7 @@ static test_result max_ttl_setWithMeta(EngineIface* h) {
             "Expected to store item");
 
     check_expression(get_meta(h, keyRel, errorMetaPair), "Get meta failed");
-    checkne(time_t(0),
+    checkne(uint32_t(0),
             errorMetaPair.second.exptime,
             "expiry should not be zero");
 

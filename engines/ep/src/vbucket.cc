@@ -1406,7 +1406,7 @@ VBNotifyCtx VBucket::queueDirty(const HashTable::HashBucketLock& hbl,
     // assigned to it.
     if (qi->isDeleted() && (ctx.generateDeleteTime == GenerateDeleteTime::Yes ||
                             qi->getExptime() == 0)) {
-        qi->setExpTime(ep_real_time());
+        qi->setExpTime(gsl::narrow<uint32_t>(ep_real_time()));
     }
 
     if (!mightContainXattrs() &&
@@ -1438,7 +1438,7 @@ VBNotifyCtx VBucket::queueAbort(const HashTable::HashBucketLock& hbl,
 
     queued_item item(v.toItemAbort(getId()));
     item->setPrepareSeqno(prepareSeqno);
-    item->setExpTime(ep_real_time());
+    item->setExpTime(gsl::narrow<uint32_t>(ep_real_time()));
 
     Expects(item->isAbort());
     Expects(item->isDeleted());
@@ -1448,7 +1448,7 @@ VBNotifyCtx VBucket::queueAbort(const HashTable::HashBucketLock& hbl,
 
 VBNotifyCtx VBucket::queueAbortForUnseenPrepare(queued_item item,
                                                 const VBQueueItemCtx& ctx) {
-    item->setExpTime(ep_real_time());
+    item->setExpTime(gsl::narrow<uint32_t>(ep_real_time()));
 
     Expects(item->isAbort());
     Expects(item->isDeleted());
@@ -1460,14 +1460,15 @@ VBNotifyCtx VBucket::queueAbortForUnseenPrepare(queued_item item,
 queued_item VBucket::createNewAbortedItem(const DocKeyView& key,
                                           int64_t prepareSeqno,
                                           int64_t abortSeqno) {
-    auto item = make_STRCPtr<Item>(key,
-                                   0 /*flags*/,
-                                   ep_real_time() /*exp*/,
-                                   value_t{},
-                                   PROTOCOL_BINARY_RAW_BYTES,
-                                   0,
-                                   abortSeqno,
-                                   getId());
+    auto item =
+            make_STRCPtr<Item>(key,
+                               0 /*flags*/,
+                               gsl::narrow<uint32_t>(ep_real_time()) /*exp*/,
+                               value_t{},
+                               PROTOCOL_BINARY_RAW_BYTES,
+                               0,
+                               abortSeqno,
+                               getId());
 
     item->setAbortSyncWrite();
     item->setPrepareSeqno(prepareSeqno);
@@ -2811,7 +2812,7 @@ cb::engine_errc VBucket::add(
 std::pair<MutationStatus, GetValue> VBucket::processGetAndUpdateTtl(
         HashTable::HashBucketLock& hbl,
         StoredValue* v,
-        time_t exptime,
+        uint32_t exptime,
         const Collections::VB::CachingReadHandle& cHandle) {
     if (v) {
         if (isLogicallyNonExistent(*v, cHandle)) {
@@ -2889,7 +2890,7 @@ GetValue VBucket::getAndUpdateTtl(
         VBucketStateLockRef vbStateLock,
         CookieIface* cookie,
         EventuallyPersistentEngine& engine,
-        time_t exptime,
+        uint32_t exptime,
         const Collections::VB::CachingReadHandle& cHandle) {
     auto res = fetchValueForWrite(cHandle);
     switch (res.status) {
@@ -3204,7 +3205,8 @@ GetValue VBucket::getLocked(rel_time_t currentTime,
         }
 
         // acquire lock and increment cas value
-        v->lock(currentTime + lockTimeout.count(), nextHLCCas());
+        v->lock(gsl::narrow<rel_time_t>(currentTime + lockTimeout.count()),
+                nextHLCCas());
 
         auto it = v->toItem(getId());
         it->setCas(v->getCasForWrite(currentTime));

@@ -1928,7 +1928,7 @@ cb::engine_errc KVBucket::prepare(Item& itm,
 GetValue KVBucket::getAndUpdateTtl(const DocKeyView& key,
                                    Vbid vbucket,
                                    CookieIface* cookie,
-                                   time_t exptime) {
+                                   uint32_t exptime) {
     Expects(cookie);
     // If the exptime changed, we will end up queueing a mutation, which will
     // also need to be replicated.

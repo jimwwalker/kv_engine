@@ -1059,7 +1059,7 @@ uint64_t EphemeralVBucket::addSystemEventItem(
         if (cid && cid.value().isDefaultCollection()) {
             v->setCompletedOrDeletedTime(-1);
         } else {
-            v->setCompletedOrDeletedTime(ep_real_time());
+            v->setCompletedOrDeletedTime(gsl::narrow<uint32_t>(ep_real_time()));
         }
     }
 

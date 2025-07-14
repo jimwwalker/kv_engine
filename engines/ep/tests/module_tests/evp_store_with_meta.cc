@@ -22,6 +22,7 @@
 #include "tests/module_tests/test_helpers.h"
 #include "vbucket.h"
 
+#include <gsl/gsl-lite.hpp>
 #include <programs/engine_testapp/mock_cookie.h>
 #include <utilities/engine_errc_2_mcbp.h>
 #include <utilities/string_utilities.h>
@@ -40,7 +41,8 @@ public:
         config_string += "allow_sanitize_value_in_deletion=true";
         SingleThreadedEPBucketTest::SetUp();
         store->setVBucketState(vbid, vbucket_state_active);
-        expiry = ep_real_time() + 31557600; // +1 year in seconds
+        expiry = gsl::narrow<uint32_t>(ep_real_time() +
+                                       31557600); // +1 year in seconds
     }
 
     void enableLww() {
@@ -260,7 +262,7 @@ public:
      * Initialise an expiry value which allows us to set/get items without them
      * expiring, i.e. a few years of expiry wiggle room
      */
-    time_t expiry;
+    uint32_t expiry{0};
 };
 
 class WithMetaLwwTest : public WithMetaTest {

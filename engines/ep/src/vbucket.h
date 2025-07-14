@@ -1393,7 +1393,7 @@ public:
     GetValue getAndUpdateTtl(VBucketStateLockRef vbStateLock,
                              CookieIface* cookie,
                              EventuallyPersistentEngine& engine,
-                             time_t exptime,
+                             uint32_t exptime,
                              const Collections::VB::CachingReadHandle& cHandle);
     /**
      * Add a system event Item to the vbucket and return its seqno. Does
@@ -1986,7 +1986,7 @@ protected:
     std::pair<MutationStatus, GetValue> processGetAndUpdateTtl(
             HashTable::HashBucketLock& hbl,
             StoredValue* v,
-            time_t exptime,
+            uint32_t exptime,
             const Collections::VB::CachingReadHandle& cHandle);
     /**
      * This function checks cas, expiry and other partition (vbucket) related

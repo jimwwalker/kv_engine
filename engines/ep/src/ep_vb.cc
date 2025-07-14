@@ -1073,7 +1073,7 @@ uint64_t EPVBucket::addSystemEventItem(
         if (cid && cid.value().isDefaultCollection()) {
             qi->setExpTime(~0);
         } else {
-            qi->setExpTime(ep_real_time());
+            qi->setExpTime(gsl::narrow<uint32_t>(ep_real_time()));
         }
     }
 

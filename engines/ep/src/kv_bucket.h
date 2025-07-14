@@ -129,7 +129,7 @@ public:
     GetValue getAndUpdateTtl(const DocKeyView& key,
                              Vbid vbucket,
                              CookieIface* cookie,
-                             time_t exptime) override;
+                             uint32_t exptime) override;
 
     cb::engine_errc deleteItem(
             const DocKeyView& key,
