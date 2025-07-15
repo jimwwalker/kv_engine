@@ -381,3 +381,24 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
                                   -Wshorten-64-to-32
                                   -Wimplicit-int-conversion)
 endif()
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(ep_testsuite PRIVATE
+                                  -Wshorten-64-to-32
+                                  -Wimplicit-int-conversion)
+endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(ep_testsuite_dcp PRIVATE
+                                  -Wshorten-64-to-32
+                                  -Wimplicit-int-conversion)
+endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(ep_testsuite_xdcr PRIVATE
+                                  -Wshorten-64-to-32
+                                  -Wimplicit-int-conversion)
+endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(ep_testsuite_basic PRIVATE
+                                  -Wshorten-64-to-32
+                                  -Wimplicit-int-conversion)
+endif()
