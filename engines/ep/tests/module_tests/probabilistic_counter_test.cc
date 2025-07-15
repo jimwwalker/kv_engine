@@ -38,7 +38,8 @@ TEST(ProbabilisticCounterrTest, saturateCounter) {
     ProbabilisticCounter<uint8_t> probabilisticCounter(incFactor);
     uint16_t counter{0};
     while (counter != std::numeric_limits<uint8_t>::max()) {
-        counter = probabilisticCounter.generateValue(counter);
+        counter = probabilisticCounter.generateValue(
+                gsl::narrow_cast<uint8_t>(counter));
     }
     EXPECT_TRUE(probabilisticCounter.isSaturated(counter));
 }

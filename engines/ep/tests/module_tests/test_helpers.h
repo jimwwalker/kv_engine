@@ -156,17 +156,17 @@ std::string createXattrValue(const std::string& body,
  */
 class TimeTraveller {
 public:
-    explicit TimeTraveller(int by);
+    explicit TimeTraveller(uint64_t by);
 
     ~TimeTraveller();
 
-    int get() const {
+    auto get() const {
         return by;
     }
 
 private:
     // Amount of time travel.
-    int by;
+    uint64_t by;
 };
 
 /**

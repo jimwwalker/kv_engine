@@ -2906,14 +2906,10 @@ TEST_P(VBucketDurabilityTest, TouchAfterCommitIsNormalMutation) {
     auto key = makeStoredDocKey("key");
     doSyncWriteAndCommit();
 
-    using namespace std::chrono;
-    auto expiry = system_clock::now() + seconds(10);
-
     // prior to fix, fails expects when queueDirty-ing a
     // queue_op::commit_sync_write after fix, succeeds, stores the item as a
     // normal mutation.
-    auto [status, gv] =
-            public_getAndUpdateTtl(key, system_clock::to_time_t(expiry));
+    auto [status, gv] = public_getAndUpdateTtl(key, makeExpiryTime(10));
 
     ASSERT_EQ(MutationStatus::WasClean, status);
     EXPECT_EQ(CommittedState::CommittedViaMutation, gv.item->getCommitted());

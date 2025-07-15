@@ -579,3 +579,11 @@ if(CB_ENABLE_HEADER_INCLUDE_CHECK)
 
     add_header_object_library(NAME ep_headers_obj HEADERS ${ep_headers})
 endif(CB_ENABLE_HEADER_INCLUDE_CHECK)
+
+# MB-67520: Enable warnings for narrowing conversions and
+# implicit int conversions when building with Clang/AppleClang
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(ep PRIVATE
+                                  -Wshorten-64-to-32
+                                  -Wimplicit-int-conversion)
+endif()

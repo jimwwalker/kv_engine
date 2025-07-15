@@ -4512,7 +4512,7 @@ void SingleThreadedActiveStreamTest::testExpirationRemovesBody(
     store_item(vbid,
                docKey,
                value,
-               ep_real_time() + 1 /*1 second TTL*/,
+               makeExpiryTime(1), /*1 second TTL*/
                {cb::engine_errc::success} /*expected*/,
                datatype);
 

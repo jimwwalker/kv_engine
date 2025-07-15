@@ -1376,7 +1376,7 @@ TEST_F(MB29369_SingleThreadedEPBucketTest,
     const auto iterationLimit = 1;
     std::shared_ptr<MockActiveStream> stream;
     auto key1 = makeStoredDocKey("key1");
-    for (size_t id = 0; id < iterationLimit + 1; id++) {
+    for (Vbid::id_type id = 0; id < iterationLimit + 1; id++) {
         Vbid vbid = Vbid(id);
         setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
         auto vb = store->getVBucket(vbid);
@@ -2449,7 +2449,7 @@ TEST_P(STParamPersistentBucketTest, MB_29861) {
  */
 TEST_P(STParameterizedBucketTest, MB_27457_ReplicateDeleteTimeFuture) {
     // Choose a delete time in the future (2032-01-24T23:52:45).
-    time_t futureTime = 1958601165;
+    uint32_t futureTime = 1958601165;
     struct timeval now;
     ASSERT_EQ(0, cb_get_timeofday(&now));
     ASSERT_LT(now.tv_sec, futureTime);
@@ -2467,11 +2467,11 @@ TEST_P(STParameterizedBucketTest, MB_39993_ReplicateDeleteTimePast) {
     struct timeval now;
     ASSERT_EQ(0, cb_get_timeofday(&now));
     // 6 hours in the past.
-    time_t pastTime = now.tv_sec - (6 * 60 * 60);
+    uint32_t pastTime = gsl::narrow<uint32_t>(now.tv_sec - (6 * 60 * 60));
     test_replicateDeleteTime(pastTime);
 }
 
-void STParameterizedBucketTest::test_replicateDeleteTime(time_t deleteTime) {
+void STParameterizedBucketTest::test_replicateDeleteTime(uint32_t deleteTime) {
     // We need a replica VB
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_replica);
 
@@ -3069,7 +3069,7 @@ TEST_P(STParameterizedBucketTest, enable_expiry_output) {
     // Finally expire a key and check that the delete_time we receive is not the
     // expiry time, the delete time should always be re-created by the server to
     // ensure old/future expiry times don't disrupt tombstone purging (MB-33919)
-    auto expiryTime = ep_real_time() + 32000;
+    const auto expiryTime = makeExpiryTime(32000);
     store_item(
             vbid, {"KEY3", DocKeyEncodesCollectionId::No}, "value", expiryTime);
 
@@ -3121,7 +3121,7 @@ TEST_P(XattrSystemUserTest, MB_29040) {
     store_item(vbid,
                {"key", DocKeyEncodesCollectionId::No},
                createXattrValue("{}", GetParam()),
-               ep_real_time() + 1 /*1 second TTL*/,
+               makeExpiryTime(1),
                {cb::engine_errc::success},
 
                PROTOCOL_BINARY_DATATYPE_XATTR | PROTOCOL_BINARY_DATATYPE_JSON);
@@ -3967,7 +3967,7 @@ void STParamPersistentBucketTest::backfillExpiryOutput(bool xattr) {
 
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
     // Expire a key;
-    auto expiryTime = ep_real_time() + 256;
+    const auto expiryTime = makeExpiryTime(256);
 
     std::string value;
     if (xattr) {
@@ -4066,7 +4066,7 @@ TEST_P(STParameterizedBucketTest, slow_stream_backfill_expiry) {
     setVBucketStateAndRunPersistTask(vbid, vbucket_state_active);
 
     // Expire a key;
-    auto expiryTime = ep_real_time() + 32000;
+    const auto expiryTime = makeExpiryTime(32000);
     store_item(
             vbid, {"KEY3", DocKeyEncodesCollectionId::No}, "value", expiryTime);
 
@@ -4357,7 +4357,7 @@ TEST_P(STParameterizedBucketTest, produce_delete_times) {
 
     // Finally expire a key and check that the delete_time we receive is the
     // expiry time, not actually the time it was deleted.
-    auto expiryTime = ep_real_time() + 32000;
+    const auto expiryTime = makeExpiryTime(32000);
     store_item(
             vbid, {"KEY3", DocKeyEncodesCollectionId::No}, "value", expiryTime);
 
@@ -4987,7 +4987,8 @@ TEST_P(STParamPersistentBucketTest, BgFetcherMaintainsVbOrdering) {
     store->setVBucketState(vbid, vbucket_state_active);
     flushVBucketToDiskIfPersistent(vbid, 0);
 
-    auto secondVbid = Vbid(engine->getConfiguration().getMaxNumShards());
+    auto secondVbid = Vbid(gsl::narrow_cast<Vbid::id_type>(
+            engine->getConfiguration().getMaxNumShards()));
     store->setVBucketState(secondVbid, vbucket_state_active);
     flushVBucketToDiskIfPersistent(secondVbid, 0);
 

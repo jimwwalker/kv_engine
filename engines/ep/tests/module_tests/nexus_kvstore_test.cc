@@ -545,7 +545,7 @@ TEST_P(NexusKVStoreTest, SecondaryExpiresFromSameTime) {
 
     // Expire this item in the future
     auto expiredKey = makeStoredDocKey("key");
-    auto timeNow = ep_real_time();
+    auto timeNow = gsl::narrow<uint32_t>(ep_real_time());
     store_item(vbid, expiredKey, "value", timeNow + 10 /*exptime*/);
     flushVBucketToDiskIfPersistent(vbid, 1);
 
@@ -687,7 +687,7 @@ TEST_P(NexusKVStoreTest, ConcurrentCompactionPurgeFromOneKVStore) {
                 flushVBucketToDiskIfPersistent(vbid, 1);
             };
 
-    TimeTraveller t(std::numeric_limits<int>::max());
+    TimeTraveller t(std::numeric_limits<uint64_t>::max());
     runCompaction(vbid);
 
     // Reset and warmup to test that nexus pre-loads purge seqnos correctly.
@@ -729,7 +729,7 @@ TEST_P(NexusKVStoreTest, ConcurrentCompactionLogicalDeletionToOneKVStore) {
                 flushVBucketToDiskIfPersistent(vbid, 1);
             };
 
-    TimeTraveller t(std::numeric_limits<int>::max());
+    TimeTraveller t(std::numeric_limits<uint64_t>::max());
     runCompaction(vbid);
 }
 
@@ -774,7 +774,7 @@ TEST_P(NexusKVStoreTest, ConcurrentCompactionFlushResurrection) {
                 flushVBucketToDiskIfPersistent(vbid, 2);
             };
 
-    TimeTraveller t(std::numeric_limits<int>::max());
+    TimeTraveller t(std::numeric_limits<uint64_t>::max());
     runCompaction(vbid);
 }
 TEST_P(NexusKVStoreTest, PrimarySecondaryStats) {

@@ -178,7 +178,7 @@ std::string createXattrValue(const std::string& body,
     return data;
 }
 
-TimeTraveller::TimeTraveller(int by) : by(by) {
+TimeTraveller::TimeTraveller(uint64_t by) : by(by) {
     mock_time_travel(by);
 }
 

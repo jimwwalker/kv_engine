@@ -109,7 +109,7 @@ static void waiter(SyncTestThread<T> &t) { t.join(); }
 
 template <typename T>
 std::vector<T> getCompletedThreads(size_t n, Generator<T> *gen) {
-    CountDownLatch startingLine(n), pistol(1);
+    CountDownLatch startingLine(gsl::narrow_cast<int>(n)), pistol(1);
 
     SyncTestThread<T> proto(&startingLine, &pistol, gen);
     std::vector<SyncTestThread<T> > threads(n, proto);
