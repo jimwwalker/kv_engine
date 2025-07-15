@@ -587,3 +587,8 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
                                   -Wshorten-64-to-32
                                   -Wimplicit-int-conversion)
 endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(ep_engine_benchmarks PRIVATE
+                                  -Wshorten-64-to-32
+                                  -Wimplicit-int-conversion)
+endif()
