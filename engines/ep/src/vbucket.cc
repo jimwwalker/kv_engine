@@ -3187,6 +3187,7 @@ GetValue VBucket::getLocked(std::chrono::seconds lockTimeout,
         }
 
         const auto currentUptimeSeconds = ep_current_time();
+
         // if v is locked return error
         if (v->isLocked(currentUptimeSeconds)) {
             return GetValue(nullptr, cb::engine_errc::locked_tmpfail);
@@ -3209,11 +3210,17 @@ GetValue VBucket::getLocked(std::chrono::seconds lockTimeout,
         // "risk" against an overflow of the rel_time_t type. MB-67520 does not
         // aim to add a new failure point into the code. Later MB-67776 could
         // add explicit overflow checks and a cleaner failure path.
-        const auto lockUntil = gsl::narrow_cast<rel_time_t>(
-                currentUptimeSeconds + lockTimeout.count());
+        uint64_t lockUntil = currentUptimeSeconds + lockTimeout.count();
+        if (lockUntil > std::numeric_limits<uint32>::max()) {
+            EP_LOG_WARN_CTX(
+                    "VBucket::getLocked: overflow in lock expiry calculation",
+                    {"now", currentUptimeSeconds},
+                    {"lock_timeout", lockTimeout});
+            return cb::makeEngineErrorItemPair(cb::engine_errc::failed);
+        }
 
         // acquire lock and increment cas value
-        v->lock(lockUntil, nextHLCCas());
+        v->lock(gsl::narrow_cast<rel_time_t>(lockUntil), nextHLCCas());
 
         auto it = v->toItem(getId());
         it->setCas(v->getCasForWrite(currentUptimeSeconds));

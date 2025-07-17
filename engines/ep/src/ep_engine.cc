@@ -2753,7 +2753,21 @@ cb::EngineErrorItemPair EventuallyPersistentEngine::getLockedInner(
         lock_timeout = getGetlDefaultTimeout();
     }
 
+<<<<<<< HEAD
     auto result = kvBucket->getLocked(key, vbucket, lock_timeout, &cookie);
+=======
+    const auto now = ep_current_time();
+    if (now + lock_timeout > std::numeric_limits<uint32>::max()) {
+        EP_LOG_WARN_CTX(
+            "EventuallyPersistentEngine::getLockedInner: overflow in lock expiry calculation",
+            {"now", now},
+            {"lock_timeout", lock_timeout});
+        return cb::makeEngineErrorItemPair(cb::engine_errc::failed);
+    }
+
+    auto result = kvBucket->getLocked(
+            key, vbucket, now, lock_timeout, &cookie);
+>>>>>>> 94407307d (Totoro: overflow handling in getLocked needs a test)
 
     if (result.getStatus() == cb::engine_errc::success) {
         ++stats.numOpsGet;
