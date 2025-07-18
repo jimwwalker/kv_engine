@@ -393,9 +393,15 @@ void UptimeClock::doSteadyClockCheck(steady_clock::time_point now,
             steadyClockCheckWarnings);
 }
 
-UptimeClock& UptimeClock::instance() {
-    static UptimeClock uptimeClock;
-    return uptimeClock;
+UptimeClock& UptimeClock::instance(std::unique_ptr<UptimeClock> uptimeClock) {
+    static std::unique_ptr<UptimeClock> uptimeClockPtr;
+    if (!uptimeClockPtr) {
+        uptimeClockPtr = std::make_unique<UptimeClock>();
+    }
+    if (uptimeClock) {
+        uptimeClockPtr = std::move(uptimeClock);
+    }
+    return *uptimeClockPtr;
 }
 
 } // namespace cb::time

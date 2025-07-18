@@ -502,3 +502,25 @@ TEST_F(McTimeUptimeTest, ConsistentUptimeLagLargerThan1s) {
                     .count();
     EXPECT_NEAR(mcTime, duration_cast<seconds>(systemTime).count(), 1);
 }
+
+TEST_F(McTimeUptimeTest, MB_60000) {
+    uint64_t steadyTime = 10;
+    uint64_t systemTime = std::numeric_limits<uint32_t>::max() - 1;
+    cb::time::SteadyClock steadyClock = [&steadyTime]() {
+        return std::chrono::steady_clock::time_point(
+                std::chrono::seconds(steadyTime));
+    };
+    cb::time::SystemClock systemClock = [&systemTime]() {
+        return std::chrono::system_clock::time_point(
+                std::chrono::seconds(systemTime));
+    };
+    auto uptimeClock =
+            std::make_unique<cb::time::UptimeClock>(steadyClock, systemClock);
+    cb::time::UptimeClock::instance(std::move(uptimeClock));
+
+    // If the systemTime was very large when started, then the expiry time can
+    // be out of range for the defined expiry field of 32-bits.
+    time_t expiretime =
+            mc_time_convert_to_abs_time(mc_time_convert_to_real_time(2));
+    EXPECT_GT(expiretime, std::numeric_limits<uint32_t>::max());
+}

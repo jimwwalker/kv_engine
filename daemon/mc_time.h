@@ -292,7 +292,8 @@ public:
     }
 
     /// @return the instance of this to be used in memcached
-    static UptimeClock& instance();
+    static UptimeClock& instance(
+            std::unique_ptr<UptimeClock> uptimeClock = nullptr);
 
 protected:
     /**
