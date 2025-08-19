@@ -1285,6 +1285,21 @@ void PassiveStream::generateCacheTransferRequest(
         // semantics are maintained.
         stream_req_json["cts"]["key_only"] = true;
     }
+    // Generate memory status for one vbucket
+    const auto totalMem = engine->getEpStats().getEstimatedTotalMemoryUsed();
+    const auto mem_high_wat = engine->getEpStats().mem_low_wat.load();
+    size_t freeMem = 0;
+    if (totalMem < mem_high_wat) {
+        freeMem = mem_high_wat - totalMem;
+        freeMem /= (engine->getKVBucket()->getNumOfVBucketsInState(
+                            vbucket_state_active) +
+                    engine->getKVBucket()->getNumOfVBucketsInState(
+                            vbucket_state_replica) +
+                    engine->getKVBucket()->getNumOfVBucketsInState(
+                            vbucket_state_pending));
+    }
+    // should probably undo CacheTransfer request if over HWM... TODO!!!
+    stream_req_json["cts"] = {{"free_memory", freeMem}};
 }
 
 void PassiveStream::logWithContext(spdlog::level::level_enum severity,

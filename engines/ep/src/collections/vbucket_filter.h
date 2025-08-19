@@ -278,6 +278,14 @@ public:
     }
 
     /**
+     * @return the free memory available for cache transfer (value provided by
+     * peer)
+     */
+    std::optional<size_t> getCacheTransferFreeMemory() const {
+        return cacheTransferFreeMemory;
+    }
+
+    /**
      * Dump this to std::cerr
      */
     void dump() const;
@@ -375,6 +383,7 @@ protected:
     bool scopeIsDropped = false;
     bool defaultAllowed = false;
     bool cacheTransferKeyOnly = false;
+    std::optional<size_t> cacheTransferFreeMemory;
     uint64_t remotePurgeSeqno{0};
 
     enum class FilterType {

@@ -434,6 +434,74 @@ TEST_P(DcpCacheTransferTest, CacheTransfer_then_ActiveStream_2) {
     EXPECT_EQ(producers.last_dockey, k4);
 }
 
+// For now the requester could say they have nothing free and we end
+// "immediately". There's no special case for this, we will visit the HT and
+// end. This just testing the minimal creation and end.
+TEST_P(DcpCacheTransferTest, no_memory_available) {
+    expectedItems.insert(store_item(Vbid(0), makeStoredDocKey("k2"), "2"));
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->streamRequest(
+                      cb::mcbp::DcpAddStreamFlag::CacheTransfer,
+                      1,
+                      Vbid(0),
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      store->getVBucket(vbid)->failovers->getLatestUUID(),
+                      0,
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      nullptr,
+                      mock_dcp_add_failover_log,
+                      R"({"cts":{"free_memory":0}})"));
+
+    runCacheTransferTask();
+
+    MockDcpMessageProducers producers;
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->stepAndExpect(producers,
+                                      cb::mcbp::ClientOpcode::DcpStreamEnd));
+    EXPECT_EQ(cb::mcbp::DcpStreamEndStatus::Ok, producers.last_end_status);
+}
+
+TEST_P(DcpCacheTransferTest, some_memory_available) {
+    // This test will not return all the keys, but is sized to return 3 of the 4
+    // candidates. There is no ordering and we only expect any 3.
+    expectedItems.insert(store_item(Vbid(0), makeStoredDocKey("k2"), "a"));
+    expectedItems.insert(store_item(Vbid(0), makeStoredDocKey("k3"), "b"));
+    expectedItems.insert(store_item(Vbid(0), makeStoredDocKey("k4"), "c"));
+
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->streamRequest(
+                      cb::mcbp::DcpAddStreamFlag::CacheTransfer,
+                      1,
+                      Vbid(0),
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      store->getVBucket(vbid)->failovers->getLatestUUID(),
+                      0,
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      nullptr,
+                      mock_dcp_add_failover_log,
+                      R"({"cts":{"free_memory":180}})"));
+
+    runCacheTransferTask();
+
+    MockDcpMessageProducers producers;
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(cb::engine_errc::success,
+                  producer->stepAndExpect(
+                          producers, cb::mcbp::ClientOpcode::DcpCachedValue));
+        EXPECT_EQ(1,
+                  std::ranges::count_if(expectedItems, [&](const auto& item) {
+                      return item.getKey() == producers.last_dockey;
+                  }));
+    }
+
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->stepAndExpect(producers,
+                                      cb::mcbp::ClientOpcode::DcpStreamEnd));
+    EXPECT_EQ(cb::mcbp::DcpStreamEndStatus::Ok, producers.last_end_status);
+}
+
 TEST_P(DcpCacheTransferTest, key_only_transfer) {
     expectedItems.insert(store_item(Vbid(0), makeStoredDocKey("k2"), "2"));
 
