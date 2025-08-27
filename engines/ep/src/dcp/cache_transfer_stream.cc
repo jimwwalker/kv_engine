@@ -383,9 +383,15 @@ void CacheTransferStream::cancelTransfer() {
 void CacheTransferStream::addTakeoverStats(const AddStatFn& add_stat,
                                            CookieIface& c,
                                            const VBucket& vb) {
-    // @todo: figure out if we need to provide takeover stats.
-    // We certainly need to provide some stats if the CTS is created during
-    // takeover.
+    // Need to provide takeover stats for the cache transfer
+    // stream so that ns_server doesn't abort a VB takeover
+    // during the transfer.
+    add_casted_stat("name", name_, add_stat, c);
+    add_casted_stat("status", "in-memory", add_stat, c);
+    add_casted_stat("estimate", 1, add_stat, c);
+    add_casted_stat("chk_items", 1, add_stat, c);
+    add_casted_stat("vb_items", 1, add_stat, c);
+    add_casted_stat("on_disk_deletes", 0, add_stat, c);
 }
 
 std::string CacheTransferStream::getStreamTypeName() const {
