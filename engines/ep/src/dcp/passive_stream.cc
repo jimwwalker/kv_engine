@@ -121,8 +121,7 @@ void PassiveStream::streamRequest_UNLOCKED(uint64_t vb_uuid) {
                      {"vb_uuid", vb_uuid},
                      {"snapshot", {snap_start_seqno_, snap_end_seqno_}},
                      {"last_seqno", last_seqno.load()},
-                     {"stream_req_value",
-                      stream_req_value.empty() ? "none" : stream_req_value},
+                     {"stream_req_value", stream_req_value},
                      {"flags", flags_});
 }
 
@@ -1178,12 +1177,7 @@ void PassiveStream::addStats(const AddStatFn& add_stat, CookieIface& c) {
                         add_stat,
                         c);
 
-        auto stream_req_value = createStreamReqValue();
-
-        if (!stream_req_value.empty()) {
-            add_casted_stat(
-                    "vb_manifest_uid", stream_req_value.c_str(), add_stat, c);
-        }
+        add_casted_stat("request_value", createStreamReqValue(), add_stat, c);
 
     } catch (std::exception& error) {
         OBJ_LOG_INFO_CTX(*this,
@@ -1261,7 +1255,19 @@ std::string PassiveStream::createStreamReqValue() const {
     std::ostringstream ostr;
     ostr << std::hex << static_cast<uint64_t>(vb_manifest_uid);
     stream_req_json["uid"] = ostr.str();
+    if (isFlagSet(getFlags(), cb::mcbp::DcpAddStreamFlag::CacheTransfer)) {
+        generateCacheTransferRequest(stream_req_json);
+    }
     return stream_req_json.dump();
+}
+
+void PassiveStream::generateCacheTransferRequest(
+        nlohmann::json& stream_req_json) const {
+    if (engine->getKVBucket()->isValueEviction()) {
+        // At a minimum key only transfer is required to ensure value eviction
+        // semantics are maintained.
+        stream_req_json["cts"]["key_only"] = true;
+    }
 }
 
 void PassiveStream::logWithContext(spdlog::level::level_enum severity,
@@ -1441,13 +1447,37 @@ cb::engine_errc PassiveStream::processCachedValue(
         return cb::engine_errc::not_my_vbucket;
     }
 
-    engine->getEpStats().cacheTransferBytesRead += resp.getItem()->size();
-
-    vb->ht.upsertItem(
-            *resp.getItem(),
-            /*eject*/ false,
-            /*keyMetaDataOnly*/ false,
-            /*evictionPolicy*/ engine->getKVBucket()->getItemEvictionPolicy());
+    // upsert with no memory check. DCP should only be progressing forwards with
+    // messages when memory is available (see normal mutation path for
+    // equivalent where EnforceMemCheck is No)
+    const auto mutationStatus =
+            vb->upsertToHashTable(*resp.getItem(),
+                                  false,
+                                  engine->getKVBucket()->isValueEviction(),
+                                  false);
+    switch (mutationStatus) {
+    case MutationStatus::InvalidCas:
+        // CacheTransfer hit a clash...
+        return cb::engine_errc::disconnect;
+    case MutationStatus::NotFound:
+        // This is a success case, so we can increment the cache transfer bytes
+        // read.
+        engine->getEpStats().cacheTransferBytesRead += resp.getItem()->size();
+        break;
+    case MutationStatus::NoMem:
+    case MutationStatus::WasClean:
+    case MutationStatus::WasDirty:
+    case MutationStatus::IsLocked:
+    case MutationStatus::NeedBgFetch:
+    case MutationStatus::IsPendingSyncWrite:
+        OBJ_LOG_WARN_CTX(
+                *this,
+                "PassiveStream::processCachedValue: invalid mutationStatus "
+                "from upsertToHashTable",
+                {"vb", vb_},
+                {"mutation_status", ::to_string(mutationStatus)});
+        return cb::engine_errc::disconnect;
+    }
 
     return cb::engine_errc::success;
 }

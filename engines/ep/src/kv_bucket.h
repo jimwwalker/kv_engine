@@ -654,6 +654,10 @@ public:
         return eviction_policy;
     }
 
+    bool isValueEviction() const {
+        return eviction_policy == EvictionPolicy::Value;
+    }
+
     /**
      * Check if this bucket supports eviction from replica vbuckets.
      */

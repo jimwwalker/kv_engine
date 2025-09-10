@@ -169,7 +169,8 @@ std::shared_ptr<ProducerStream> MockDcpProducer::makeStream(
                 req,
                 vb.getId(),
                 engine_,
-                includeValue,
+                filter.isCacheTransferKeyOnly() ? IncludeValue::No
+                                                : IncludeValue::Yes,
                 std::move(filter));
     }
     return std::make_shared<MockActiveStream>(

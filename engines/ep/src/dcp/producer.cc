@@ -457,7 +457,8 @@ std::shared_ptr<ProducerStream> DcpProducer::makeStream(
                 req,
                 vb.getId(),
                 engine_,
-                IncludeValue::Yes,
+                filter.isCacheTransferKeyOnly() ? IncludeValue::No
+                                                : IncludeValue::Yes,
                 std::move(filter));
     }
     return makeActiveStream(opaque, req, vb, std::move(filter));

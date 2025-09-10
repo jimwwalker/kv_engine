@@ -4543,3 +4543,14 @@ failover_entry_t VBucket::processFailover() {
     createFailoverEntry(checkpointManager->getFailoverSeqno());
     return failovers->getLatestEntry();
 }
+
+MutationStatus VBucket::upsertToHashTable(Item& itm,
+                                          bool eject,
+                                          bool keyMetaDataOnly,
+                                          bool checkMemUsed) {
+    if (checkMemUsed && !hasMemoryForStoredValue(itm)) {
+        return MutationStatus::NoMem;
+    }
+
+    return ht.upsertItem(itm, eject, keyMetaDataOnly, eviction);
+}

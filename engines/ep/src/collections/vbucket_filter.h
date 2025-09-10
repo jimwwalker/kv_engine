@@ -269,6 +269,14 @@ public:
         return remotePurgeSeqno;
     }
 
+    /*
+     * @return true if the stream-request JSON contained "cts" and "key_only"
+     * was true
+     */
+    bool isCacheTransferKeyOnly() const {
+        return cacheTransferKeyOnly;
+    }
+
     /**
      * Dump this to std::cerr
      */
@@ -366,6 +374,7 @@ protected:
     cb::mcbp::DcpStreamId streamId = {};
     bool scopeIsDropped = false;
     bool defaultAllowed = false;
+    bool cacheTransferKeyOnly = false;
     uint64_t remotePurgeSeqno{0};
 
     enum class FilterType {

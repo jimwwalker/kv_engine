@@ -358,6 +358,13 @@ protected:
      */
     ProcessMessageResult forceMessage(DcpResponse& resp);
 
+    /**
+     * Add any cache transfer request configuration to the given json object.
+     * @param stream_req_json [outin] The stream request
+     *                        json to add the cache* transfer request to.
+     */
+    void generateCacheTransferRequest(nlohmann::json& stream_req_json) const;
+
     // The current state the stream is in.
     // Atomic to allow reads without having to acquire the streamMutex.
     std::atomic<StreamState> state_{StreamState::Pending};

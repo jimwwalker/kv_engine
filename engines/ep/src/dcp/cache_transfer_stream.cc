@@ -433,7 +433,7 @@ CacheTransferStream::Status CacheTransferStream::maybeQueueItem(
         return Status::KeepVisiting;
     }
 
-    // 4. Do checks for a value transfer, these don't apply if the only a
+    // 4. Do checks for a value transfer, these don't apply if only a
     // key/meta transfer is requested.
     if (includeValue == IncludeValue::Yes) {
         // 4.1 If not resident, it is not eligible.

@@ -49,6 +49,8 @@ public:
      * @param endSeqno The end sequence number for the stream (i.e. switch to
      * ActiveStream at this seqno)
      * @param includeValue Whether to include the value in the stream
+     * @param streamRequestValue A stream request value (json), this is consumed
+     * by Collections::VB::Filter
      * @return A pointer to the created stream
      */
     std::shared_ptr<MockCacheTransferStream> createStream(
@@ -57,9 +59,12 @@ public:
             Vbid vbid,
             uint64_t cacheMaxSeqno,
             uint64_t endSeqno,
-            IncludeValue includeValue) {
-        Collections::VB::Filter f(
-                "", store->getVBucket(vbid)->getManifest(), *cookie, *engine);
+            IncludeValue includeValue,
+            std::string_view streamRequestValue = "") {
+        Collections::VB::Filter f(streamRequestValue,
+                                  store->getVBucket(vbid)->getManifest(),
+                                  *cookie,
+                                  *engine);
         StreamRequestInfo req{
                 cb::mcbp::DcpAddStreamFlag::CacheTransfer,
                 0, /*uuid not used*/
@@ -427,6 +432,47 @@ TEST_P(DcpCacheTransferTest, CacheTransfer_then_ActiveStream_2) {
                                       cb::mcbp::ClientOpcode::DcpMutation));
     EXPECT_EQ(4, producers.last_byseqno);
     EXPECT_EQ(producers.last_dockey, k4);
+}
+
+TEST_P(DcpCacheTransferTest, key_only_transfer) {
+    expectedItems.insert(store_item(Vbid(0), makeStoredDocKey("k2"), "2"));
+
+    // CTS options are expressed in the JSON stream-request value
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->streamRequest(
+                      cb::mcbp::DcpAddStreamFlag::CacheTransfer,
+                      1,
+                      Vbid(0),
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      store->getVBucket(vbid)->failovers->getLatestUUID(),
+                      0,
+                      store->getVBucket(vbid)->getHighSeqno(),
+                      nullptr,
+                      mock_dcp_add_failover_log,
+                      R"({"cts":{"key_only":true}})"));
+
+    runCacheTransferTask();
+
+    MockDcpMessageProducers producers;
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->stepAndExpect(producers,
+                                      cb::mcbp::ClientOpcode::DcpCachedValue));
+    EXPECT_EQ(1, std::ranges::count_if(expectedItems, [&](const auto& item) {
+                  return item.getKey() == producers.last_dockey;
+              }));
+    EXPECT_TRUE(producers.last_value.empty());
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->stepAndExpect(producers,
+                                      cb::mcbp::ClientOpcode::DcpCachedValue));
+    EXPECT_EQ(1, std::ranges::count_if(expectedItems, [&](const auto& item) {
+                  return item.getKey() == producers.last_dockey;
+              }));
+    EXPECT_TRUE(producers.last_value.empty());
+    EXPECT_EQ(cb::engine_errc::success,
+              producer->stepAndExpect(producers,
+                                      cb::mcbp::ClientOpcode::DcpStreamEnd));
+    EXPECT_EQ(cb::mcbp::DcpStreamEndStatus::Ok, producers.last_end_status);
 }
 
 INSTANTIATE_TEST_SUITE_P(DcpCacheTransferTest,

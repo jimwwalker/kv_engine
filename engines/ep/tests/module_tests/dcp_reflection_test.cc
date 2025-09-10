@@ -697,7 +697,7 @@ DCPLoopbackTestHelper::DcpRoute::doStreamRequest(
                                          sr->getSnapEndSeqno(),
                                          &rollbackSeqno,
                                          fakeDcpAddFailoverLog,
-                                         {});
+                                         sr->getRequestValue());
     if (error == cb::engine_errc::success) {
         if (!isFlagSet(sr->getFlags(),
                        cb::mcbp::DcpAddStreamFlag::CacheTransfer)) {
@@ -2917,7 +2917,8 @@ TEST_P(DCPCacheTransfer, CacheTransfer) {
     for (const auto& key : keys) {
         ASSERT_TRUE(replicaVB->ht.findForRead(key).storedValue);
         EXPECT_FALSE(replicaVB->ht.findForRead(key).storedValue->isDirty());
-        EXPECT_TRUE(replicaVB->ht.findForRead(key).storedValue->isResident());
+        EXPECT_EQ(isFullEviction(),
+                  replicaVB->ht.findForRead(key).storedValue->isResident());
     }
     // Nothing is for flushing
     EXPECT_EQ(0, replicaVB->dirtyQueueSize);

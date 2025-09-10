@@ -122,7 +122,8 @@ TEST_F(CollectionsVBFilterTest, junk_in) {
                                        R"({"collections:[a]})",
                                        R"({"scope":"1", "collections:[a])",
                                        R"({"purge_seqno":1})",
-                                       R"({"purge_seqno":"p"})"};
+                                       R"({"purge_seqno":"p"})",
+                                       R"({"cts":{"key_only":1}})"};
 
     for (const auto& s : inputs) {
         std::optional<std::string_view> json(s);
@@ -343,6 +344,22 @@ TEST_F(CollectionsVBFilterTest, purge_seqno) {
     Collections::VB::Filter f(json, vb->getManifest(), *cookie, *engine);
     EXPECT_EQ(8, f.getRemotePurgeSeqno());
 }
+
+/**
+ * Test cache transfer options
+ */
+TEST_F(CollectionsVBFilterTest, cache_transfer_options) {
+    nlohmann::json stream_req_json;
+    std::ostringstream ostr;
+    ostr << std::hex << static_cast<uint64_t>(2);
+    stream_req_json["uid"] = ostr.str();
+    stream_req_json["cts"] = {{"key_only", true}};
+    std::string input = R"({"cts":{"key_only":true}})";
+    std::optional<std::string_view> json(input);
+    Collections::VB::Filter f(json, vb->getManifest(), *cookie, *engine);
+    EXPECT_TRUE(f.isCacheTransferKeyOnly());
+}
+
 // class exposes some of the internal state flags
 class CollectionsTestFilter : public Collections::VB::Filter {
 public:

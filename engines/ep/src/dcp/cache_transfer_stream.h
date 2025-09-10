@@ -154,7 +154,14 @@ protected:
     /// Reference to the engine owning this producer/stream.
     EventuallyPersistentEngine& engine;
 
-    /// Configuration: Stream will send keys or keys+value
+    /**
+     * Configured by client using stream request value with:
+     *      {"cts": {"key_only": true}}
+     * A key-only transfer will transmit every key/meta found in the cache,
+     * even non-resident keys. The primary use-case for this mode is
+     * value-eviction functionality where at a minimum all keys must be
+     * transferred before a vbucket can become active.
+     */
     IncludeValue includeValue = IncludeValue::Yes;
 
     /// Total bytes queued
