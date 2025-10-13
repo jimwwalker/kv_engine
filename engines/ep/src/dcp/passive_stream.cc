@@ -1297,9 +1297,11 @@ void PassiveStream::generateCacheTransferRequest(
                             vbucket_state_replica) +
                     engine->getKVBucket()->getNumOfVBucketsInState(
                             vbucket_state_pending));
+        stream_req_json["cts"] = {{"free_memory", freeMem}};
+    } else {
+        // Remove CacheTransfer flag if over HWM
+        // flags = flags & ~DcpAddStreamFlag::CacheTransfer;
     }
-    // should probably undo CacheTransfer request if over HWM... TODO!!!
-    stream_req_json["cts"] = {{"free_memory", freeMem}};
 }
 
 void PassiveStream::logWithContext(spdlog::level::level_enum severity,
