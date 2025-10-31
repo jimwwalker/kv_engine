@@ -200,6 +200,7 @@ VBucket::VBucket(Vbid i,
                  Configuration& config,
                  EvictionPolicy evictionPolicy,
                  std::unique_ptr<Collections::VB::Manifest> manifest,
+                 CreateVbucketMethod creationMethod,
                  KVBucket* bucket,
                  vbucket_state_t initState,
                  uint64_t purgeSeqno,
@@ -259,6 +260,7 @@ VBucket::VBucket(Vbid i,
                                                             maxPrepareSeqno,
                                                             flusherCb)),
       syncWriteTimeoutFactory(std::move(syncWriteTimeoutFactory)),
+      creationMethod(creationMethod),
       replicationTopology(nlohmann::json().dump()),
       purge_seqno(purgeSeqno),
       takeover_backed_up(false),
@@ -737,6 +739,9 @@ void VBucket::setState_UNLOCKED(
     setupSyncReplication(vbStateLock, meta ? &meta->at("topology") : nullptr);
 
     updateStatsForStateChange(oldstate, to);
+
+    // Any state change and CTS is disabled for the vbucket
+    disableCacheTransfer();
 }
 
 vbucket_transition_state VBucket::getTransitionState() const {
@@ -3448,6 +3453,7 @@ void VBucket::_addStats(VBucketStatsDetailLevel detail,
                 c);
         addStat("persistence_seqno", getPersistenceSeqno(), add_stat, c);
         hlc.addStats(statPrefix, add_stat, c);
+        addStat("creation_method", to_string(creationMethod), add_stat, c);
     }
         // fallthrough
     case VBucketStatsDetailLevel::Durability:

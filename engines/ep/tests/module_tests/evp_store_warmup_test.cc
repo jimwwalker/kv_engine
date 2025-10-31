@@ -97,6 +97,9 @@ TEST_F(WarmupTest, setFreqSaturatedCallback) {
     auto itemFreqTask =
             dynamic_cast<MockEPBucket*>(store)->getMockItemFreqDecayerTask();
     auto vb = engine->getKVBucket()->getVBucket(vbid);
+    EXPECT_FALSE(vb->shouldUseDcpCacheTransfer());
+    EXPECT_EQ(CreateVbucketMethod::Warmup, vb->getCreationMethod());
+
     // The FreqSaturatedCallback should be initialised
     EXPECT_TRUE(vb->ht.getFreqSaturatedCallback());
     ASSERT_FALSE(itemFreqTask->wakeupCalled);
@@ -119,6 +122,8 @@ TEST_F(WarmupTest, hlcEpoch) {
 
     {
         auto vb = engine->getKVBucket()->getVBucket(vbid);
+        EXPECT_FALSE(vb->shouldUseDcpCacheTransfer());
+
         // We've warmed up from a down-level vbstate, so expect epoch to be
         // HlcCasSeqnoUninitialised
         ASSERT_EQ(HlcCasSeqnoUninitialised, vb->getHLCEpochSeqno());
@@ -139,6 +144,8 @@ TEST_F(WarmupTest, hlcEpoch) {
     resetEngineAndWarmup();
     auto vb = engine->getKVBucket()->getVBucket(vbid);
     EXPECT_EQ(2, vb->getHLCEpochSeqno());
+    EXPECT_FALSE(vb->shouldUseDcpCacheTransfer());
+    EXPECT_EQ(CreateVbucketMethod::Warmup, vb->getCreationMethod());
 
     // key1 stored before we established the epoch should have cas_is_hlc==false
     auto item1 = store->get(makeStoredDocKey("key1"), vbid, cookie, {});

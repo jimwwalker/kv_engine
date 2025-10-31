@@ -3307,6 +3307,13 @@ TEST_P(EPBucketTestCouchstore, LoadVBucketFromLocalSnapshot) {
         runNextTask(taskQ, "Loading VBucket vb:0");
     }
 
+    auto vb = store->getVBucket(vbid);
+    ASSERT_TRUE(vb);
+    EXPECT_EQ(vbucket_state_active, vb->getState());
+    EXPECT_EQ(1, vb->getHighSeqno());
+    EXPECT_TRUE(vb->shouldUseDcpCacheTransfer());
+    EXPECT_EQ(CreateVbucketMethod::FBR, vb->getCreationMethod());
+
     const auto options = static_cast<get_options_t>(
             QUEUE_BG_FETCH | HONOR_STATES | TRACK_REFERENCE | DELETE_TEMP |
             HIDE_LOCKED_CAS | TRACK_STATISTICS | GET_DELETED_VALUE);
