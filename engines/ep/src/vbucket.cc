@@ -699,6 +699,7 @@ void VBucket::setState_UNLOCKED(
         const nlohmann::json* meta,
         const std::unique_lock<folly::SharedMutex>& vbStateLock) {
     vbucket_state_t oldstate = state;
+    const bool changingState = to != oldstate;
 
     // Validate (optional) meta content.
     if (meta) {
@@ -740,8 +741,14 @@ void VBucket::setState_UNLOCKED(
 
     updateStatsForStateChange(oldstate, to);
 
-    // Any state change and CTS is disabled for the vbucket
-    disableCacheTransfer();
+    if (changingState) {
+        // Any state change and CTS is disabled for the vbucket
+        disableCacheTransfer();
+
+        // Any state change and this vbucket should no longer block a future
+        // rebalance
+        setSnapshotRebalanceCanContinue();
+    }
 }
 
 vbucket_transition_state VBucket::getTransitionState() const {
@@ -3454,6 +3461,10 @@ void VBucket::_addStats(VBucketStatsDetailLevel detail,
         addStat("persistence_seqno", getPersistenceSeqno(), add_stat, c);
         hlc.addStats(statPrefix, add_stat, c);
         addStat("creation_method", to_string(creationMethod), add_stat, c);
+        addStat("snapshot_rebalance_continue",
+                canSnapshotRebalanceContinue(),
+                add_stat,
+                c);
     }
         // fallthrough
     case VBucketStatsDetailLevel::Durability:

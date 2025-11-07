@@ -1246,6 +1246,12 @@ TEST_P(DatatypeStatTest, datatypeEviction) {
     EXPECT_EQ(1, std::stoi(vals["ep_active_datatype_json,xattr"]));
 }
 
+TEST_P(ParameterizedStatTest, snapshotMove) {
+    auto stats = get_stat("snapshot-move 0", {}, true);
+    EXPECT_EQ(1, stats.size());
+    EXPECT_EQ("true", stats.at("vb_0:snapshot_rebalance_continue"));
+}
+
 class EPStatsIntrospector {
 public:
     static void public_setMaxDataSize(EPStats& stats, int value) {

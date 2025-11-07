@@ -3312,6 +3312,45 @@ cb::engine_errc EPBucket::doSnapshotStatus(const StatCollector& collector,
     return cb::engine_errc::success;
 }
 
+cb::engine_errc EPBucket::doSnapshotMoveStats(const StatCollector& collector,
+                                              std::string_view input) {
+    const std::string_view stat_key = "snapshot-move ";
+    // Configure for 1 vbid or all known vbuckets
+    std::vector<Vbid> ids;
+    if (input.size() > stat_key.size()) {
+        // input should be a vbid
+        input.remove_prefix(stat_key.size());
+        uint16_t vbucket_id(0);
+        if (!safe_strtous(input, vbucket_id)) {
+            return cb::engine_errc::invalid_arguments;
+        }
+        ids.emplace_back(vbucket_id);
+    } else {
+        // Populate for all possible vbuckets.
+        for (size_t i = 0; i < vbMap.getSize(); i++) {
+            ids.emplace_back(i);
+        }
+    }
+
+    for (const auto id : ids) {
+        auto vb = getVBucket(id);
+        if (!vb) {
+            continue;
+        }
+
+        static_assert(sizeof(Vbid::id_type) == sizeof(uint16_t),
+                      "key buffer expects u16 id type");
+        std::array<char, sizeof("vb_65535:snapshot_rebalance_continue") + 1>
+                key{};
+        fmt::format_to(
+                key.data(), "vb_{}:snapshot_rebalance_continue", id.get());
+        collector.addStat(std::string_view(key.data(), key.size()),
+                          vb->canSnapshotRebalanceContinue());
+    }
+
+    return cb::engine_errc::success;
+}
+
 cb::engine_errc EPBucket::doSnapshotDeks(const StatCollector& collector) {
     // Populate for all possible vbuckets.
     for (Vbid::id_type i = 0; i < vbMap.getSize(); i++) {

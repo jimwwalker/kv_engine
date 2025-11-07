@@ -99,6 +99,7 @@ TEST_F(WarmupTest, setFreqSaturatedCallback) {
     auto vb = engine->getKVBucket()->getVBucket(vbid);
     EXPECT_FALSE(vb->shouldUseDcpCacheTransfer());
     EXPECT_EQ(CreateVbucketMethod::Warmup, vb->getCreationMethod());
+    EXPECT_TRUE(vb->canSnapshotRebalanceContinue());
 
     // The FreqSaturatedCallback should be initialised
     EXPECT_TRUE(vb->ht.getFreqSaturatedCallback());
