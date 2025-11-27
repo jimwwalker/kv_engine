@@ -7787,3 +7787,11 @@ bool EventuallyPersistentEngine::isDcpSnapshotMarkerPurgeSeqnoEnabled() const {
 bool EventuallyPersistentEngine::isMagmaBlindWriteOptimisationEnabled() const {
     return serverApi->core->isMagmaBlindWriteOptimisationEnabled();
 }
+
+size_t EventuallyPersistentEngine::getFileFragmentChecksumLength() const {
+    return serverApi->core->getFileFragmentChecksumLength();
+}
+
+bool EventuallyPersistentEngine::isFileFragmentChecksumEnabled() const {
+    return serverApi->core->isFileFragmentChecksumEnabled();
+}

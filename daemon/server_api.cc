@@ -100,6 +100,14 @@ struct ServerCoreApi : public ServerCoreIface {
     bool isMagmaBlindWriteOptimisationEnabled() override {
         return Settings::instance().isMagmaBlindWriteOptimisationEnabled();
     }
+
+    bool isFileFragmentChecksumEnabled() override {
+        return Settings::instance().isFileFragmentChecksumEnabled();
+    }
+
+    size_t getFileFragmentChecksumLength() override {
+        return Settings::instance().getFileFragmentChecksumLength();
+    }
 };
 
 void cb::server::document_expired(const EngineIface& engine, size_t nbytes) {

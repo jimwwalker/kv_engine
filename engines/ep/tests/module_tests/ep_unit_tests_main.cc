@@ -110,6 +110,14 @@ public:
     bool isMagmaBlindWriteOptimisationEnabled() override {
         return true;
     }
+
+    bool isFileFragmentChecksumEnabled() override {
+        return true;
+    }
+
+    size_t getFileFragmentChecksumLength() override {
+        return 128;
+    }
 };
 
 int main(int argc, char **argv) {
