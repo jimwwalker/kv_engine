@@ -329,10 +329,14 @@ public:
      * Get the current clustermap version and future vBucket counts for the
      * connected bucket's configuration.
      *
+     * @param last Optional previously returned value for caching. If provided
+     *             and the version matches the current configuration, returns
+     *             the cached value without re-parsing.
      * @return FutureVBucketInfo containing epoch, revno, and optional vBucket
      *         counts, or std::nullopt if no cluster configuration is available
      */
-    virtual std::optional<FutureVBucketInfo> getFutureVbucketCounts() const = 0;
+    virtual std::optional<FutureVBucketInfo> getFutureVbucketCounts(
+            std::optional<FutureVBucketInfo> last = std::nullopt) const = 0;
 
 protected:
     std::atomic<size_t> document_bytes_read = 0;

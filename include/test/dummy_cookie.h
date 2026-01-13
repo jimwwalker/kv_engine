@@ -107,7 +107,8 @@ public:
         throw std::runtime_error("DummyIface::inflateSnappy not implemented()");
     }
 
-    std::optional<FutureVBucketInfo> getFutureVbucketCounts() const override {
+    std::optional<FutureVBucketInfo> getFutureVbucketCounts(
+            std::optional<FutureVBucketInfo> last) const override {
         return std::nullopt;
     }
 

@@ -1098,13 +1098,20 @@ cb::engine_errc Cookie::preLinkDocument(item_info& info) {
     return cb::engine_errc::success;
 }
 
-std::optional<FutureVBucketInfo> Cookie::getFutureVbucketCounts() const {
+std::optional<FutureVBucketInfo> Cookie::getFutureVbucketCounts(
+        std::optional<FutureVBucketInfo> last) const {
     auto& bucket = connection.getBucket();
     auto config = bucket.clusterConfiguration.maybeGetConfiguration(
             ClustermapVersion(), false);
 
     if (!config) {
         return std::nullopt;
+    }
+
+    // If caller provided a cached value, check if version matches
+    if (last &&
+        ClustermapVersion(last->epoch, last->revno) == config->version) {
+        return last;
     }
 
     auto vbucketCounts = cb::getFutureVbucketCounts(config->uncompressed);
