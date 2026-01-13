@@ -1563,13 +1563,19 @@ cb::mcbp::DcpAddStreamFlag PassiveStream::setupForNewStreamRequest(
             // How much memory available below HWM?
             const auto freeMem = hwm - memUsed;
 
-            // freeMem is the amount of memory available per vbucket. Note
-            // that replica cache-transfer is disabled so only consider
-            // active + 1 share.
-            memAvailableForCacheTransfer =
-                    freeMem / (engine->getKVBucket()->getNumOfVBucketsInState(
-                                       vbucket_state_active) +
-                               1);
+            // Calculate memory per vbucket using DcpConsumer, which will
+            // use future vbucket counts from cluster config when available,
+            // falling back to current runtime counts.
+            auto consumer = consumerPtr.lock();
+            if (consumer) {
+                memAvailableForCacheTransfer =
+                        consumer->calculateMemoryPerVBucket(freeMem);
+            } else {
+                // Fallback if consumer is gone (shouldn't normally happen)
+                memAvailableForCacheTransfer =
+                        DcpConsumer::calculateMemoryPerVBucketFallback(*engine,
+                                                                       freeMem);
+            }
         }
 
         if (engine->getKVBucket()->isValueEviction() &&

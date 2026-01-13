@@ -21,6 +21,7 @@
 
 #include <collections/collections_types.h>
 #include <folly/Synchronized.h>
+#include <memcached/cookie_iface.h>
 #include <memcached/dcp_stream_id.h>
 #include <relaxed_atomic.h>
 
@@ -403,6 +404,28 @@ public:
         return cacheTransfer;
     }
 
+    /**
+     * Calculate the amount of memory available per vbucket for cache transfer.
+     * Uses future vbucket counts from cluster configuration when available,
+     * falling back to current runtime counts.
+     *
+     * @param freeMem The total free memory available
+     * @return The memory available per vbucket (freeMem / (activeCount + 1))
+     */
+    size_t calculateMemoryPerVBucket(size_t freeMem);
+
+    /**
+     * Fallback calculation for memory per vbucket using current runtime state.
+     * This is a static helper method that can be used when cluster
+     * configuration data is unavailable.
+     *
+     * @param engine Reference to the engine to query current vbucket counts
+     * @param freeMem The total free memory available
+     * @return The memory available per vbucket (freeMem / (activeCount + 1))
+     */
+    static size_t calculateMemoryPerVBucketFallback(
+            EventuallyPersistentEngine& engine, size_t freeMem);
+
 protected:
     /**
      * Records when the consumer last received a message from producer.
@@ -658,6 +681,13 @@ protected:
      * Non-const as the related configuration param is dynamic.
      */
     std::atomic_bool allowSanitizeValueInDeletion;
+
+    /**
+     * Cached cluster configuration information containing future vbucket
+     * counts. Used to calculate memory allocation for cache transfer based on
+     * planned topology rather than current state.
+     */
+    std::optional<FutureVBucketInfo> futureVBucketInfo;
 
     friend UpdateFlowControl;
 };

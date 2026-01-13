@@ -1755,6 +1755,31 @@ void DcpConsumer::incrFlowControlFreedBytes(size_t bytes) {
     scheduleNotifyIfNecessary();
 }
 
+size_t DcpConsumer::calculateMemoryPerVBucketFallback(
+        EventuallyPersistentEngine& engine, size_t freeMem) {
+    // Get current runtime active vbucket count
+    const auto activeCount =
+            engine.getKVBucket()->getNumOfVBucketsInState(vbucket_state_active);
+    // Divide by current activeCount + 1 to get per-vbucket allocation.
+    // +1 to account for the new vbucket that is being added.
+    return freeMem / (activeCount + 1);
+}
+
+size_t DcpConsumer::calculateMemoryPerVBucket(size_t freeMem) {
+    // Try to get future vbucket counts from cluster configuration
+    auto* cookie = getCookie();
+    if (cookie) {
+        futureVBucketInfo = cookie->getFutureVbucketCounts(futureVBucketInfo);
+    }
+
+    if (futureVBucketInfo.has_value() && futureVBucketInfo->active) {
+        // Use the future active vbucket count from cluster config
+        return freeMem / futureVBucketInfo->active;
+    }
+    // Fallback to current runtime count
+    return calculateMemoryPerVBucketFallback(engine_, freeMem);
+}
+
 void DcpConsumer::addNoopSecondsPendingControl(Controls& controls) {
     using namespace std::chrono;
 
