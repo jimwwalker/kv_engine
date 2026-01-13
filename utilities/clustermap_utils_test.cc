@@ -503,3 +503,309 @@ TEST(ParseActiveVBucketsInFastForwardMap, ReplicaSetToMinusOne) {
     EXPECT_EQ(2, result->active); // vbuckets 0 and 2
     EXPECT_EQ(1, result->replica); // vbucket 1 (at index 1)
 }
+
+// Tests for ffMapSignature
+
+TEST(FFMapSignature, IdenticalMapsProduceSameSignature) {
+    // Two configs with identical vBucketMapForward should produce same
+    // signature
+    constexpr std::string_view config1 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0],
+                [0, 1]
+            ]
+        }
+    })";
+
+    constexpr std::string_view config2 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0],
+                [0, 1]
+            ]
+        }
+    })";
+
+    auto result1 = getFutureVbucketCounts(config1);
+    auto result2 = getFutureVbucketCounts(config2);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    EXPECT_EQ(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, DifferentVBucketMapProducesDifferentSignature) {
+    // Two configs with different vBucketMapForward should produce different
+    // signatures. These two ensure
+    constexpr std::string_view config1 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0]
+            ]
+        }
+    })";
+
+    constexpr std::string_view config2 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [1, 0],
+                [0, 1]
+            ]
+        }
+    })";
+
+    auto result1 = getFutureVbucketCounts(config1);
+    auto result2 = getFutureVbucketCounts(config2);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    EXPECT_NE(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, VBucketOrderMatters) {
+    // Changing the order of vbuckets should produce a different signature
+    // (although with XOR, if the same elements are repeated, it might cancel
+    // out)
+    constexpr std::string_view config1 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0]
+            ]
+        }
+    })";
+
+    constexpr std::string_view config2 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [1, 0],
+                [0, 1]
+            ]
+        }
+    })";
+
+    auto result1 = getFutureVbucketCounts(config1);
+    auto result2 = getFutureVbucketCounts(config2);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    EXPECT_NE(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, SignatureNotAffectedByNodeIndex) {
+    // Signature should be based on the vBucketMapForward content, not which
+    // node we're checking Same map content should produce same signature
+    // regardless of thisNode
+    constexpr std::string_view config1 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1, 2],
+                [1, 2, 0]
+            ]
+        }
+    })";
+
+    constexpr std::string_view config2 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}},
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1, 2],
+                [1, 2, 0]
+            ]
+        }
+    })";
+
+    auto result1 = getFutureVbucketCounts(config1);
+    auto result2 = getFutureVbucketCounts(config2);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    // Signature should be the same since the vBucketMapForward is identical
+    EXPECT_EQ(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, AddingVBucketChangesSignature) {
+    constexpr std::string_view config1 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0]
+            ]
+        }
+    })";
+
+    constexpr std::string_view config2 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0],
+                [0, 1]
+            ]
+        }
+    })";
+
+    auto result1 = getFutureVbucketCounts(config1);
+    auto result2 = getFutureVbucketCounts(config2);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    EXPECT_NE(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, RemovingVBucketChangesSignature) {
+    constexpr std::string_view config1 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0],
+                [0, 1]
+            ]
+        }
+    })";
+
+    constexpr std::string_view config2 = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1],
+                [1, 0]
+            ]
+        }
+    })";
+
+    auto result1 = getFutureVbucketCounts(config1);
+    auto result2 = getFutureVbucketCounts(config2);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    EXPECT_NE(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, SingleVBucketSignature) {
+    constexpr std::string_view config = R"({
+        "nodesExt": [
+            {"services": {"kv": 11210}, "thisNode": true},
+            {"services": {"kv": 11210}}
+        ],
+        "vBucketServerMap": {
+            "vBucketMapForward": [
+                [0, 1]
+            ]
+        }
+    })";
+
+    auto result = getFutureVbucketCounts(config);
+    ASSERT_TRUE(result.has_value());
+    // Single vbucket should produce non-zero signature (unless the hash happens
+    // to be 0)
+    // Just verify it doesn't crash and produces a value
+    EXPECT_NE(0, result->ffMapSignature);
+}
+
+TEST(FFMapSignature, LargeMapSignatureConsistency) {
+    // Test that large maps produce consistent signatures
+    nlohmann::json config = {
+            {"nodesExt",
+             {{{"services", {{"kv", 11210}}}, {"thisNode", true}},
+              {{"services", {{"kv", 11210}}}},
+              {{"services", {{"kv", 11210}}}}}},
+            {"vBucketServerMap",
+             {{"vBucketMapForward", nlohmann::json::array()}}}};
+
+    auto& vbucketMapForward = config["vBucketServerMap"]["vBucketMapForward"];
+    for (int i = 0; i < 1024; i++) {
+        vbucketMapForward.push_back({i % 3, (i + 1) % 3, (i + 2) % 3});
+    }
+
+    auto configStr = config.dump();
+    auto result1 = getFutureVbucketCounts(configStr);
+    auto result2 = getFutureVbucketCounts(configStr);
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    // Same input should always produce same signature
+    EXPECT_EQ(result1->ffMapSignature, result2->ffMapSignature);
+}
+
+TEST(FFMapSignature, ModifyingSingleVBucketInLargeMap) {
+    // Test that modifying just one vbucket in a large map changes the signature
+    nlohmann::json config1 = {
+            {"nodesExt",
+             {{{"services", {{"kv", 11210}}}, {"thisNode", true}},
+              {{"services", {{"kv", 11210}}}},
+              {{"services", {{"kv", 11210}}}}}},
+            {"vBucketServerMap",
+             {{"vBucketMapForward", nlohmann::json::array()}}}};
+
+    auto& vbucketMapForward1 = config1["vBucketServerMap"]["vBucketMapForward"];
+    for (int i = 0; i < 100; i++) {
+        vbucketMapForward1.push_back({i % 3, (i + 1) % 3, (i + 2) % 3});
+    }
+
+    // Create a second config identical to the first
+    nlohmann::json config2 = config1;
+    // Modify just the 50th vbucket
+    config2["vBucketServerMap"]["vBucketMapForward"][1] =
+            nlohmann::json::array({2, 0, 1});
+
+    auto result1 = getFutureVbucketCounts(config1.dump());
+    auto result2 = getFutureVbucketCounts(config2.dump());
+
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(result2.has_value());
+    // Modifying a single vbucket should change the signature
+    EXPECT_NE(result1->ffMapSignature, result2->ffMapSignature);
+    EXPECT_NE(config1, config2);
+}

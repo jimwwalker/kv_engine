@@ -15,11 +15,14 @@
 
 namespace cb {
 /**
- * Counts of active and replica vbuckets for a node
+ * Counts of active and replica vbuckets for a node and the signature of the
+ * fast forward map to detect if the map changes (rev/epoch can change but map
+ * contents doesn't).
  */
 struct VBucketCounts {
     size_t active{0};
     size_t replica{0};
+    size_t ffMapSignature{0};
 };
 
 /**

@@ -56,6 +56,8 @@ std::optional<VBucketCounts> getFutureVbucketCounts(
         // Count vbuckets where this node is active (index 0) or replica (index
         // > 0)
         VBucketCounts counts;
+        counts.ffMapSignature =
+                std::hash<nlohmann::json>{}(vBucketMap["vBucketMapForward"]);
         for (const auto& vbucket : vBucketMap["vBucketMapForward"]) {
             if (!vbucket.is_array() || vbucket.empty()) {
                 continue;
