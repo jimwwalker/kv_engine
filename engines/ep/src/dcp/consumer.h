@@ -688,6 +688,7 @@ protected:
      * planned topology rather than current state.
      */
     std::optional<FutureVBucketInfo> futureVBucketInfo;
+    std::optional<size_t> cacheTransferFreeMemory;
 
     friend UpdateFlowControl;
 };

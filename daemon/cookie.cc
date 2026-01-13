@@ -1124,6 +1124,6 @@ std::optional<FutureVBucketInfo> Cookie::getFutureVbucketCounts(
     info.revno = config->version.getRevno();
     info.active = vbucketCounts->active;
     info.replica = vbucketCounts->replica;
-
+    info.ffMapSignature = vbucketCounts->ffMapSignature;
     return info;
 }

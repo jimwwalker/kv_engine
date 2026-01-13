@@ -50,10 +50,13 @@ class IOBuf;
  * Contains clustermap version information and future vBucket counts
  */
 struct FutureVBucketInfo {
-    int64_t epoch;
-    int64_t revno;
-    size_t active;
-    size_t replica;
+    int64_t epoch{0};
+    int64_t revno{0};
+    size_t active{0};
+    size_t replica{0};
+    size_t ffMapSignature{0}; // Signature of the fast forward map
+
+    bool operator==(const FutureVBucketInfo& other) const = default;
 };
 
 /**

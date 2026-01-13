@@ -1769,13 +1769,32 @@ size_t DcpConsumer::calculateMemoryPerVBucket(size_t freeMem) {
     // Try to get future vbucket counts from cluster configuration
     auto* cookie = getCookie();
     if (cookie) {
-        futureVBucketInfo = cookie->getFutureVbucketCounts(futureVBucketInfo);
+        // Yet cache a freeMem value, i.e. don't keep recalculating it as we
+        // risk that the previous cache-transfers reduces freeMem and result in
+        // the next freeMem getting smaller and smaller. E.g. if the first CTS
+        // computes 50MiB freeMem, use that in all CTS transfers provided the
+        // map doesn't change. The freeMem value is idealistic and does not need
+        // to be the perfect share of memory at every instance in the rebalance.
+        auto newInfo = cookie->getFutureVbucketCounts(futureVBucketInfo);
+        if (newInfo.value_or(FutureVBucketInfo{}).ffMapSignature !=
+            futureVBucketInfo.value_or(FutureVBucketInfo{}).ffMapSignature) {
+            // The map changed... recalculate the free memory
+            futureVBucketInfo = newInfo;
+            cacheTransferFreeMemory = std::nullopt;
+        }
     }
 
-    if (futureVBucketInfo.has_value() && futureVBucketInfo->active) {
-        // Use the future active vbucket count from cluster config
-        return freeMem / futureVBucketInfo->active;
+    // Return the current value
+    if (cacheTransferFreeMemory.has_value()) {
+        return cacheTransferFreeMemory.value();
     }
+
+    if (futureVBucketInfo && futureVBucketInfo->active) {
+        // Use the future active vbucket count from cluster config
+        cacheTransferFreeMemory = freeMem / futureVBucketInfo->active;
+        return cacheTransferFreeMemory.value();
+    }
+
     // Fallback to current runtime count
     return calculateMemoryPerVBucketFallback(engine_, freeMem);
 }
