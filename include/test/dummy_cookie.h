@@ -107,6 +107,10 @@ public:
         throw std::runtime_error("DummyIface::inflateSnappy not implemented()");
     }
 
+    std::optional<FutureVBucketInfo> getFutureVbucketCounts() const override {
+        return std::nullopt;
+    }
+
 protected:
     DummyConnection connection;
 };

@@ -20,6 +20,7 @@
 #include <optional>
 
 namespace cb {
+struct VBucketCounts;
 enum class engine_errc;
 }
 namespace cb::mcbp {
@@ -44,6 +45,16 @@ enum class Operation;
 namespace folly {
 class IOBuf;
 }
+
+/**
+ * Contains clustermap version information and future vBucket counts
+ */
+struct FutureVBucketInfo {
+    int64_t epoch;
+    int64_t revno;
+    size_t active;
+    size_t replica;
+};
 
 /**
  * The CookieIface is an abstract class representing a single command
@@ -313,6 +324,15 @@ public:
      */
     virtual std::unique_ptr<folly::IOBuf> inflateSnappy(
             std::string_view input) = 0;
+
+    /**
+     * Get the current clustermap version and future vBucket counts for the
+     * connected bucket's configuration.
+     *
+     * @return FutureVBucketInfo containing epoch, revno, and optional vBucket
+     *         counts, or std::nullopt if no cluster configuration is available
+     */
+    virtual std::optional<FutureVBucketInfo> getFutureVbucketCounts() const = 0;
 
 protected:
     std::atomic<size_t> document_bytes_read = 0;

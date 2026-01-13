@@ -207,6 +207,10 @@ public:
     std::unique_ptr<folly::IOBuf> inflateSnappy(
             std::string_view input) override;
 
+    std::optional<FutureVBucketInfo> getFutureVbucketCounts() const override {
+        return std::nullopt;
+    }
+
 protected:
     static CheckPrivilegeFunction checkPrivilegeFunction;
     static CheckForPrivilegeAtLeastInOneCollectionFunction
