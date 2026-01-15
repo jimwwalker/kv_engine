@@ -1119,6 +1119,21 @@ std::optional<FutureVBucketInfo> Cookie::getFutureVbucketCounts(
         return std::nullopt;
     }
 
+    if (last) {
+        auto json = nlohmann::json::parse(config->uncompressed);
+        LOG_WARNING_CTX(
+                "Cookie::getFutureVbucketCounts config changed",
+                {"conn_id", connection.getId()},
+                {"bucket", connection.getBucket().name},
+                {"last_epoch", last->epoch},
+                {"last_revno", last->revno},
+                {"config_epoch", config->version.getEpoch()},
+                {"config_revno", config->version.getRevno()},
+                {"JSON", json["vBucketServerMap"]["vBucketMapForward"]},
+                {"last_ffMapSignature", last->ffMapSignature},
+                {"config_ffMapSignature", vbucketCounts->ffMapSignature});
+    }
+
     FutureVBucketInfo info;
     info.epoch = config->version.getEpoch();
     info.revno = config->version.getRevno();

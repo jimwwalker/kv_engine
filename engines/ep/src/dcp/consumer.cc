@@ -1778,6 +1778,15 @@ size_t DcpConsumer::calculateMemoryPerVBucket(size_t freeMem) {
         auto newInfo = cookie->getFutureVbucketCounts(futureVBucketInfo);
         if (newInfo.value_or(FutureVBucketInfo{}).ffMapSignature !=
             futureVBucketInfo.value_or(FutureVBucketInfo{}).ffMapSignature) {
+            OBJ_LOG_WARN_CTX(
+                    *logger,
+                    "JWW Cache transfer free memory changing",
+                    {"freeMem", freeMem},
+                    {"newInfo",
+                     newInfo.value_or(FutureVBucketInfo{}).ffMapSignature},
+                    {"futureVBucketInfo",
+                     futureVBucketInfo.value_or(FutureVBucketInfo{})
+                             .ffMapSignature});
             // The map changed... recalculate the free memory
             futureVBucketInfo = newInfo;
             cacheTransferFreeMemory = std::nullopt;
@@ -1792,6 +1801,12 @@ size_t DcpConsumer::calculateMemoryPerVBucket(size_t freeMem) {
     if (futureVBucketInfo && futureVBucketInfo->active) {
         // Use the future active vbucket count from cluster config
         cacheTransferFreeMemory = freeMem / futureVBucketInfo->active;
+        OBJ_LOG_WARN_CTX(
+                *logger,
+                "JWW Cache transfer free memory changed",
+                {"cacheTransferFreeMemory", cacheTransferFreeMemory.value()},
+                {"futureVBucketInfo",
+                 futureVBucketInfo.value().ffMapSignature});
         return cacheTransferFreeMemory.value();
     }
 
