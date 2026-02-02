@@ -144,6 +144,9 @@ static cb::engine_errc stat_sched_executor(const std::string& arg,
             append_stats(fmt::format("Thread-{}-cookie-notification", ii),
                          cookie_notification_histogram[ii].to_string(),
                          cookie);
+            append_stats(fmt::format("Thread-{}-event-loop-busy", ii),
+                         event_loop_busy_histogram[ii].to_string(),
+                         cookie);
         }
         return cb::engine_errc::success;
     }
@@ -162,6 +165,7 @@ static cb::engine_errc stat_sched_executor(const std::string& arg,
         add("Thread-aggregate-dispatch-socket", dispatch_socket_histogram);
         add("Thread-aggregate-cookie-notification",
             cookie_notification_histogram);
+        add("Thread-aggregate-event-loop-busy", event_loop_busy_histogram);
         return cb::engine_errc::success;
     }
 

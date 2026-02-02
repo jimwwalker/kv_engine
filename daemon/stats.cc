@@ -294,6 +294,8 @@ cb::engine_errc server_prometheus_stats(
                 dispatch_socket_histogram);
             add(cb::stats::Key::cookie_notification_histogram,
                 cookie_notification_histogram);
+            add(cb::stats::Key::event_loop_busy_histogram,
+                event_loop_busy_histogram);
             try {
                 auto instance = sigar::SigarIface::New();
                 instance->iterate_threads([&kvCollector](auto tid,

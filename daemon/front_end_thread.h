@@ -268,3 +268,6 @@ extern std::vector<Hdr1sfMicroSecHistogram> dispatch_socket_histogram;
 
 /// Histogram counting the time spent for cookie notifications
 extern std::vector<Hdr1sfMicroSecHistogram> cookie_notification_histogram;
+
+/// Histogram counting the time spent working in the event loop
+extern std::vector<Hdr1sfMicroSecHistogram> event_loop_busy_histogram;

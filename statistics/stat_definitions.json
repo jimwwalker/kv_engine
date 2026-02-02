@@ -2650,6 +2650,13 @@
         "added": "7.6.10"
     },
     {
+        "key": "event_loop_busy_histogram",
+        "description": "Histogram containing the time spent working in the event loop",
+        "unit": "microseconds",
+        "type": "histogram",
+        "added": "7.6.10"
+    },
+    {
         "key": "conn_yields",
         "description": "The total number all clients in this bucket yield due to consuming the number of ops allowed for the current timeslice",
         "unit": "none",

@@ -72,6 +72,7 @@ static std::vector<FrontEndThread> threads;
 std::vector<Hdr1sfMicroSecHistogram> scheduler_info;
 std::vector<Hdr1sfMicroSecHistogram> dispatch_socket_histogram;
 std::vector<Hdr1sfMicroSecHistogram> cookie_notification_histogram;
+std::vector<Hdr1sfMicroSecHistogram> event_loop_busy_histogram;
 
 /*
  * Number of worker threads that have finished setting themselves up.
@@ -260,6 +261,40 @@ void iterate_all_connections(std::function<void(Connection&)> callback) {
     }
 }
 
+/// Tiny observer to record the time spent working in the event body.
+/// Add to a histogram, and warn if we spend more than 1 second busy per
+/// iteration (should not happen)
+class WorkerThreadEventObserver : public folly::EventBaseObserver {
+public:
+    WorkerThreadEventObserver(int idx) : index(idx) {
+    }
+    ~WorkerThreadEventObserver() override = default;
+    uint32_t getSampleRate() const override {
+        return 1;
+    }
+
+    void loopSample(int64_t busyTime, int64_t) override {
+        constexpr std::chrono::microseconds threshold(std::chrono::seconds(1));
+
+        std::chrono::microseconds busy(busyTime);
+        event_loop_busy_histogram[index].add(busy);
+        maxBusyTime = std::max(maxBusyTime, busy);
+        if (busy > threshold) {
+            LOG_WARNING(
+                    "Spent more than {} work time in the event loop. tid:{}, "
+                    "busyTime:{}, maxBusyTime:{}",
+                    cb::time2text(threshold),
+                    index,
+                    cb::time2text(busy),
+                    cb::time2text(maxBusyTime));
+        }
+    }
+
+protected:
+    const int index;
+    std::chrono::microseconds maxBusyTime;
+};
+
 /// Worker thread: main event loop
 static void worker_libevent(void* arg) {
     auto& me = *reinterpret_cast<FrontEndThread*>(arg);
@@ -273,6 +308,7 @@ static void worker_libevent(void* arg) {
         init_cond.notify_all();
     }
 
+    me.eventBase.setObserver(std::make_shared<WorkerThreadEventObserver>(me.index));
     me.eventBase.loopForever();
     me.running = false;
 }
@@ -425,6 +461,7 @@ void worker_threads_init() {
     scheduler_info.resize(nthr);
     dispatch_socket_histogram.resize(nthr);
     cookie_notification_histogram.resize(nthr);
+    event_loop_busy_histogram.resize(nthr);
 
     try {
         threads = std::vector<FrontEndThread>(nthr);
