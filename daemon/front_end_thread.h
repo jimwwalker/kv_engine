@@ -202,7 +202,14 @@ struct FrontEndThread {
     void iterate_connections(
             const std::function<void(Connection&)>& callback) const;
 
+    size_t getRunCount() const {
+        return run_count.load();
+    }
+
 protected:
+    friend class WorkerThreadEventObserver;
+    std::atomic_size_t run_count{0};
+
     void do_dispatch(SOCKET sfd, std::shared_ptr<ListeningPort> descr);
 
     /// Add a connection to the thread.

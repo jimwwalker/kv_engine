@@ -863,7 +863,8 @@ void Connection::updateBlockedSendQueue() {
 void Connection::processNotifiedCookie(
         Cookie& cookie,
         cb::engine_errc status,
-        std::chrono::steady_clock::time_point scheduled) {
+        std::chrono::steady_clock::time_point scheduled,
+        size_t run_count) {
     using namespace std::chrono;
     const auto now = steady_clock::now();
     cookie_notification_histogram[thread.index].add(
@@ -873,6 +874,11 @@ void Connection::processNotifiedCookie(
     cookie.clearEwouldblock();
     triggerCallback();
     cookie.getTracer().record(cb::tracing::Code::Notified, scheduled, now);
+    const auto current_run_count = getThread().getRunCount();
+    if (now - scheduled > std::chrono::milliseconds{600}) {
+        LOG_WARNING("Slow notification, waited {} run-counts",
+                    current_run_count - run_count);
+    }
 }
 
 void Connection::commandExecuted(Cookie& cookie) {

@@ -1158,12 +1158,16 @@ ConnectionIface& Cookie::getConnectionIface() {
 void Cookie::notifyIoComplete(cb::engine_errc status) {
     auto& thr = getConnection().getThread();
     thr.eventBase.runInEventBaseThreadAlwaysEnqueue(
-            [this, status, scheduled = std::chrono::steady_clock::now()]() {
+            [this,
+             status,
+             scheduled = std::chrono::steady_clock::now(),
+             rc = thr.getRunCount()]() {
                 TRACE_LOCKGUARD_TIMED(getConnection().getThread().mutex,
                                       "mutex",
                                       "notifyIoComplete",
                                       SlowMutexThreshold);
-                getConnection().processNotifiedCookie(*this, status, scheduled);
+                getConnection().processNotifiedCookie(
+                        *this, status, scheduled, rc);
             });
 }
 

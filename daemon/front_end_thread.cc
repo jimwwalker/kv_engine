@@ -266,7 +266,7 @@ void iterate_all_connections(std::function<void(Connection&)> callback) {
 /// iteration (should not happen)
 class WorkerThreadEventObserver : public folly::EventBaseObserver {
 public:
-    WorkerThreadEventObserver(int idx) : index(idx) {
+    WorkerThreadEventObserver(FrontEndThread& thread_) : thread(thread_) {
     }
     ~WorkerThreadEventObserver() override = default;
     uint32_t getSampleRate() const override {
@@ -274,24 +274,25 @@ public:
     }
 
     void loopSample(int64_t busyTime, int64_t) override {
+        ++thread.run_count;
         constexpr std::chrono::microseconds threshold(std::chrono::seconds(1));
 
         std::chrono::microseconds busy(busyTime);
-        event_loop_busy_histogram[index].add(busy);
+        event_loop_busy_histogram[thread.index].add(busy);
         maxBusyTime = std::max(maxBusyTime, busy);
         if (busy > threshold) {
             LOG_WARNING(
                     "Spent more than {} work time in the event loop. tid:{}, "
                     "busyTime:{}, maxBusyTime:{}",
                     cb::time2text(threshold),
-                    index,
+                    thread.index,
                     cb::time2text(busy),
                     cb::time2text(maxBusyTime));
         }
     }
 
 protected:
-    const int index;
+    FrontEndThread& thread;
     std::chrono::microseconds maxBusyTime;
 };
 
@@ -308,7 +309,7 @@ static void worker_libevent(void* arg) {
         init_cond.notify_all();
     }
 
-    me.eventBase.setObserver(std::make_shared<WorkerThreadEventObserver>(me.index));
+    me.eventBase.setObserver(std::make_shared<WorkerThreadEventObserver>(me));
     me.eventBase.loopForever();
     me.running = false;
 }
