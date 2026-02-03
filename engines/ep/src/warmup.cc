@@ -1298,6 +1298,7 @@ void Warmup::stop() {
 }
 
 void Warmup::scheduleInitialize() {
+    std::this_thread::sleep_for(std::chrono::seconds(3));
     ExTask task = std::make_shared<WarmupInitialize>(store, this);
     ExecutorPool::get()->schedule(task);
 }

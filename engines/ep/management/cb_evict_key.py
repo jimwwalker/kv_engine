@@ -44,4 +44,5 @@ if len(sys.argv) == 7:
 
 key = sys.argv[5]
 client.vbucketId = int(sys.argv[4])
-print(client.evict_key(key, collection=collection))
+while True:
+    client.stats("vbucket-details 0")
