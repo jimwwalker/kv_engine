@@ -12,6 +12,7 @@
 #include "connection.h"
 #include "ssl_utils.h"
 #include <libevent/utilities.h>
+#include <cstddef>
 
 struct bufferevent;
 
@@ -56,8 +57,10 @@ protected:
     /// Shared callback for Read and Write events as there is
     /// no difference in the actions performed for the events. No need
     /// to duplicate the implementation.
-    void rw_callback();
-    static void rw_callback(bufferevent* bev, void* ctx);
+    void rw_Callback(bool r);
+    // static void rw_callback(bufferevent* bev, void* ctx);
+    static void r_callback(bufferevent* bev, void* ctx);
+    static void w_callback(bufferevent* bev, void* ctx);
 
     /// The callback method called from bufferevent for "other" callbacks.
     void event_callback(short event);
@@ -79,4 +82,12 @@ protected:
      * the standard read callback.
      */
     static void ssl_read_callback(bufferevent*, void* ctx);
+
+    size_t callback_generation{0};
+    size_t callback_counter{0};
+    size_t callbacks{0};
+    size_t reads{0};
+    size_t writes{0};
+    size_t trigger_callback{0};
+    size_t event_callbacks{0};
 };

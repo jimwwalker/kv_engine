@@ -515,11 +515,10 @@ void Connection::shutdownIfSendQueueStuck(
     // task which consume a lot of resources on the server to fill the
     // pipe again. During bucket deletion we want to disconnect the
     // clients relatively fast.
-    const auto limit = is_memcached_shutting_down()
-                               ? std::chrono::seconds(0)
-                               : (getBucket().state == Bucket::State::Ready)
-                                         ? std::chrono::seconds(360)
-                                         : std::chrono::seconds(1);
+    const auto limit = is_memcached_shutting_down() ? std::chrono::seconds(0)
+                       : (getBucket().state == Bucket::State::Ready)
+                               ? std::chrono::seconds(360)
+                               : std::chrono::seconds(1);
     if ((now - sendQueueInfo.last) > limit) {
         LOG_WARNING(
                 "{}: send buffer stuck at {} for ~{} seconds. Shutting "
@@ -860,6 +859,10 @@ void Connection::updateBlockedSendQueue() {
     }
 }
 
+static void JWW() {
+    LOG_WARNING_RAW("JWW");
+}
+
 void Connection::processNotifiedCookie(
         Cookie& cookie,
         cb::engine_errc status,
@@ -873,6 +876,9 @@ void Connection::processNotifiedCookie(
     cookie.setAiostat(status);
     cookie.clearEwouldblock();
     triggerCallback();
+    if ((now - scheduled) > std::chrono::seconds(1)) {
+        JWW();
+    }
     cookie.getTracer().record(cb::tracing::Code::Notified, scheduled, now);
     const auto current_run_count = getThread().getRunCount();
     if (now - scheduled > std::chrono::milliseconds{600}) {

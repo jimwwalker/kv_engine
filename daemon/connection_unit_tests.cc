@@ -31,8 +31,8 @@ public:
         bev.reset(bufferevent_socket_new(
                 frontEndThread.eventBase.getLibeventBase(), -1, options));
         bufferevent_setcb(bev.get(),
-                          LibeventConnection::rw_callback,
-                          LibeventConnection::rw_callback,
+                          LibeventConnection::r_callback,
+                          LibeventConnection::w_callback,
                           LibeventConnection::event_callback,
                           static_cast<void*>(this));
 

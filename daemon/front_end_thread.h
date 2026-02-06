@@ -205,6 +205,7 @@ struct FrontEndThread {
     size_t getRunCount() const {
         return run_count.load();
     }
+    std::atomic_size_t folly_loop_generation{0};
 
 protected:
     friend class WorkerThreadEventObserver;

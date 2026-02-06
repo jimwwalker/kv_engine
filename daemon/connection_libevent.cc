@@ -26,6 +26,7 @@
 #include <openssl/err.h>
 #include <phosphor/phosphor.h>
 #include <platform/string_hex.h>
+#include <chrono>
 
 /// Don't allow unauthenticated clients send large packets to
 /// consume memory on the server (for instance send everything except
@@ -56,15 +57,15 @@ LibeventConnection::LibeventConnection(SOCKET sfd,
                                                options));
         bufferevent_setcb(bev.get(),
                           LibeventConnection::ssl_read_callback,
-                          LibeventConnection::rw_callback,
+                          LibeventConnection::w_callback,
                           LibeventConnection::event_callback,
                           static_cast<void*>(this));
     } else {
         bev.reset(bufferevent_socket_new(
                 thr.eventBase.getLibeventBase(), sfd, options));
         bufferevent_setcb(bev.get(),
-                          LibeventConnection::rw_callback,
-                          LibeventConnection::rw_callback,
+                          LibeventConnection::r_callback,
+                          LibeventConnection::w_callback,
                           LibeventConnection::event_callback,
                           static_cast<void*>(this));
     }
@@ -133,7 +134,7 @@ std::string LibeventConnection::getOpenSSLErrors() {
     return formatOpenSslErrorCodes(getOpenSslErrorCodes());
 }
 
-void LibeventConnection::rw_callback() {
+void LibeventConnection::rw_Callback(bool r) {
     if (isTlsEnabled()) {
         const auto ssl_errors = getOpenSSLErrors();
         if (!ssl_errors.empty()) {
@@ -147,6 +148,37 @@ void LibeventConnection::rw_callback() {
                           "mutex",
                           "LibeventConnection::rw_callback::threadLock",
                           SlowMutexThreshold);
+
+    if (callback_generation != thread.folly_loop_generation) {
+        callback_generation = thread.folly_loop_generation;
+        callback_counter = 0;
+        callbacks = 0;
+        reads = writes = 0;
+        trigger_callback = 0;
+        event_callbacks = 0;
+    }
+    ++callback_counter;
+    ++callbacks;
+    if (r) {
+        disableReadEvent();
+        ++reads;
+    } else {
+        ++writes;
+    }
+
+    if (callback_counter > 500) {
+        LOG_WARNING(
+                "{} rw_callback has reached {} for {}. r:{} w:{}, "
+                "triggerCallback:{}, events:{}",
+                getId(),
+                callbacks,
+                callback_generation,
+                reads,
+                writes,
+                trigger_callback,
+                event_callbacks);
+        callback_counter = 0;
+    }
 
     // reset the write watermark
     bufferevent_setwatermark(
@@ -172,8 +204,40 @@ void LibeventConnection::rw_callback() {
     }
 }
 
-void LibeventConnection::rw_callback(bufferevent*, void* ctx) {
-    reinterpret_cast<LibeventConnection*>(ctx)->rw_callback();
+// void LibeventConnection::rw_callback(bufferevent*, void* ctx) {
+//     const auto s = std::chrono::steady_clock::now();
+//     reinterpret_cast<LibeventConnection*>(ctx)->rw_Callback(false);
+//     const auto e = std::chrono::steady_clock::now();
+
+//     if ((e - s) > std::chrono::milliseconds(5)) {
+//         const auto t =
+//                 std::chrono::duration_cast<std::chrono::milliseconds>(e - s);
+//         LOG_WARNING("rw_callback took {}ms", t.count());
+//     }
+// }
+
+void LibeventConnection::r_callback(bufferevent*, void* ctx) {
+    const auto s = std::chrono::steady_clock::now();
+    reinterpret_cast<LibeventConnection*>(ctx)->rw_Callback(true);
+    const auto e = std::chrono::steady_clock::now();
+
+    if ((e - s) > std::chrono::milliseconds(5)) {
+        const auto t =
+                std::chrono::duration_cast<std::chrono::milliseconds>(e - s);
+        LOG_WARNING("rw_callback took {}ms", t.count());
+    }
+}
+
+void LibeventConnection::w_callback(bufferevent*, void* ctx) {
+    const auto s = std::chrono::steady_clock::now();
+    reinterpret_cast<LibeventConnection*>(ctx)->rw_Callback(false);
+    const auto e = std::chrono::steady_clock::now();
+
+    if ((e - s) > std::chrono::milliseconds(5)) {
+        const auto t =
+                std::chrono::duration_cast<std::chrono::milliseconds>(e - s);
+        LOG_WARNING("rw_callback took {}ms", t.count());
+    }
 }
 
 static nlohmann::json BevEvent2Json(short event) {
@@ -219,6 +283,7 @@ void LibeventConnection::event_callback(bufferevent*, short event, void* ctx) {
 
 void LibeventConnection::event_callback(short event) {
     bool term = false;
+    ++event_callbacks;
 
     bool conn_reset = (event & BEV_EVENT_EOF) == BEV_EVENT_EOF;
     if ((event & BEV_EVENT_ERROR) == BEV_EVENT_ERROR &&
@@ -328,13 +393,13 @@ void LibeventConnection::ssl_read_callback(bufferevent* bev, void* ctx) {
 
     // update the callback to call the normal read callback
     bufferevent_setcb(bev,
-                      LibeventConnection::rw_callback,
-                      LibeventConnection::rw_callback,
+                      LibeventConnection::r_callback,
+                      LibeventConnection::w_callback,
                       LibeventConnection::event_callback,
                       ctx);
 
     // and let's call it to make sure we step through the state machinery
-    LibeventConnection::rw_callback(bev, ctx);
+    LibeventConnection::r_callback(bev, ctx);
 }
 
 void LibeventConnection::triggerCallback(bool force) {
@@ -342,6 +407,7 @@ void LibeventConnection::triggerCallback(bool force) {
         // The framework will send a notification once the data is sent
         return;
     }
+    ++trigger_callback;
     const auto opt = BEV_TRIG_IGNORE_WATERMARKS | BEV_TRIG_DEFER_CALLBACKS;
     bufferevent_trigger(bev.get(), EV_READ, opt);
 }

@@ -1157,11 +1157,10 @@ ConnectionIface& Cookie::getConnectionIface() {
 
 void Cookie::notifyIoComplete(cb::engine_errc status) {
     auto& thr = getConnection().getThread();
+    const auto scheduled = std::chrono::steady_clock::now();
+    const auto sz = thr.eventBase.getNotificationQueueSize();
     thr.eventBase.runInEventBaseThreadAlwaysEnqueue(
-            [this,
-             status,
-             scheduled = std::chrono::steady_clock::now(),
-             rc = thr.getRunCount()]() {
+            [this, status, scheduled, rc = thr.getRunCount()]() {
                 TRACE_LOCKGUARD_TIMED(getConnection().getThread().mutex,
                                       "mutex",
                                       "notifyIoComplete",
@@ -1169,6 +1168,27 @@ void Cookie::notifyIoComplete(cb::engine_errc status) {
                 getConnection().processNotifiedCookie(
                         *this, status, scheduled, rc);
             });
+    const auto sz2 = thr.eventBase.getNotificationQueueSize();
+    const auto now = std::chrono::steady_clock::now();
+    if ((now - scheduled) > std::chrono::milliseconds(800)) {
+        LOG_WARNING(R"({}: Slow runInEventBaseThreadAlwaysEnqueue: {})",
+                    getConnection().getId(),
+                    (now - scheduled).count());
+    }
+    const auto sp = thr.eventBase.getPushedSkipped();
+    double ratio = 0.0;
+    if (sp.first) {
+        ratio = double(sp.second) / double(sp.first);
+    }
+    LOG_INFO(
+            R"({}: JWW notifyIoComplete runInEventBaseThreadAlwaysEnqueue: {} sz:{}, sz2:{}, pushed:{}, skipped:{}, ratio:{})",
+            getConnection().getId(),
+            (now - scheduled).count(),
+            sz,
+            sz2,
+            sp.first,
+            sp.second,
+            ratio);
 }
 
 bool Cookie::checkThrottle(size_t pendingRBytes, size_t pendingWBytes) {

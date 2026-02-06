@@ -241,6 +241,14 @@ public:
                     } else {
                         handleResponse(header.getResponse());
                     }
+                    for (int ii = 0; ii < 100; ++ii) {
+                        static int counter = 0;
+                        connection->getEventBase()
+                                .runInEventBaseThreadAlwaysEnqueue(
+                                        [value = counter++]() {
+                                            std::cout << value << std::endl;
+                                        });
+                    }
                 });
         start = std::chrono::steady_clock::now();
     }
@@ -831,6 +839,7 @@ int main(int argc, char** argv) {
 #endif
 
     auto event_base = std::make_shared<folly::EventBase>();
+    event_base->setMaxReadAtOnce(0);
     std::vector<std::unique_ptr<DcpConnection>> connections;
     try {
         if (port.empty()) {

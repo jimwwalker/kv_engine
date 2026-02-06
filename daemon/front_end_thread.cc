@@ -273,21 +273,24 @@ public:
         return 1;
     }
 
-    void loopSample(int64_t busyTime, int64_t) override {
+    void loopSample(int64_t busyTime, int64_t loopCount) override {
         ++thread.run_count;
+        thread.folly_loop_generation = loopCount;
         constexpr std::chrono::microseconds threshold(std::chrono::seconds(1));
 
         std::chrono::microseconds busy(busyTime);
+
         event_loop_busy_histogram[thread.index].add(busy);
         maxBusyTime = std::max(maxBusyTime, busy);
         if (busy > threshold) {
             LOG_WARNING(
                     "Spent more than {} work time in the event loop. tid:{}, "
-                    "busyTime:{}, maxBusyTime:{}",
+                    "busyTime:{}, maxBusyTime:{}. evLoop:{}",
                     cb::time2text(threshold),
                     thread.index,
                     cb::time2text(busy),
-                    cb::time2text(maxBusyTime));
+                    cb::time2text(maxBusyTime),
+                    loopCount);
         }
     }
 
@@ -429,6 +432,7 @@ void FrontEndThread::dispatch(SOCKET sfd,
 
 FrontEndThread::FrontEndThread()
     : scratch_buffer(), validator(cb::json::SyntaxValidator::New()) {
+    eventBase.setMaxReadAtOnce(0);
 }
 
 FrontEndThread::~FrontEndThread() = default;

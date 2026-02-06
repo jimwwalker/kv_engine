@@ -285,6 +285,10 @@ class MemcachedConnection {
 public:
     static std::atomic<size_t> totalSocketsCreated;
 
+    folly::EventBase& getEventBase() {
+        return *eventBase;
+    }
+
     MemcachedConnection() = delete;
 
     MemcachedConnection(const MemcachedConnection&) = delete;
